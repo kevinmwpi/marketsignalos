@@ -1,0 +1,11 @@
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.mypy]
+python_version = "3.12"
+ignore_missing_imports = true
+strict = true
+
+[tool.pytest.ini_options]
+testpaths = ["apps/api/tests", "services"]
