@@ -37,8 +37,14 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
+      - name: 10.8.2 npm
+        run: npm install -g npm@10.8.2
+      - name: Versions
+        run: |
+          node -v
+          npm -v
       - name: Install
-        run: npm ci --legacy-peer-deps
+        run: npm ci
       - name: Lint
         run: npm run lint
       - name: Build
