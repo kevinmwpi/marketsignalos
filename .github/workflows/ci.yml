@@ -37,9 +37,17 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
+      - name: Pin npm version
+        run: npm install -g npm@10.8.2
+      - name: Versions
+        run: |
+          node -v
+          npm -v
       - name: Install
+        working-directory: apps/web
         run: npm ci
       - name: Lint
         run: npm run lint
       - name: Build
+        working-directory: apps/web
         run: npm run build
