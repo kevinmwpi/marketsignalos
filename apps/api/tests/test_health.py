@@ -16,6 +16,8 @@ def test_metrics_endpoint_exists() -> None:
     client = TestClient(app)
     resp = client.get("/metrics")
     assert resp.status_code == 200
-    # should look like Prometheus text format
-    assert isinstance(resp.text, str)
-    assert len(resp.text) > 0
+    assert "text/plain" in resp.headers["content-type"]
+    assert "version=" in resp.headers["content-type"]
+    # should look like Prometheus text exposition format
+    assert "# HELP" in resp.text
+    assert "# TYPE" in resp.text

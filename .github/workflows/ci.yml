@@ -19,7 +19,7 @@ jobs:
       - name: Install
         run: |
           python -m pip install --upgrade pip
-          pip install ruff mypy pytest fastapi uvicorn prometheus-client httpx
+          pip install -e ".[dev]"
       - name: Lint
         run: ruff check .
       - name: Typecheck
