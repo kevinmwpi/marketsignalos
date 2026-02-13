@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from .kalshi_client import KalshiClient
+from typing import Protocol
+
 from .models import NormalizedTrade
 
 
@@ -13,10 +14,20 @@ class IngestionBatch:
     next_cursor: str | None
 
 
+class TradesClient(Protocol):
+    def list_trades(
+        self,
+        ticker: str,
+        *,
+        limit: int = 500,
+        cursor: str | None = None,
+    ) -> dict[str, object]: ...
+
+
 class KalshiTradeIngestionPipeline:
     """Pulls trade pages from Kalshi and normalizes them for downstream storage."""
 
-    def __init__(self, client: KalshiClient) -> None:
+    def __init__(self, client: TradesClient) -> None:
         self._client = client
 
     def pull_trade_batch(
