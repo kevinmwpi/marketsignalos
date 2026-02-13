@@ -18,3 +18,9 @@ Kalshi should be called only by a background ingestion worker.
 3. Storage writer for normalized records.
 4. Checkpoint store for pagination cursor.
 5. Worker loop (or `ingest_once`) that ties these steps together.
+
+## Which GitHub secrets are required for Kalshi keypair auth?
+- `KALSHI_API_KEY_ID`
+- `KALSHI_PRIVATE_KEY_PEM`
+
+These should be injected into worker runtime env vars with the same names.

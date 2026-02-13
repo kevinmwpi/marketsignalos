@@ -35,4 +35,6 @@ pytest
 
 ## Environment variables
 - `KALSHI_BASE_URL`: defaults to `https://api.elections.kalshi.com/trade-api/v2`
-- `KALSHI_API_KEY`: optional for authenticated endpoints
+- `KALSHI_API_KEY`: optional bearer token fallback
+- `KALSHI_API_KEY_ID`: Kalshi key id for keypair auth
+- `KALSHI_PRIVATE_KEY_PEM`: Kalshi private key PEM for request signing

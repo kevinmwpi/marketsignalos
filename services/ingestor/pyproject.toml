@@ -8,6 +8,7 @@ version = "0.1.0"
 description = "Prediction market ingestion workers for MarketSignalOS"
 requires-python = ">=3.12"
 dependencies = [
+  "cryptography",
   "httpx",
 ]
 
