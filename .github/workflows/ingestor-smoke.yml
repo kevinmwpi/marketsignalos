@@ -1,0 +1,35 @@
+name: ingestor-smoke
+
+on:
+  workflow_dispatch:
+
+jobs:
+  kalshi-config-smoke:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: services/ingestor
+    env:
+      KALSHI_API_KEY_ID: ${{ secrets.KALSHI_API_KEY_ID }}
+      KALSHI_PRIVATE_KEY_PEM: ${{ secrets.KALSHI_PRIVATE_KEY_PEM }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+      - name: Validate Kalshi auth env is configured
+        run: |
+          python - <<'PY'
+          import os
+          missing = [
+              key for key in ["KALSHI_API_KEY_ID", "KALSHI_PRIVATE_KEY_PEM"]
+              if not os.getenv(key)
+          ]
+          if missing:
+              raise SystemExit(f"Missing required secrets/env vars: {', '.join(missing)}")
+          print("Kalshi secrets detected.")
+          PY
