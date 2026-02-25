@@ -2,12 +2,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
 from marketsignalos_api.main import app
 
 
-def test_trades_endpoint_returns_latest_rows(tmp_path: Path, monkeypatch) -> None:
+def test_trades_endpoint_returns_latest_rows(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     trade_store = tmp_path / "trades.jsonl"
     trade_store.write_text(
         "\n".join(
@@ -38,7 +39,7 @@ def test_trades_endpoint_returns_latest_rows(tmp_path: Path, monkeypatch) -> Non
     ]
 
 
-def test_trades_endpoint_returns_empty_when_store_absent(monkeypatch, tmp_path: Path) -> None:
+def test_trades_endpoint_returns_empty_when_store_absent(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setenv("INGESTOR_TRADE_STORE_PATH", str(tmp_path / "missing.jsonl"))
 
     client = TestClient(app)
