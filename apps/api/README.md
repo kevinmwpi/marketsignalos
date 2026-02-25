@@ -22,6 +22,7 @@ uvicorn marketsignalos_api.main:app --reload
 
 - `GET /health` returns `{"status":"ok"}`
 - `GET /metrics` returns Prometheus metrics text format
+- `GET /signals/trades?limit=50` returns latest ingested normalized trades from local store
 
 ## Run tests
 
