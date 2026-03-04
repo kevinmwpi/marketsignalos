@@ -1,22 +1,60 @@
-# marketsignalos
-Detect statistically abnormal behavior and information asymmetry.
+# MarketSignalOS
 
+MarketSignalOS ingests prediction-market data and ranks accounts by statistical skill signals rather than raw PnL popularity.
 
-Production-grade market surveillance + mispricing detection system:
-- Prediction markets: abnormal behavior & information-asymmetry signals
-- Options: deterministic mispricing (“pseudo-arbitrage”) scanners
-- First-class observability: signal freshness, ingestion lag, completeness
+## Current scope
 
-## Repo layout
-- `apps/api`: FastAPI API
-- `apps/web`: Next.js dashboard
-- `services/ingestor`: ingestion workers
-- `services/signals`: reusable signal engine library
-- `infra`: local + deployment infrastructure
-- `docs`: PRD, architecture, runbook, decisions (ADRs)
+- Kalshi data ingestion in `services/ingestor`
+- FastAPI backend in `apps/api`
+- Next.js leaderboard UI in `apps/web`
 
-## Local development (placeholder)
-- `docker-compose up` (coming soon)
+## Repository layout
 
-## Status
-Early development (M0 bootstrap).
+- `apps/api`: API routes and scoring services
+- `apps/web`: dashboard frontend
+- `services/ingestor`: market data ingestion pipeline
+- `docs`: product and architecture notes
+
+## Quick start
+
+From repo root:
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install --upgrade pip
+pip install -e "apps/api[dev]"
+```
+
+Run API:
+
+```powershell
+cd apps/api
+uvicorn marketsignalos_api.main:app --reload
+```
+
+Run web:
+
+```powershell
+cd apps/web
+npm ci
+$env:NEXT_PUBLIC_API_BASE_URL="http://localhost:8000"
+npm run dev
+```
+
+## API endpoints
+
+- `GET /health`
+- `GET /metrics`
+- `GET /signals/trades?limit=50`
+- `GET /signals/leaderboard?fresh_days=30&min_resolved=20&limit=50`
+
+## Tests
+
+API tests:
+
+```powershell
+cd apps/api
+..\..\.venv\Scripts\python.exe -m pytest -q
+```
+
