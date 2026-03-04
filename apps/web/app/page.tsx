@@ -17,6 +17,8 @@ type SuspiciousAccountSignal = {
   losses: number;
   win_rate: number;
   suspicion_score: number;
+  stddevs_above_expected: number;
+  statistically_significant: boolean;
   last_activity_at: string;
 };
 
@@ -41,9 +43,10 @@ async function getSuspiciousAccounts(
   apiBase: string,
 ): Promise<{ accounts: SuspiciousAccountSignal[]; error?: string }> {
   try {
-    const response = await fetch(`${apiBase}/signals/suspicious-accounts?fresh_days=30&min_resolved=20&limit=20`, {
-      cache: "no-store",
-    });
+    const response = await fetch(
+      `${apiBase}/signals/suspicious-accounts?fresh_days=30&min_resolved=20&sigma_threshold=3&only_significant=true&limit=20`,
+      { cache: "no-store" },
+    );
 
     if (!response.ok) {
       return { accounts: [], error: `Suspicious accounts API returned ${response.status}` };
@@ -124,7 +127,7 @@ export default async function Home() {
 
         <section className="overflow-x-auto rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950">
           <div className="border-b border-zinc-200 px-3 py-2 text-sm font-medium dark:border-zinc-800">
-            Suspiciously Accurate Fresh Accounts (30d, min 20 resolved)
+            Statistically Significant Winners (&gt;= 3 sigma, 30d, min 20 resolved)
           </div>
           <table className="min-w-full text-left text-sm">
             <thead className="border-b border-zinc-200 bg-zinc-100 text-xs uppercase tracking-wide text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300">
@@ -135,7 +138,7 @@ export default async function Home() {
                 <th className="px-3 py-2">wins</th>
                 <th className="px-3 py-2">losses</th>
                 <th className="px-3 py-2">win rate</th>
-                <th className="px-3 py-2">score</th>
+                <th className="px-3 py-2">z-score</th>
                 <th className="px-3 py-2">last activity</th>
               </tr>
             </thead>
@@ -155,7 +158,7 @@ export default async function Home() {
                     <td className="px-3 py-2">{account.wins}</td>
                     <td className="px-3 py-2">{account.losses}</td>
                     <td className="px-3 py-2">{(account.win_rate * 100).toFixed(1)}%</td>
-                    <td className="px-3 py-2">{account.suspicion_score.toFixed(4)}</td>
+                    <td className="px-3 py-2">{account.stddevs_above_expected.toFixed(2)}</td>
                     <td className="px-3 py-2">{account.last_activity_at}</td>
                   </tr>
                 ))

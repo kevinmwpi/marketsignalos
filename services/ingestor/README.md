@@ -41,10 +41,19 @@ pytest
 - `KALSHI_API_KEY_ID`: Kalshi key id for keypair auth
 - `KALSHI_PRIVATE_KEY_PEM`: Kalshi private key PEM for request signing
 - `INGEST_MARKET_TICKERS`: comma-separated Kalshi tickers for fills polling
-- `INGEST_INTERVAL_SECONDS`: polling interval in seconds for continuous ingestion
+- `INGEST_CONTINUOUS`: optional (`true`/`false`), defaults to `false` for one-shot batch runs
+- `INGEST_INTERVAL_SECONDS`: polling interval in seconds when `INGEST_CONTINUOUS=true`
 
-## Run continuous ingestion
+## Run one-shot batch ingestion (recommended)
 ```bash
 cd services/ingestor
 python -m marketsignalos_ingestor.runner
+```
+
+Use an external scheduler (cron/Task Scheduler/GitHub Actions) to run this command periodically.
+
+## Run continuous ingestion (optional)
+```bash
+cd services/ingestor
+INGEST_CONTINUOUS=true INGEST_INTERVAL_SECONDS=30 python -m marketsignalos_ingestor.runner
 ```

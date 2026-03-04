@@ -38,6 +38,11 @@ def _interval_seconds() -> float:
     return value
 
 
+def _continuous_mode() -> bool:
+    raw = os.getenv("INGEST_CONTINUOUS", "false").strip().lower()
+    return raw in {"1", "true", "yes", "on"}
+
+
 def main() -> int:
     stop = False
 
@@ -69,12 +74,15 @@ def main() -> int:
     )
 
     tickers = _tickers()
-    interval_seconds = _interval_seconds()
+    continuous = _continuous_mode()
+    interval_seconds = _interval_seconds() if continuous else 0.0
 
     try:
         while not stop:
+            total_fill_records = 0
             for ticker in tickers:
                 result = fill_worker.ingest_once(ticker, limit=500)
+                total_fill_records += result.records_written
                 print(
                     f"[fills] ticker={ticker} previous={result.previous_cursor} "
                     f"next={result.next_cursor} written={result.records_written}"
@@ -85,8 +93,12 @@ def main() -> int:
                 f"[resolutions] previous={market_result.previous_cursor} "
                 f"next={market_result.next_cursor} written={market_result.records_written}"
             )
+            print(
+                f"[summary] tickers={len(tickers)} fills_written={total_fill_records} "
+                f"resolutions_written={market_result.records_written}"
+            )
 
-            if stop:
+            if stop or not continuous:
                 break
             time.sleep(interval_seconds)
     finally:
