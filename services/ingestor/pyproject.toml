@@ -12,6 +12,9 @@ dependencies = [
   "httpx",
 ]
 
+[project.scripts]
+marketsignalos-ingestor = "marketsignalos_ingestor.runner:main"
+
 [project.optional-dependencies]
 dev = [
   "mypy",
