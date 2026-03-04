@@ -79,3 +79,24 @@ def test_keypair_auth_requires_both_values() -> None:
 
     with pytest.raises(ValueError, match="must both be set"):
         client._build_keypair_headers(method="GET", path="/portfolio/trades")
+
+
+def test_list_fills_and_markets_use_expected_paths() -> None:
+    requested_paths: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requested_paths.append(request.url.path)
+        if request.url.path == "/portfolio/fills":
+            return httpx.Response(status_code=200, json={"fills": [], "cursor": None})
+        return httpx.Response(status_code=200, json={"markets": [], "cursor": None})
+
+    transport = httpx.MockTransport(handler)
+    http_client = httpx.Client(transport=transport, base_url="https://example.invalid")
+    client = KalshiClient(KalshiClientConfig(base_url="https://example.invalid"), client=http_client)
+
+    fills = client.list_fills(ticker="TEST")
+    markets = client.list_markets(status="settled")
+
+    assert fills["fills"] == []
+    assert markets["markets"] == []
+    assert requested_paths == ["/portfolio/fills", "/markets"]

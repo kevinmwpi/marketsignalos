@@ -9,6 +9,7 @@ Ingestion **does not feed the website directly**. The minimum viable path is:
 2. Normalize payloads into `NormalizedTrade`.
 3. Persist records to local JSONL (`data/kalshi_trades.jsonl`).
 4. Persist per-ticker cursor checkpoints in JSON (`data/kalshi_checkpoints.json`).
+5. Persist account-level fills (`data/kalshi_fills.jsonl`) and settled outcomes (`data/kalshi_market_resolutions.jsonl`) for suspicious-account scoring.
 
 This gives replayable ingestion state and avoids calling Kalshi on every page refresh.
 
@@ -25,6 +26,7 @@ So refreshes hit our API/storage layer, not Kalshi directly.
 - trade normalization pipeline (`pipeline.py`)
 - local trade + checkpoint storage (`storage.py`)
 - single-run worker orchestration (`worker.py`)
+- continuous runner entrypoint (`runner.py`)
 
 ## Quick start
 ```bash
@@ -38,3 +40,11 @@ pytest
 - `KALSHI_API_KEY`: optional bearer token fallback
 - `KALSHI_API_KEY_ID`: Kalshi key id for keypair auth
 - `KALSHI_PRIVATE_KEY_PEM`: Kalshi private key PEM for request signing
+- `INGEST_MARKET_TICKERS`: comma-separated Kalshi tickers for fills polling
+- `INGEST_INTERVAL_SECONDS`: polling interval in seconds for continuous ingestion
+
+## Run continuous ingestion
+```bash
+cd services/ingestor
+python -m marketsignalos_ingestor.runner
+```

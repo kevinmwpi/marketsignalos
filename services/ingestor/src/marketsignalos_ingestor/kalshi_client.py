@@ -57,6 +57,30 @@ class KalshiClient:
             params["cursor"] = cursor
         return self._request_with_retries("GET", "/portfolio/trades", params=params)
 
+    def list_fills(
+        self,
+        ticker: str,
+        *,
+        limit: int = 500,
+        cursor: str | None = None,
+    ) -> dict[str, Any]:
+        params: dict[str, str | int] = {"ticker": ticker, "limit": limit}
+        if cursor:
+            params["cursor"] = cursor
+        return self._request_with_retries("GET", "/portfolio/fills", params=params)
+
+    def list_markets(
+        self,
+        *,
+        status: str = "settled",
+        limit: int = 200,
+        cursor: str | None = None,
+    ) -> dict[str, Any]:
+        params: dict[str, str | int] = {"status": status, "limit": limit}
+        if cursor:
+            params["cursor"] = cursor
+        return self._request_with_retries("GET", "/markets", params=params)
+
     def _request_with_retries(
         self,
         method: str,
