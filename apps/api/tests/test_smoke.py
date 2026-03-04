@@ -16,4 +16,3 @@ def test_app_registers_core_routes() -> None:
     route_paths = {route.path for route in app.router.routes if isinstance(route, APIRoute)}
     assert "/health" in route_paths
     assert "/metrics" in route_paths
-    assert "/signals/leaderboard" in route_paths

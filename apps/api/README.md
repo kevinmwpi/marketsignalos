@@ -22,8 +22,6 @@ uvicorn marketsignalos_api.main:app --reload
 
 - `GET /health` returns `{"status":"ok"}`
 - `GET /metrics` returns Prometheus metrics text format
-- `GET /signals/leaderboard?fresh_days=30&min_resolved=20&limit=50` returns ranked
-  accounts by skill/insider-like scoring from ingested account data
 
 ## Run tests
 
