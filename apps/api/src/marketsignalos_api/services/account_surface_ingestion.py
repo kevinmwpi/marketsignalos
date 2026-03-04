@@ -58,6 +58,14 @@ def _expected_probability(side: str, price: float) -> float:
     return yes_probability if side.lower() == "yes" else 1.0 - yes_probability
 
 
+def _coerce_float(value: object) -> float:
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        return float(value)
+    raise ValueError("price must be numeric")
+
+
 def collect_surface_account_stats(*, fresh_days: int, min_resolved: int) -> list[SurfaceAccountStats]:
     fills = _read_jsonl(_fills_path())
     resolutions = _read_jsonl(_resolutions_path())
@@ -91,7 +99,7 @@ def collect_surface_account_stats(*, fresh_days: int, min_resolved: int) -> list
         aggregate.first_seen_at = min(aggregate.first_seen_at, traded_at)
         aggregate.last_seen_at = max(aggregate.last_seen_at, traded_at)
 
-        expected = _expected_probability(side=side, price=float(row["price"]))
+        expected = _expected_probability(side=side, price=_coerce_float(row["price"]))
         won = 1 if side == settlement_side else 0
 
         aggregate.resolved_calls += 1
@@ -122,4 +130,3 @@ def collect_surface_account_stats(*, fresh_days: int, min_resolved: int) -> list
 
     output.sort(key=lambda row: (-row.z_score, -row.resolved_calls, row.account_id))
     return output
-
