@@ -1,1 +1,3 @@
--e ./apps/api
+fastapi
+prometheus-client
+uvicorn

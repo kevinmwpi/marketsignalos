@@ -49,16 +49,16 @@ This repository is a monorepo, so Railway needs explicit root-level app metadata
 
 Railway config in this repo:
 
-- `requirements.txt` installs the API package from `apps/api` (`-e ./apps/api`)
+- `requirements.txt` declares direct runtime dependencies (`fastapi`, `prometheus-client`, `uvicorn`)
 - `Procfile` declares the web process command for Uvicorn
-- `railway.toml` sets an explicit deploy `startCommand`
+- `Procfile`/`railway.toml` set `PYTHONPATH=apps/api/src` so the API module is importable in this monorepo layout
 
 In Railway:
 
 1. Create a new service from this repository.
 2. Keep the root as the service source directory.
 3. Set any required runtime variables (for example, API keys) in Railway Variables.
-4. Deploy — Railway will use the root `requirements.txt` during build and the explicit start command during deploy.
+4. Deploy — Railway will install from root `requirements.txt` and start the API with the explicit `PYTHONPATH` + Uvicorn command.
 
 ## API endpoints
 

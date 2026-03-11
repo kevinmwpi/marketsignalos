@@ -1,9 +1,10 @@
 [build]
 # Railway's Railpack can install Python dependencies from requirements.txt
-# in the repository root. In this monorepo, that file points to apps/api.
+# in the repository root. Use direct package deps so Railpack does not need
+# to copy nested monorepo paths during pip install.
 builder = "RAILPACK"
 
 [deploy]
-startCommand = "uvicorn marketsignalos_api.main:app --host 0.0.0.0 --port $PORT"
+startCommand = "PYTHONPATH=apps/api/src uvicorn marketsignalos_api.main:app --host 0.0.0.0 --port $PORT"
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 10
