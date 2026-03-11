@@ -42,6 +42,24 @@ $env:NEXT_PUBLIC_API_BASE_URL="http://localhost:8000"
 npm run dev
 ```
 
+
+## Deploy API on Railway
+
+This repository is a monorepo, so Railway's default build detection can miss the API package when deployed from the repo root. A root-level `nixpacks.toml` is included to provide an explicit build plan for Railway Buildpacks/Nixpacks.
+
+It does the following:
+
+- uses Python 3.12 in the build image
+- installs the API package from `apps/api`
+- starts the FastAPI app with Uvicorn on `$PORT`
+
+In Railway:
+
+1. Create a new service from this repository.
+2. Keep the root as the service source directory.
+3. Set any required runtime variables (for example, API keys) in Railway Variables.
+4. Deploy — Railway will pick up `nixpacks.toml` automatically.
+
 ## API endpoints
 
 - `GET /health`
