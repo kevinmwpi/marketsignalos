@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import math
-from datetime import UTC
+from datetime import timezone
 
 from marketsignalos_api.services.leaderboard_models import (
     AccountEnrichment,
@@ -49,7 +49,7 @@ def rank_accounts_by_skill(
         rows.append(
             LeaderboardEntry(
                 account_id=account.account_id,
-                account_first_seen_at=account.first_seen_at.astimezone(UTC).isoformat().replace("+00:00", "Z"),
+                account_first_seen_at=account.first_seen_at.astimezone(timezone.utc).isoformat().replace("+00:00", "Z"),
                 account_age_days=account_age_days,
                 resolved_calls=account.resolved_calls,
                 wins=account.wins,
@@ -61,7 +61,7 @@ def rank_accounts_by_skill(
                 skill_likelihood=round(skill_likelihood, 6),
                 insider_like_score=round(insider_like_score, 6),
                 anomaly_probability=round(anomaly_probability, 6),
-                last_activity_at=account.last_seen_at.astimezone(UTC).isoformat().replace("+00:00", "Z"),
+                last_activity_at=account.last_seen_at.astimezone(timezone.utc).isoformat().replace("+00:00", "Z"),
             )
         )
 

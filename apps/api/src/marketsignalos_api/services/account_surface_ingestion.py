@@ -4,7 +4,7 @@ import json
 import math
 import os
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from marketsignalos_api.services.leaderboard_models import SurfaceAccountStats
@@ -29,7 +29,7 @@ def _resolutions_path() -> Path:
 
 
 def _parse_utc(value: str) -> datetime:
-    return datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(UTC)
+    return datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(timezone.utc)
 
 
 def _read_jsonl(path: Path) -> list[dict[str, object]]:
