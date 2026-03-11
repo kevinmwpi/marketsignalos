@@ -1,0 +1,3 @@
+fastapi
+prometheus-client
+uvicorn
