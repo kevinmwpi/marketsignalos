@@ -1,0 +1,18 @@
+# Railway Nixpacks build plan for deploying the FastAPI API service.
+# This ensures the builder uses Python from the monorepo root and installs
+# the API package from apps/api.
+
+[variables]
+PYTHONUNBUFFERED = "1"
+
+[phases.setup]
+nixPkgs = ["python312"]
+
+[phases.install]
+cmds = [
+  "python -m pip install --upgrade pip",
+  "python -m pip install -e ./apps/api",
+]
+
+[start]
+cmd = "uvicorn marketsignalos_api.main:app --host 0.0.0.0 --port ${PORT:-8000}"
