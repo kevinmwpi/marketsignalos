@@ -18,3 +18,4 @@ def test_app_registers_core_routes() -> None:
     assert "/metrics" in route_paths
     assert "/signals/trades" in route_paths
     assert "/signals/leaderboard" in route_paths
+    assert "/signals/orderflow" in route_paths
