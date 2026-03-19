@@ -62,6 +62,7 @@ In Railway:
 
 ## API endpoints
 
+- `GET /` (redirects to interactive API docs at `/docs`)
 - `GET /health`
 - `GET /metrics`
 - `GET /signals/trades?limit=50`

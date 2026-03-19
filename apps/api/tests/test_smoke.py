@@ -14,6 +14,7 @@ def test_app_factory_returns_fastapi_app() -> None:
 def test_app_registers_core_routes() -> None:
     app = create_app()
     route_paths = {route.path for route in app.router.routes if isinstance(route, APIRoute)}
+    assert "/" in route_paths
     assert "/health" in route_paths
     assert "/metrics" in route_paths
     assert "/signals/trades" in route_paths
