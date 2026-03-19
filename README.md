@@ -59,10 +59,11 @@ In Railway:
 2. Keep the root as the service source directory.
 3. Set any required runtime variables (for example, API keys) in Railway Variables.
 4. Deploy — Railway will install from root `requirements.txt` and start the API with the explicit `PYTHONPATH` + Uvicorn command.
+5. Opening the Railway service root URL now shows a lightweight leaderboard landing page served by FastAPI. Interactive API docs remain available at `/docs`.
 
 ## API endpoints
 
-- `GET /` (redirects to interactive API docs at `/docs`)
+- `GET /` (serves the MarketSignalOS landing page and leaderboard frontend shell)
 - `GET /health`
 - `GET /metrics`
 - `GET /signals/trades?limit=50`
@@ -76,4 +77,3 @@ API tests:
 cd apps/api
 ..\..\.venv\Scripts\python.exe -m pytest -q
 ```
-
