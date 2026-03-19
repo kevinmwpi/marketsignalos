@@ -5,6 +5,13 @@ from fastapi.testclient import TestClient
 from marketsignalos_api.main import app
 
 
+def test_root_redirects_to_docs() -> None:
+    client = TestClient(app)
+    resp = client.get("/", follow_redirects=False)
+    assert resp.status_code == 307
+    assert resp.headers["location"] == "/docs"
+
+
 def test_health_returns_ok() -> None:
     client = TestClient(app)
     resp = client.get("/health")

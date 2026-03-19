@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from fastapi import FastAPI
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import PlainTextResponse, RedirectResponse
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
 from marketsignalos_api.api.routes.health import router as health_router
@@ -20,6 +20,11 @@ def create_app() -> FastAPI:
     app.include_router(trades_router)
     app.include_router(leaderboard_router)
     app.include_router(orderflow_router)
+
+
+    @app.get("/", include_in_schema=False)
+    def root() -> RedirectResponse:
+        return RedirectResponse(url="/docs", status_code=307)
 
     @app.get("/metrics", response_class=PlainTextResponse, include_in_schema=False)
     def metrics() -> PlainTextResponse:

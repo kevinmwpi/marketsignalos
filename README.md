@@ -42,8 +42,27 @@ $env:NEXT_PUBLIC_API_BASE_URL="http://localhost:8000"
 npm run dev
 ```
 
+
+## Deploy API on Railway
+
+This repository is a monorepo, so Railway needs explicit root-level app metadata for the API service.
+
+Railway config in this repo:
+
+- `requirements.txt` declares direct runtime dependencies (`fastapi`, `prometheus-client`, `uvicorn`)
+- `Procfile` declares the web process command for Uvicorn
+- `Procfile`/`railway.toml` set `PYTHONPATH=apps/api/src` so the API module is importable in this monorepo layout
+
+In Railway:
+
+1. Create a new service from this repository.
+2. Keep the root as the service source directory.
+3. Set any required runtime variables (for example, API keys) in Railway Variables.
+4. Deploy — Railway will install from root `requirements.txt` and start the API with the explicit `PYTHONPATH` + Uvicorn command.
+
 ## API endpoints
 
+- `GET /` (redirects to interactive API docs at `/docs`)
 - `GET /health`
 - `GET /metrics`
 - `GET /signals/trades?limit=50`
