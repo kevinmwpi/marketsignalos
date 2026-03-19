@@ -40,7 +40,7 @@ pytest
 - `KALSHI_API_KEY`: optional bearer token fallback
 - `KALSHI_API_KEY_ID`: Kalshi key id for keypair auth
 - `KALSHI_PRIVATE_KEY_PEM`: Kalshi private key PEM for request signing
-- `INGEST_MARKET_TICKERS`: comma-separated Kalshi tickers for fills polling
+- `INGEST_MARKET_TICKERS`: comma-separated Kalshi tickers for trade and fill polling
 - `INGEST_CONTINUOUS`: optional (`true`/`false`), defaults to `false` for one-shot batch runs
 - `INGEST_INTERVAL_SECONDS`: polling interval in seconds when `INGEST_CONTINUOUS=true`
 
