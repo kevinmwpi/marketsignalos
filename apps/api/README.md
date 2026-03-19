@@ -20,6 +20,7 @@ uvicorn marketsignalos_api.main:app --reload
 
 ## Endpoints
 
+- `GET /` serves the Railway-friendly landing page with a leaderboard table and quick links to docs/health
 - `GET /health` returns `{"status":"ok"}`
 - `GET /metrics` returns Prometheus metrics text format
 - `GET /signals/trades?limit=50` returns latest ingested normalized trades from local store
