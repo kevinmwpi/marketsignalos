@@ -53,7 +53,7 @@ Railway config in this repo:
 - `Procfile` declares the web process command for Uvicorn
 - `railway.toml` selects Railpack for the root deploy and sets the explicit start command
 - `nixpacks.toml` remains in the repo as an alternative Python-first build plan if the service is switched back to Nixpacks
-- `Procfile`/`railway.toml` set `PYTHONPATH=apps/api/src` so the API module is importable in this monorepo layout
+- `Procfile`/`railway.toml` use `env PYTHONPATH=apps/api/src` and `${PORT:-8000}` so the API module is importable in this monorepo layout and Uvicorn always receives a concrete port value
 
 In Railway:
 
