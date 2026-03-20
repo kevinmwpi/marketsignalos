@@ -50,10 +50,12 @@ This repository is a monorepo, so Railway needs explicit root-level app metadata
 Railway config in this repo:
 
 - `requirements.txt` declares direct runtime dependencies (`fastapi`, `prometheus-client`, `uvicorn`)
-- `Procfile` declares the web process command for Uvicorn
-- `railway.toml` selects Railpack for the root deploy and sets the explicit start command
+- `scripts/start-api.sh` is the shared startup entrypoint for Railway/Procfile/Nixpacks; it logs the chosen port, exports `PYTHONPATH`, and starts Uvicorn
+- `Procfile` declares the web process command for the shared startup script
+- `railway.toml` selects Railpack for the root deploy and points at the shared startup script
 - `nixpacks.toml` remains in the repo as an alternative Python-first build plan if the service is switched back to Nixpacks
-- `Procfile`/`railway.toml` set `PYTHONPATH=apps/api/src` so the API module is importable in this monorepo layout
+- `scripts/start-api.sh` defaults to port `8080` when `PORT` is unset locally so local logs mirror Railway's common target-port display more closely
+- `railway.toml` pins Railway's healthcheck to `GET /health` and cuts the timeout to 60 seconds so misconfigurations fail faster instead of waiting for the 300-second default
 
 In Railway:
 
