@@ -51,6 +51,8 @@ Railway config in this repo:
 
 - `requirements.txt` declares direct runtime dependencies (`fastapi`, `prometheus-client`, `uvicorn`)
 - `Procfile` declares the web process command for Uvicorn
+- `railway.toml` selects Railpack for the root deploy and sets the explicit start command
+- `nixpacks.toml` remains in the repo as an alternative Python-first build plan if the service is switched back to Nixpacks
 - `Procfile`/`railway.toml` set `PYTHONPATH=apps/api/src` so the API module is importable in this monorepo layout
 
 In Railway:
@@ -73,7 +75,6 @@ In Railway:
 
 API tests:
 
-```powershell
-cd apps/api
-..\..\.venv\Scripts\python.exe -m pytest -q
+```bash
+python -m pytest -q apps/api/tests
 ```
