@@ -31,6 +31,12 @@ uvicorn marketsignalos_api.main:app --reload
 
 From `apps/api`:
 
-```powershell
+```bash
 pytest -q
+```
+
+If you prefer to run tests from the repository root instead, use:
+
+```bash
+python -m pytest -q apps/api/tests
 ```
