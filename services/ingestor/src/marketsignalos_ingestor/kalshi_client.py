@@ -9,9 +9,12 @@ from typing import Any
 import httpx
 
 
+DEFAULT_BASE_URL = "https://api.elections.kalshi.com/trade-api/v2"
+
+
 @dataclass(frozen=True, slots=True)
 class KalshiClientConfig:
-    base_url: str = "https://api.elections.kalshi.com/trade-api/v2"
+    base_url: str = DEFAULT_BASE_URL
     timeout_seconds: float = 10.0
     max_retries: int = 3
     retry_backoff_seconds: float = 0.5
@@ -22,7 +25,7 @@ class KalshiClientConfig:
     @classmethod
     def from_env(cls) -> KalshiClientConfig:
         return cls(
-            base_url=os.getenv("KALSHI_BASE_URL", cls.base_url),
+            base_url=os.getenv("KALSHI_BASE_URL", DEFAULT_BASE_URL),
             api_key=os.getenv("KALSHI_API_KEY"),
             api_key_id=os.getenv("KALSHI_API_KEY_ID"),
             private_key_pem=os.getenv("KALSHI_PRIVATE_KEY_PEM"),
@@ -137,12 +140,19 @@ class KalshiClient:
     def _sign_message(self, message: bytes) -> str:
         # Lazy import so non-http tests can run without crypto dependency at import time.
         from cryptography.hazmat.primitives import hashes, serialization
-        from cryptography.hazmat.primitives.asymmetric import padding
+        from cryptography.hazmat.primitives.asymmetric import padding, rsa
+
+        private_key_pem = self._config.private_key_pem
+        if private_key_pem is None:
+            raise ValueError("KALSHI_PRIVATE_KEY_PEM must be set for keypair auth")
 
         private_key = serialization.load_pem_private_key(
-            self._config.private_key_pem.encode("utf-8"),
+            private_key_pem.encode("utf-8"),
             password=None,
         )
+        if not isinstance(private_key, rsa.RSAPrivateKey):
+            raise ValueError("Kalshi private key must be an RSA private key")
+
         signed = private_key.sign(
             message,
             padding.PSS(

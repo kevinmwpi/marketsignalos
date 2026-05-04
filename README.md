@@ -48,6 +48,8 @@ npm run dev
 - `GET /metrics`
 - `GET /signals/trades?limit=50`
 - `GET /signals/leaderboard?fresh_days=30&min_resolved=20&limit=50`
+- `GET /signals/orderflow?limit=50`
+- `GET /signals/opportunities?fresh_days=30&min_resolved=20&limit=12`
 
 ## Tests
 
@@ -56,5 +58,12 @@ API tests:
 ```powershell
 cd apps/api
 ..\..\.venv\Scripts\python.exe -m pytest -q
+```
+
+Full Python suite:
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -e "services/ingestor[dev]"
+.\.venv\Scripts\python.exe -m pytest -q services\ingestor apps\api
 ```
 

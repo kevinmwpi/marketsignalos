@@ -65,7 +65,7 @@ def test_keypair_auth_headers_are_attached() -> None:
         ),
         client=http_client,
     )
-    client._sign_message = lambda _: "signed-message"  # type: ignore[method-assign]
+    client._sign_message = lambda _: "signed-message"  # type: ignore[assignment, method-assign]
 
     client.list_trades(ticker="TEST-123")
 

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-
 from typing import Protocol
 
 from .models import MarketResolution, NormalizedFill, NormalizedTrade
@@ -57,6 +56,13 @@ class MarketsClient(Protocol):
     ) -> dict[str, object]: ...
 
 
+def _payload_list(payload: dict[str, object], key: str) -> list[object]:
+    value = payload.get(key, [])
+    if not isinstance(value, list):
+        raise ValueError(f"Kalshi {key} payload must be a list")
+    return value
+
+
 class KalshiTradeIngestionPipeline:
     """Pulls trade pages from Kalshi and normalizes them for downstream storage."""
 
@@ -71,7 +77,7 @@ class KalshiTradeIngestionPipeline:
         limit: int = 500,
     ) -> IngestionBatch:
         raw_payload = self._client.list_trades(ticker=ticker, limit=limit, cursor=cursor)
-        raw_trades = raw_payload.get("trades", [])
+        raw_trades = _payload_list(raw_payload, "trades")
         normalized = [self._normalize_trade(ticker, trade) for trade in raw_trades]
         next_cursor = raw_payload.get("cursor")
         if next_cursor is not None and not isinstance(next_cursor, str):
@@ -119,7 +125,7 @@ class KalshiFillIngestionPipeline:
         limit: int = 500,
     ) -> FillIngestionBatch:
         raw_payload = self._client.list_fills(ticker=ticker, limit=limit, cursor=cursor)
-        raw_fills = raw_payload.get("fills", [])
+        raw_fills = _payload_list(raw_payload, "fills")
         normalized = [self._normalize_fill(ticker, payload) for payload in raw_fills]
         next_cursor = raw_payload.get("cursor")
         if next_cursor is not None and not isinstance(next_cursor, str):
@@ -165,7 +171,7 @@ class KalshiResolutionIngestionPipeline:
         limit: int = 200,
     ) -> ResolutionIngestionBatch:
         raw_payload = self._client.list_markets(status="settled", limit=limit, cursor=cursor)
-        raw_markets = raw_payload.get("markets", [])
+        raw_markets = _payload_list(raw_payload, "markets")
         normalized: list[MarketResolution] = []
         for payload in raw_markets:
             resolution = self._normalize_resolution(payload)

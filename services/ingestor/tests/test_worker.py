@@ -45,7 +45,7 @@ def test_worker_ingest_once_reads_and_updates_checkpoint(tmp_path: Path) -> None
     checkpoint_store.set_cursor("KXTEST", "prev-cursor")
     trade_store = JsonlTradeStore(tmp_path / "trades.jsonl")
 
-    pipeline = KalshiTradeIngestionPipeline(StubKalshiClient())  # type: ignore[arg-type]
+    pipeline = KalshiTradeIngestionPipeline(StubKalshiClient())
     worker = KalshiIngestionWorker(pipeline, trade_store, checkpoint_store)
 
     result = worker.ingest_once("KXTEST", limit=25)
@@ -83,7 +83,7 @@ def test_fill_worker_ingest_once_reads_and_updates_checkpoint(tmp_path: Path) ->
     checkpoint_store.set_cursor("fills:KXFILL", "fill-prev")
     fill_store = JsonlFillStore(tmp_path / "fills.jsonl")
 
-    pipeline = KalshiFillIngestionPipeline(StubKalshiFillClient())  # type: ignore[arg-type]
+    pipeline = KalshiFillIngestionPipeline(StubKalshiFillClient())
     worker = KalshiFillIngestionWorker(pipeline, fill_store, checkpoint_store)
 
     result = worker.ingest_once("KXFILL", limit=10)
@@ -118,7 +118,7 @@ def test_resolution_worker_ingest_once_reads_and_updates_checkpoint(tmp_path: Pa
     checkpoint_store.set_cursor("markets:settled", "market-prev")
     resolution_store = JsonlResolutionStore(tmp_path / "resolutions.jsonl")
 
-    pipeline = KalshiResolutionIngestionPipeline(StubKalshiMarketsClient())  # type: ignore[arg-type]
+    pipeline = KalshiResolutionIngestionPipeline(StubKalshiMarketsClient())
     worker = KalshiResolutionIngestionWorker(pipeline, resolution_store, checkpoint_store)
 
     result = worker.ingest_once(limit=10)

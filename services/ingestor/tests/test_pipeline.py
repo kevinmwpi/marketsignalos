@@ -30,7 +30,7 @@ class StubKalshiClient:
 
 def test_pull_trade_batch_normalizes_payload() -> None:
     stub_client = StubKalshiClient()
-    pipeline = KalshiTradeIngestionPipeline(stub_client)  # type: ignore[arg-type]
+    pipeline = KalshiTradeIngestionPipeline(stub_client)
 
     batch = pipeline.pull_trade_batch("KXTEST-1", cursor="abc", limit=100)
 
@@ -72,7 +72,7 @@ class StubKalshiFillClient:
 
 
 def test_pull_fill_batch_normalizes_payload() -> None:
-    pipeline = KalshiFillIngestionPipeline(StubKalshiFillClient())  # type: ignore[arg-type]
+    pipeline = KalshiFillIngestionPipeline(StubKalshiFillClient())
 
     batch = pipeline.pull_fill_batch("KXTEST-2", cursor="cursor-1", limit=50)
 
@@ -108,7 +108,7 @@ class StubKalshiMarketsClient:
 
 
 def test_pull_resolution_batch_normalizes_payload() -> None:
-    pipeline = KalshiResolutionIngestionPipeline(StubKalshiMarketsClient())  # type: ignore[arg-type]
+    pipeline = KalshiResolutionIngestionPipeline(StubKalshiMarketsClient())
     batch = pipeline.pull_resolution_batch(cursor="m-cursor-1", limit=2)
 
     assert batch.next_cursor == "m-cursor-2"
