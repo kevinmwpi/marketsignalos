@@ -7,3 +7,6 @@ python_version = "3.12"
 ignore_missing_imports = true
 strict = true
 mypy_path = ["apps/api/src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["apps/api/src"]

@@ -6,9 +6,13 @@ import time
 from pathlib import Path
 
 from .kalshi_client import KalshiClient, KalshiClientConfig
-from .pipeline import KalshiFillIngestionPipeline, KalshiResolutionIngestionPipeline
-from .storage import JsonCheckpointStore, JsonlFillStore, JsonlResolutionStore
-from .worker import KalshiFillIngestionWorker, KalshiResolutionIngestionWorker
+from .pipeline import (
+    KalshiFillIngestionPipeline,
+    KalshiResolutionIngestionPipeline,
+    KalshiTradeIngestionPipeline,
+)
+from .storage import JsonCheckpointStore, JsonlFillStore, JsonlResolutionStore, JsonlTradeStore
+from .worker import KalshiFillIngestionWorker, KalshiIngestionWorker, KalshiResolutionIngestionWorker
 
 
 def _repo_root() -> Path:
@@ -58,10 +62,16 @@ def main() -> int:
     data_dir.mkdir(parents=True, exist_ok=True)
 
     checkpoints = JsonCheckpointStore(data_dir / "kalshi_checkpoints.json")
+    trade_store = JsonlTradeStore(data_dir / "kalshi_trades.jsonl")
     fill_store = JsonlFillStore(data_dir / "kalshi_fills.jsonl")
     resolution_store = JsonlResolutionStore(data_dir / "kalshi_market_resolutions.jsonl")
 
     client = KalshiClient(KalshiClientConfig.from_env())
+    trade_worker = KalshiIngestionWorker(
+        KalshiTradeIngestionPipeline(client),
+        trade_store,
+        checkpoints,
+    )
     fill_worker = KalshiFillIngestionWorker(
         KalshiFillIngestionPipeline(client),
         fill_store,
@@ -79,8 +89,16 @@ def main() -> int:
 
     try:
         while not stop:
+            total_trade_records = 0
             total_fill_records = 0
             for ticker in tickers:
+                trade_result = trade_worker.ingest_once(ticker, limit=500)
+                total_trade_records += trade_result.records_written
+                print(
+                    f"[trades] ticker={ticker} previous={trade_result.previous_cursor} "
+                    f"next={trade_result.next_cursor} written={trade_result.records_written}"
+                )
+
                 result = fill_worker.ingest_once(ticker, limit=500)
                 total_fill_records += result.records_written
                 print(
@@ -94,7 +112,8 @@ def main() -> int:
                 f"next={market_result.next_cursor} written={market_result.records_written}"
             )
             print(
-                f"[summary] tickers={len(tickers)} fills_written={total_fill_records} "
+                f"[summary] tickers={len(tickers)} trades_written={total_trade_records} "
+                f"fills_written={total_fill_records} "
                 f"resolutions_written={market_result.records_written}"
             )
 
