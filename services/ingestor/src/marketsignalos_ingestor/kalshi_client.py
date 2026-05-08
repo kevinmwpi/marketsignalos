@@ -4,12 +4,27 @@ import base64
 import os
 from dataclasses import dataclass
 from time import sleep, time
-from typing import Any
+from typing import Any, TypedDict
 
 import httpx
 
 
 DEFAULT_BASE_URL = "https://api.elections.kalshi.com/trade-api/v2"
+
+
+class TradesPayload(TypedDict, total=False):
+    trades: list[object]
+    cursor: str | None
+
+
+class FillsPayload(TypedDict, total=False):
+    fills: list[object]
+    cursor: str | None
+
+
+class MarketsPayload(TypedDict, total=False):
+    markets: list[object]
+    cursor: str | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -54,11 +69,11 @@ class KalshiClient:
         *,
         limit: int = 500,
         cursor: str | None = None,
-    ) -> dict[str, Any]:
+    ) -> TradesPayload:
         params: dict[str, str | int] = {"ticker": ticker, "limit": limit}
         if cursor:
             params["cursor"] = cursor
-        return self._request_with_retries("GET", "/portfolio/trades", params=params)
+        return self._request_with_retries("GET", "/portfolio/trades", params=params)  # type: ignore[return-value]
 
     def list_fills(
         self,
@@ -66,11 +81,11 @@ class KalshiClient:
         *,
         limit: int = 500,
         cursor: str | None = None,
-    ) -> dict[str, Any]:
+    ) -> FillsPayload:
         params: dict[str, str | int] = {"ticker": ticker, "limit": limit}
         if cursor:
             params["cursor"] = cursor
-        return self._request_with_retries("GET", "/portfolio/fills", params=params)
+        return self._request_with_retries("GET", "/portfolio/fills", params=params)  # type: ignore[return-value]
 
     def list_markets(
         self,
@@ -78,11 +93,11 @@ class KalshiClient:
         status: str = "settled",
         limit: int = 200,
         cursor: str | None = None,
-    ) -> dict[str, Any]:
+    ) -> MarketsPayload:
         params: dict[str, str | int] = {"status": status, "limit": limit}
         if cursor:
             params["cursor"] = cursor
-        return self._request_with_retries("GET", "/markets", params=params)
+        return self._request_with_retries("GET", "/markets", params=params)  # type: ignore[return-value]
 
     def _request_with_retries(
         self,
@@ -105,7 +120,7 @@ class KalshiClient:
                 payload = response.json()
                 if not isinstance(payload, dict):
                     raise ValueError("Kalshi API payload must be a JSON object")
-                return payload
+                return payload  # type: ignore[no-any-return]
 
             if attempt == self._config.max_retries:
                 response.raise_for_status()

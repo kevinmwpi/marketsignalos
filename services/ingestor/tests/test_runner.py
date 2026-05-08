@@ -100,6 +100,7 @@ def test_runner_writes_trade_fill_and_resolution_outputs(
 ) -> None:
     monkeypatch.setenv("INGESTOR_DATA_DIR", str(tmp_path))
     monkeypatch.setenv("INGEST_MARKET_TICKERS", "KXTEST")
+    monkeypatch.setenv("KALSHI_API_KEY", "test-key")  # satisfies startup validation
     monkeypatch.delenv("INGEST_CONTINUOUS", raising=False)
     monkeypatch.setattr(runner, "KalshiClient", StubKalshiClient)
     monkeypatch.setattr(runner, "KalshiClientConfig", StubConfig)

@@ -26,7 +26,8 @@ def test_trades_endpoint_returns_latest_rows(tmp_path: Path, monkeypatch: pytest
     response = client.get("/signals/trades?limit=1")
 
     assert response.status_code == 200
-    assert response.json() == [
+    payload = response.json()
+    assert payload == [
         {
             "source": "kalshi",
             "market_ticker": "T2",
@@ -37,6 +38,10 @@ def test_trades_endpoint_returns_latest_rows(tmp_path: Path, monkeypatch: pytest
             "traded_at": "2026-01-01T00:01:00Z",
         }
     ]
+    row = payload[0]
+    assert isinstance(row["price"], float)
+    assert isinstance(row["quantity"], int)
+    assert row["side"] in {"yes", "no"}
 
 
 def test_trades_endpoint_returns_empty_when_store_absent(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

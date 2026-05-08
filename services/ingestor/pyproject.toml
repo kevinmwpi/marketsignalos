@@ -8,8 +8,11 @@ version = "0.1.0"
 description = "Prediction market ingestion workers for MarketSignalOS"
 requires-python = ">=3.12"
 dependencies = [
+  "alembic>=1.13",
   "cryptography",
   "httpx",
+  "psycopg2-binary>=2.9",
+  "sqlalchemy>=2.0",
 ]
 
 [project.scripts]

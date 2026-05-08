@@ -5,8 +5,11 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Protocol
 
+from .enrichment import ComputedEnrichment
 from .models import MarketResolution, NormalizedFill, NormalizedTrade
 
+
+# ── Protocols ─────────────────────────────────────────────────────────────────
 
 class TradeStore(Protocol):
     def write_trades(self, trades: list[NormalizedTrade]) -> int:
@@ -31,6 +34,13 @@ class CheckpointStore(Protocol):
         """Persist latest cursor for ticker."""
 
 
+class EnrichmentStore(Protocol):
+    def write_enrichment(self, enrichments: list[ComputedEnrichment]) -> int:
+        """Overwrite the enrichment store and return records written."""
+
+
+# ── JSONL implementations ──────────────────────────────────────────────────────
+
 class JsonlTradeStore:
     """Simple append-only local store for normalized trades."""
 
@@ -41,11 +51,9 @@ class JsonlTradeStore:
     def write_trades(self, trades: list[NormalizedTrade]) -> int:
         if not trades:
             return 0
-
         with self._path.open("a", encoding="utf-8") as handle:
             for trade in trades:
                 handle.write(json.dumps(asdict(trade), separators=(",", ":")) + "\n")
-
         return len(trades)
 
 
@@ -60,7 +68,6 @@ class JsonlFillStore:
     def write_fills(self, fills: list[NormalizedFill]) -> int:
         if not fills:
             return 0
-
         dedupe_index = self._read_index()
         written = 0
         with self._path.open("a", encoding="utf-8") as handle:
@@ -106,7 +113,6 @@ class JsonlResolutionStore:
     def write_resolutions(self, resolutions: list[MarketResolution]) -> int:
         if not resolutions:
             return 0
-
         dedupe_index = self._read_index()
         written = 0
         with self._path.open("a", encoding="utf-8") as handle:
@@ -166,7 +172,6 @@ class JsonCheckpointStore:
         raw = json.loads(self._path.read_text(encoding="utf-8"))
         if not isinstance(raw, dict):
             raise ValueError("Checkpoint file must contain a JSON object")
-
         out: dict[str, str | None] = {}
         for key, value in raw.items():
             if not isinstance(key, str):
@@ -175,3 +180,214 @@ class JsonCheckpointStore:
                 raise ValueError("Checkpoint cursor must be a string or null")
             out[key] = value
         return out
+
+
+class JsonlEnrichmentStore:
+    """Overwrites enrichment JSONL on each write (recomputed from scratch each run)."""
+
+    def __init__(self, path: Path) -> None:
+        self._path = path
+        self._path.parent.mkdir(parents=True, exist_ok=True)
+
+    def write_enrichment(self, enrichments: list[ComputedEnrichment]) -> int:
+        if not enrichments:
+            return 0
+        with self._path.open("w", encoding="utf-8") as handle:
+            for enrichment in enrichments:
+                handle.write(
+                    json.dumps(asdict(enrichment), separators=(",", ":")) + "\n"
+                )
+        return len(enrichments)
+
+
+# ── Postgres implementations ───────────────────────────────────────────────────
+
+def _pg_connect(dsn: str):  # type: ignore[no-untyped-def]
+    """Return a psycopg2 connection.  Import is deferred so tests that don't
+    need Postgres can run without the psycopg2 package installed."""
+    import psycopg2  # type: ignore[import-untyped]
+    return psycopg2.connect(dsn)
+
+
+class PostgresTradeStore:
+    """Writes trades to Postgres; silently ignores duplicates via ON CONFLICT."""
+
+    def __init__(self, dsn: str) -> None:
+        self._dsn = dsn
+
+    def write_trades(self, trades: list[NormalizedTrade]) -> int:
+        if not trades:
+            return 0
+        conn = _pg_connect(self._dsn)
+        try:
+            with conn.cursor() as cur:
+                cur.executemany(
+                    """
+                    INSERT INTO trades
+                        (source, market_ticker, trade_id, side, price, quantity, traded_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s::timestamptz)
+                    ON CONFLICT (source, trade_id) DO NOTHING
+                    """,
+                    [
+                        (t.source, t.market_ticker, t.trade_id, t.side,
+                         t.price, t.quantity, t.traded_at)
+                        for t in trades
+                    ],
+                )
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+        return len(trades)
+
+
+class PostgresFillStore:
+    """Writes fills to Postgres; silently ignores duplicates via ON CONFLICT."""
+
+    def __init__(self, dsn: str) -> None:
+        self._dsn = dsn
+
+    def write_fills(self, fills: list[NormalizedFill]) -> int:
+        if not fills:
+            return 0
+        conn = _pg_connect(self._dsn)
+        try:
+            with conn.cursor() as cur:
+                cur.executemany(
+                    """
+                    INSERT INTO fills
+                        (source, account_id, market_ticker, fill_id, trade_id,
+                         side, price, quantity, traded_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s::timestamptz)
+                    ON CONFLICT (source, fill_id) DO NOTHING
+                    """,
+                    [
+                        (f.source, f.account_id, f.market_ticker, f.fill_id,
+                         f.trade_id, f.side, f.price, f.quantity, f.traded_at)
+                        for f in fills
+                    ],
+                )
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+        return len(fills)
+
+
+class PostgresResolutionStore:
+    """Upserts resolved market outcomes (re-settling a market updates the record)."""
+
+    def __init__(self, dsn: str) -> None:
+        self._dsn = dsn
+
+    def write_resolutions(self, resolutions: list[MarketResolution]) -> int:
+        if not resolutions:
+            return 0
+        conn = _pg_connect(self._dsn)
+        try:
+            with conn.cursor() as cur:
+                cur.executemany(
+                    """
+                    INSERT INTO market_resolutions
+                        (source, market_ticker, resolved_at, settlement_side)
+                    VALUES (%s, %s, %s::timestamptz, %s)
+                    ON CONFLICT (source, market_ticker) DO UPDATE
+                        SET resolved_at     = EXCLUDED.resolved_at,
+                            settlement_side = EXCLUDED.settlement_side
+                    """,
+                    [
+                        (r.source, r.market_ticker, r.resolved_at, r.settlement_side)
+                        for r in resolutions
+                    ],
+                )
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+        return len(resolutions)
+
+
+class PostgresCheckpointStore:
+    """Persists ingestor cursors in the ingestor_checkpoints table."""
+
+    def __init__(self, dsn: str) -> None:
+        self._dsn = dsn
+
+    def get_cursor(self, key: str) -> str | None:
+        conn = _pg_connect(self._dsn)
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT cursor FROM ingestor_checkpoints WHERE key = %s", (key,)
+                )
+                row = cur.fetchone()
+        finally:
+            conn.close()
+        if row is None:
+            return None
+        value = row[0]
+        return str(value) if value is not None else None
+
+    def set_cursor(self, key: str, cursor: str | None) -> None:
+        conn = _pg_connect(self._dsn)
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO ingestor_checkpoints (key, cursor)
+                    VALUES (%s, %s)
+                    ON CONFLICT (key) DO UPDATE SET cursor = EXCLUDED.cursor
+                    """,
+                    (key, cursor),
+                )
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+
+
+class PostgresEnrichmentStore:
+    """Upserts per-account enrichment scores into account_enrichment."""
+
+    def __init__(self, dsn: str) -> None:
+        self._dsn = dsn
+
+    def write_enrichment(self, enrichments: list[ComputedEnrichment]) -> int:
+        if not enrichments:
+            return 0
+        conn = _pg_connect(self._dsn)
+        try:
+            with conn.cursor() as cur:
+                cur.executemany(
+                    """
+                    INSERT INTO account_enrichment
+                        (account_id, cross_market_coordination,
+                         pre_resolution_accuracy, fill_intensity, updated_at)
+                    VALUES (%s, %s, %s, %s, now())
+                    ON CONFLICT (account_id) DO UPDATE
+                        SET cross_market_coordination = EXCLUDED.cross_market_coordination,
+                            pre_resolution_accuracy   = EXCLUDED.pre_resolution_accuracy,
+                            fill_intensity            = EXCLUDED.fill_intensity,
+                            updated_at                = now()
+                    """,
+                    [
+                        (e.account_id, e.cross_market_coordination,
+                         e.pre_resolution_accuracy, e.fill_intensity)
+                        for e in enrichments
+                    ],
+                )
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+        return len(enrichments)

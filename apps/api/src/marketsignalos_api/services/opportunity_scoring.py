@@ -18,6 +18,35 @@ SignalType = Literal["skilled_account", "orderflow_dislocation"]
 DriverTone = Literal["positive", "neutral", "risk"]
 
 
+class _AccountWeights:
+    """Opportunity score weights for skilled-account signals (must sum to 1.0)."""
+    SKILL_LIKELIHOOD: float = 0.58
+    INSIDER_LIKE_SCORE: float = 0.24
+    CONFIDENCE: float = 0.18
+
+
+class _AccountConfidenceWeights:
+    """Confidence formula weights for skilled-account signals (must sum to 1.0 above base)."""
+    BASE: float = 0.35          # floor even with zero evidence
+    SAMPLE_STRENGTH: float = 0.25
+    Z_STRENGTH: float = 0.25
+    INSIDER_SCORE: float = 0.15
+
+
+class _OrderflowWeights:
+    """Opportunity score weights for orderflow-dislocation signals (must sum to 1.0)."""
+    MAX_PROBABILITY: float = 0.55
+    AVERAGE_PROBABILITY: float = 0.25
+    CONFIDENCE: float = 0.20
+
+
+class _OrderflowConfidenceWeights:
+    """Confidence formula weights for orderflow signals (must sum to 1.0 above base)."""
+    BASE: float = 0.40
+    CONFLUENCE: float = 0.35    # how many anomaly types co-fired on one trade
+    MAX_PROBABILITY: float = 0.25
+
+
 class OpportunityDriver(BaseModel):
     label: str
     value: str
@@ -94,10 +123,15 @@ def _account_opportunity(entry: LeaderboardEntry) -> OpportunitySignal:
     sample_strength = _clamp_01(resolved_calls / 75.0)
     z_strength = _clamp_01(max(z_score, 0.0) / 4.0)
     confidence = _clamp_01(
-        0.35 + (0.25 * sample_strength) + (0.25 * z_strength) + (0.15 * insider_like_score)
+        _AccountConfidenceWeights.BASE
+        + (_AccountConfidenceWeights.SAMPLE_STRENGTH * sample_strength)
+        + (_AccountConfidenceWeights.Z_STRENGTH * z_strength)
+        + (_AccountConfidenceWeights.INSIDER_SCORE * insider_like_score)
     )
     opportunity_score = _clamp_01(
-        (0.58 * skill_likelihood) + (0.24 * insider_like_score) + (0.18 * confidence)
+        (_AccountWeights.SKILL_LIKELIHOOD * skill_likelihood)
+        + (_AccountWeights.INSIDER_LIKE_SCORE * insider_like_score)
+        + (_AccountWeights.CONFIDENCE * confidence)
     )
 
     return OpportunitySignal(
@@ -204,9 +238,15 @@ def _orderflow_opportunities(anomalies: list[OrderflowAnomaly]) -> list[Opportun
         max_probability = max(probabilities)
         confluence = _clamp_01(len(event_anomalies) / 3.0)
         average_probability = sum(probabilities) / len(probabilities)
-        confidence = _clamp_01(0.40 + (0.35 * confluence) + (0.25 * max_probability))
+        confidence = _clamp_01(
+            _OrderflowConfidenceWeights.BASE
+            + (_OrderflowConfidenceWeights.CONFLUENCE * confluence)
+            + (_OrderflowConfidenceWeights.MAX_PROBABILITY * max_probability)
+        )
         opportunity_score = _clamp_01(
-            (0.55 * max_probability) + (0.25 * average_probability) + (0.20 * confidence)
+            (_OrderflowWeights.MAX_PROBABILITY * max_probability)
+            + (_OrderflowWeights.AVERAGE_PROBABILITY * average_probability)
+            + (_OrderflowWeights.CONFIDENCE * confidence)
         )
         observed_at = max(_parse_utc(anomaly.traded_at) for anomaly in event_anomalies)
         driver_names = ", ".join(

@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import json
 import math
-import os
 from collections import defaultdict
 from pathlib import Path
 
 from pydantic import BaseModel
+
+from marketsignalos_api._paths import trade_store_path
 
 
 class OrderflowAnomaly(BaseModel):
@@ -32,28 +33,44 @@ class _TradeRow(BaseModel):
     traded_at: str
 
 
-def _default_trade_store_path() -> Path:
-    repo_root = Path(__file__).resolve().parents[5]
-    return repo_root / "services" / "ingestor" / "data" / "kalshi_trades.jsonl"
-
-
-def _trade_store_path() -> Path:
-    configured = os.getenv("INGESTOR_TRADE_STORE_PATH")
-    if configured:
-        return Path(configured)
-    return _default_trade_store_path()
-
-
-def _load_trades(max_rows: int) -> list[_TradeRow]:
-    path = _trade_store_path()
+def _load_trades_from_jsonl(path: Path, max_rows: int) -> list[_TradeRow]:
     if not path.exists():
         return []
-
     lines = path.read_text(encoding="utf-8").splitlines()
     selected = lines[-max_rows:]
     rows = [_TradeRow.model_validate(json.loads(line)) for line in selected]
     rows.sort(key=lambda row: (row.traded_at, row.trade_id))
     return rows
+
+
+def _load_trades_from_db(max_rows: int) -> list[_TradeRow]:
+    from marketsignalos_api.db import db_cursor
+
+    with db_cursor() as cur:
+        cur.execute(  # type: ignore[union-attr]
+            """
+            SELECT source, market_ticker, trade_id, side,
+                   price::float AS price, quantity,
+                   traded_at::text AS traded_at
+            FROM trades
+            ORDER BY traded_at DESC
+            LIMIT %s
+            """,
+            (max_rows,),
+        )
+        rows: list[dict[str, object]] = [dict(r) for r in cur.fetchall()]  # type: ignore[union-attr]
+
+    result = [_TradeRow.model_validate(row) for row in rows]
+    result.sort(key=lambda row: (row.traded_at, row.trade_id))
+    return result
+
+
+def _load_trades(max_rows: int) -> list[_TradeRow]:
+    from marketsignalos_api.db import get_database_url
+
+    if get_database_url():
+        return _load_trades_from_db(max_rows)
+    return _load_trades_from_jsonl(trade_store_path(), max_rows)
 
 
 def _stddev(values: list[int]) -> float:
@@ -123,7 +140,8 @@ def detect_orderflow_anomalies(
                                 anomaly_type="size_outlier",
                                 anomaly_score=round(zscore, 4),
                                 details=(
-                                    f"Quantity z-score {zscore:.2f} versus earlier trades in {trade.market_ticker}"
+                                    f"Quantity z-score {zscore:.2f} versus earlier trades"
+                                    f" in {trade.market_ticker}"
                                 ),
                             )
                         )

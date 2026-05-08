@@ -2,30 +2,12 @@ from __future__ import annotations
 
 import json
 import math
-import os
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 
+from marketsignalos_api._paths import fills_store_path, resolutions_store_path
 from marketsignalos_api.services.leaderboard_models import SurfaceAccountStats
-
-
-def _repo_root() -> Path:
-    return Path(__file__).resolve().parents[5]
-
-
-def _fills_path() -> Path:
-    configured = os.getenv("INGESTOR_FILLS_STORE_PATH")
-    if configured:
-        return Path(configured)
-    return _repo_root() / "services" / "ingestor" / "data" / "kalshi_fills.jsonl"
-
-
-def _resolutions_path() -> Path:
-    configured = os.getenv("INGESTOR_RESOLUTIONS_STORE_PATH")
-    if configured:
-        return Path(configured)
-    return _repo_root() / "services" / "ingestor" / "data" / "kalshi_market_resolutions.jsonl"
 
 
 def _parse_utc(value: str) -> datetime:
@@ -66,25 +48,22 @@ def _coerce_float(value: object) -> float:
     raise ValueError("price must be numeric")
 
 
-def collect_surface_account_stats(*, fresh_days: int, min_resolved: int) -> list[SurfaceAccountStats]:
-    fills = _read_jsonl(_fills_path())
-    resolutions = _read_jsonl(_resolutions_path())
-    if not fills or not resolutions:
-        return []
-
-    resolved_by_market: dict[str, str] = {
-        str(row["market_ticker"]): str(row["settlement_side"]).lower() for row in resolutions
-    }
-    reference_now = max(_parse_utc(str(row["traded_at"])) for row in fills)
-    min_activity = reference_now - timedelta(days=fresh_days)
-
+def _aggregate_fills(
+    fills: list[dict[str, object]],
+    resolved_by_market: dict[str, str],
+    min_activity: datetime,
+) -> dict[str, _Aggregate]:
     by_account: dict[str, _Aggregate] = {}
-
     for row in fills:
         market = str(row["market_ticker"])
         account_id = str(row["account_id"])
         side = str(row["side"]).lower()
-        traded_at = _parse_utc(str(row["traded_at"]))
+
+        traded_at_raw = row["traded_at"]
+        if isinstance(traded_at_raw, datetime):
+            traded_at = traded_at_raw if traded_at_raw.tzinfo else traded_at_raw.replace(tzinfo=timezone.utc)
+        else:
+            traded_at = _parse_utc(str(traded_at_raw))
 
         if traded_at < min_activity:
             continue
@@ -106,7 +85,13 @@ def collect_surface_account_stats(*, fresh_days: int, min_resolved: int) -> list
         aggregate.wins += won
         aggregate.expected_wins += expected
         aggregate.variance += expected * (1.0 - expected)
+    return by_account
 
+
+def _build_output(
+    by_account: dict[str, _Aggregate],
+    min_resolved: int,
+) -> list[SurfaceAccountStats]:
     output: list[SurfaceAccountStats] = []
     for account_id, aggregate in by_account.items():
         if aggregate.resolved_calls < min_resolved:
@@ -127,6 +112,87 @@ def collect_surface_account_stats(*, fresh_days: int, min_resolved: int) -> list
                 z_score=z_score,
             )
         )
-
     output.sort(key=lambda row: (-row.z_score, -row.resolved_calls, row.account_id))
     return output
+
+
+def _collect_from_jsonl(
+    *, fresh_days: int, min_resolved: int
+) -> list[SurfaceAccountStats]:
+    from datetime import timedelta
+
+    fills = _read_jsonl(fills_store_path())
+    resolutions = _read_jsonl(resolutions_store_path())
+    if not fills or not resolutions:
+        return []
+
+    resolved_by_market: dict[str, str] = {
+        str(row["market_ticker"]): str(row["settlement_side"]).lower()
+        for row in resolutions
+    }
+    reference_now = max(_parse_utc(str(row["traded_at"])) for row in fills)
+    min_activity = reference_now - timedelta(days=fresh_days)
+
+    by_account = _aggregate_fills(fills, resolved_by_market, min_activity)
+    return _build_output(by_account, min_resolved)
+
+
+def _collect_from_db(
+    *, fresh_days: int, min_resolved: int
+) -> list[SurfaceAccountStats]:
+    from datetime import datetime, timezone
+
+    from marketsignalos_api.db import db_cursor
+
+    with db_cursor() as cur:
+        cur.execute(  # type: ignore[union-attr]
+            """
+            SELECT
+                f.account_id,
+                f.market_ticker,
+                f.side,
+                f.price::float          AS price,
+                f.traded_at             AS traded_at,
+                mr.settlement_side
+            FROM fills f
+            INNER JOIN market_resolutions mr
+                ON mr.source = f.source
+               AND mr.market_ticker = f.market_ticker
+            WHERE f.traded_at >= now() - make_interval(days => %s)
+            ORDER BY f.traded_at
+            """,
+            (fresh_days,),
+        )
+        rows: list[dict[str, object]] = [dict(r) for r in cur.fetchall()]  # type: ignore[union-attr]
+
+    if not rows:
+        return []
+
+    # Build resolution map and a sentinel min_activity from the query results.
+    resolved_by_market: dict[str, str] = {}
+    min_dt = datetime.max.replace(tzinfo=timezone.utc)
+    max_dt = datetime.min.replace(tzinfo=timezone.utc)
+
+    for row in rows:
+        resolved_by_market[str(row["market_ticker"])] = str(row["settlement_side"]).lower()
+        traded_at = row["traded_at"]
+        if isinstance(traded_at, datetime):
+            if traded_at.tzinfo is None:
+                traded_at = traded_at.replace(tzinfo=timezone.utc)
+            min_dt = min(min_dt, traded_at)
+            max_dt = max(max_dt, traded_at)
+
+    # All rows already filtered by the WHERE clause; use epoch as min_activity floor.
+    min_activity = datetime.min.replace(tzinfo=timezone.utc)
+    by_account = _aggregate_fills(rows, resolved_by_market, min_activity)
+    return _build_output(by_account, min_resolved)
+
+
+def collect_surface_account_stats(
+    *, fresh_days: int, min_resolved: int
+) -> list[SurfaceAccountStats]:
+    from marketsignalos_api.db import get_database_url
+
+    if get_database_url():
+        return _collect_from_db(fresh_days=fresh_days, min_resolved=min_resolved)
+    return _collect_from_jsonl(fresh_days=fresh_days, min_resolved=min_resolved)

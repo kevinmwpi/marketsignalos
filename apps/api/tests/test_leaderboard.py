@@ -102,9 +102,24 @@ def test_leaderboard_returns_ranked_accounts(
 
     assert response.status_code == 200
     payload = response.json()
+    assert isinstance(payload, list)
     assert [row["account_id"] for row in payload] == ["acct-best", "acct-mid"]
     assert payload[0]["skill_likelihood"] > payload[1]["skill_likelihood"]
     assert payload[0]["insider_like_score"] > payload[1]["insider_like_score"]
+
+    required_fields = {
+        "account_id", "account_first_seen_at", "account_age_days",
+        "resolved_calls", "wins", "losses", "win_rate", "expected_wins",
+        "excess_wins", "stddevs_above_expected", "skill_likelihood",
+        "insider_like_score", "anomaly_probability", "last_activity_at",
+    }
+    for row in payload:
+        assert required_fields <= row.keys(), f"leaderboard row missing fields: {row}"
+        assert 0.0 <= row["win_rate"] <= 1.0
+        assert 0.0 <= row["skill_likelihood"] <= 1.0
+        assert 0.0 <= row["insider_like_score"] <= 1.0
+        assert 0.0 <= row["anomaly_probability"] <= 1.0
+        assert row["wins"] + row["losses"] == row["resolved_calls"]
 
 
 def test_leaderboard_returns_empty_without_data(

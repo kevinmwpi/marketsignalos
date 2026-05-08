@@ -30,9 +30,22 @@ def test_orderflow_detects_odds_jumps_and_large_bets(
 
     assert response.status_code == 200
     payload = response.json()
+    assert isinstance(payload, list)
     anomaly_types = {row["anomaly_type"] for row in payload}
     assert "odds_jump" in anomaly_types
     assert "large_bet" in anomaly_types
+
+    required_fields = {
+        "source", "market_ticker", "trade_id", "traded_at",
+        "side", "price", "quantity", "anomaly_type", "anomaly_score", "details",
+    }
+    for row in payload:
+        assert required_fields <= row.keys(), f"anomaly row missing fields: {row}"
+        assert isinstance(row["price"], float)
+        assert isinstance(row["quantity"], int)
+        assert isinstance(row["anomaly_score"], float)
+        assert row["side"] in {"yes", "no"}
+        assert row["anomaly_type"] in {"odds_jump", "size_outlier", "large_bet"}
 
 
 def test_orderflow_returns_empty_when_store_absent(
