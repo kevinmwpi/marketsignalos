@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import Protocol
 
 from .models import (
+    MarketLink,
     PolymarketActivity,
     PolymarketLeaderboardEntry,
     PolymarketMarket,
@@ -60,6 +61,11 @@ class WalletCheckpointStore(Protocol):
 
 class EnrichmentStore(Protocol):
     def write_enrichment(self, enrichments: list[PolymarketWalletEnrichment]) -> int: ...
+
+
+class MarketLinkStore(Protocol):
+    def load_links(self) -> list[MarketLink]: ...
+    def upsert_links(self, links: list[MarketLink]) -> int: ...
 
 
 # ── JSONL implementations ─────────────────────────────────────────────────────
@@ -179,6 +185,54 @@ class JsonlWalletValueStore:
             for v in values:
                 fh.write(json.dumps(asdict(v), separators=(",", ":")) + "\n")
         return len(values)
+
+
+class JsonlMarketLinkStore:
+    """
+    Keyed by (kalshi_ticker, polymarket_condition_id). On upsert, MANUAL
+    decisions are sticky — a re-run of the auto matcher cannot overwrite
+    a human rejection or approval. This is what lets us silence repeated
+    false positives.
+    """
+
+    def __init__(self, path: Path) -> None:
+        self._path = path
+        self._path.parent.mkdir(parents=True, exist_ok=True)
+
+    def load_links(self) -> list[MarketLink]:
+        if not self._path.exists():
+            return []
+        out: list[MarketLink] = []
+        for line in self._path.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                obj = json.loads(line)
+                out.append(MarketLink(**obj))
+            except (json.JSONDecodeError, TypeError):
+                continue
+        return out
+
+    def upsert_links(self, links: list[MarketLink]) -> int:
+        existing = self.load_links()
+        by_key: dict[tuple[str, str], MarketLink] = {
+            (link.kalshi_ticker, link.polymarket_condition_id): link
+            for link in existing
+        }
+        written = 0
+        for incoming in links:
+            key = (incoming.kalshi_ticker, incoming.polymarket_condition_id)
+            current = by_key.get(key)
+            if current is not None and current.matched_by == "manual":
+                # Human decision wins — never overwrite.
+                continue
+            by_key[key] = incoming
+            written += 1
+        with self._path.open("w", encoding="utf-8") as fh:
+            for link in by_key.values():
+                fh.write(json.dumps(asdict(link), separators=(",", ":")) + "\n")
+        return written
 
 
 class JsonlEnrichmentStore:

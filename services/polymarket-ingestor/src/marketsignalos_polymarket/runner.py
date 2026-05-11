@@ -21,7 +21,19 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from .kalshi_markets_fetch import (
+    KalshiMarket,
+    fetch_kalshi_markets,
+    load_kalshi_markets_jsonl,
+    write_kalshi_markets_jsonl,
+)
+from .market_matcher import (
+    MatchConfig,
+    NormalizedMarket,
+    match_markets,
+)
 from .models import (
+    MarketLink,
     PolymarketActivity,
     PolymarketLeaderboardEntry,
     PolymarketMarket,
@@ -34,6 +46,7 @@ from .storage import (
     JsonlActivityStore,
     JsonlEnrichmentStore,
     JsonlLeaderboardStore,
+    JsonlMarketLinkStore,
     JsonlMarketStore,
     JsonlPositionStore,
     JsonlWalletValueStore,
@@ -195,11 +208,13 @@ class _Stores:
     values: JsonlWalletValueStore
     checkpoints: JsonWalletCheckpointStore
     enrichment: JsonlEnrichmentStore
+    market_links: JsonlMarketLinkStore
 
-    # Paths exposed so the enrichment step can re-read the JSONL files.
+    # Paths exposed so reading-only steps can re-read the JSONL files.
     activity_path: Path
     markets_path: Path
     leaderboard_path: Path
+    kalshi_markets_path: Path
 
 
 def _build_stores(data_dir: Path) -> _Stores:
@@ -207,6 +222,7 @@ def _build_stores(data_dir: Path) -> _Stores:
     activity_path = data_dir / "polymarket_activity.jsonl"
     markets_path = data_dir / "polymarket_markets.jsonl"
     leaderboard_path = data_dir / "polymarket_leaderboard.jsonl"
+    kalshi_markets_path = data_dir / "kalshi_markets.jsonl"
     return _Stores(
         leaderboard=JsonlLeaderboardStore(leaderboard_path),
         activity=JsonlActivityStore(activity_path),
@@ -215,9 +231,11 @@ def _build_stores(data_dir: Path) -> _Stores:
         values=JsonlWalletValueStore(data_dir / "polymarket_wallet_values.jsonl"),
         checkpoints=JsonWalletCheckpointStore(data_dir / "polymarket_wallet_checkpoints.json"),
         enrichment=JsonlEnrichmentStore(data_dir / "polymarket_wallet_enrichment.jsonl"),
+        market_links=JsonlMarketLinkStore(data_dir / "market_links.jsonl"),
         activity_path=activity_path,
         markets_path=markets_path,
         leaderboard_path=leaderboard_path,
+        kalshi_markets_path=kalshi_markets_path,
     )
 
 
@@ -545,6 +563,131 @@ def _load_leaderboard_records(path: Path) -> list[PolymarketLeaderboardEntry]:
     return out
 
 
+# ── Cross-exchange matching ──────────────────────────────────────────────────
+
+def _kalshi_to_normalized(market: KalshiMarket) -> NormalizedMarket:
+    """Map a KalshiMarket to the matcher's source-agnostic adapter."""
+    title = market.title or market.subtitle or market.yes_sub_title
+    return NormalizedMarket(
+        source="kalshi",
+        identifier=market.ticker,
+        slug="",
+        title=title,
+        category=market.category,
+        end_date=market.expiration_time or market.close_time,
+    )
+
+
+def _polymarket_to_normalized(market: PolymarketMarket) -> NormalizedMarket:
+    return NormalizedMarket(
+        source="polymarket",
+        identifier=market.condition_id,
+        slug=market.slug,
+        title=market.question,
+        category=market.category,
+        end_date=market.end_date,
+    )
+
+
+def run_fetch_kalshi_markets(stores: _Stores, *, status: str, max_pages: int) -> int:
+    markets = fetch_kalshi_markets(status=status, max_pages=max_pages)
+    written = write_kalshi_markets_jsonl(markets, stores.kalshi_markets_path)
+    log.info("kalshi_markets_written count=%d status=%s path=%s", written, status, stores.kalshi_markets_path)
+    return written
+
+
+def run_match_markets(stores: _Stores, *, config: MatchConfig | None = None) -> int:
+    """
+    Load Kalshi + Polymarket markets from disk, run the matcher, persist
+    market_links.jsonl with manual decisions preserved.
+    """
+    kalshi_raw = load_kalshi_markets_jsonl(stores.kalshi_markets_path)
+    if not kalshi_raw:
+        log.error(
+            "no kalshi markets at %s — run 'fetch-kalshi-markets' first",
+            stores.kalshi_markets_path,
+        )
+        return 0
+    poly_raw = _load_market_records(stores.markets_path)
+    if not poly_raw:
+        log.error("no polymarket markets — run 'markets' first")
+        return 0
+
+    kalshi_norm = [_kalshi_to_normalized(m) for m in kalshi_raw]
+    poly_norm = [_polymarket_to_normalized(m) for m in poly_raw]
+    links = match_markets(kalshi_norm, poly_norm, config=config)
+    written = stores.market_links.upsert_links(links)
+    log.info(
+        "match_markets kalshi=%d polymarket=%d new_or_updated_links=%d total_in_store=%d",
+        len(kalshi_norm), len(poly_norm), written, len(stores.market_links.load_links()),
+    )
+    return written
+
+
+def run_review_matches(stores: _Stores, *, limit: int) -> int:
+    """
+    Interactive CLI: walk through pending matches, prompt y/n/skip, persist decisions.
+    Returns the number of decisions made.
+    """
+    all_links = stores.market_links.load_links()
+    pending = [link for link in all_links if link.status == "pending" and link.matched_by != "manual"]
+    if not pending:
+        print("No pending matches. Run 'match-markets' first.")
+        return 0
+
+    pending.sort(key=lambda link: -link.confidence)
+    decisions = 0
+    print(f"\n{len(pending)} pending match{'es' if len(pending) != 1 else ''}. Reviewing up to {limit}.\n")
+    print("Commands: [y] approve  [n] reject  [s] skip  [q] quit\n")
+
+    for i, link in enumerate(pending[:limit], start=1):
+        print(f"--- {i}/{min(len(pending), limit)} (confidence {link.confidence:.3f}) ---")
+        print(f"  Kalshi    : {link.kalshi_ticker}")
+        print(f"             {link.kalshi_title!r}")
+        print(f"             ends {link.kalshi_end_date}")
+        print(f"  Polymarket: {link.polymarket_slug}")
+        print(f"             {link.polymarket_title!r}")
+        print(f"             ends {link.polymarket_end_date}")
+
+        try:
+            choice = input("Decision [y/n/s/q]: ").strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            print("\nAborted.")
+            break
+
+        if choice == "q":
+            break
+        if choice == "s":
+            continue
+        new_status: str
+        if choice == "y":
+            new_status = "approved"
+        elif choice == "n":
+            new_status = "rejected"
+        else:
+            print("  (unrecognized — treating as skip)")
+            continue
+
+        updated = MarketLink(
+            kalshi_ticker=link.kalshi_ticker,
+            polymarket_condition_id=link.polymarket_condition_id,
+            polymarket_slug=link.polymarket_slug,
+            kalshi_title=link.kalshi_title,
+            polymarket_title=link.polymarket_title,
+            kalshi_end_date=link.kalshi_end_date,
+            polymarket_end_date=link.polymarket_end_date,
+            confidence=link.confidence,
+            status=new_status,
+            matched_by="manual",
+        )
+        stores.market_links.upsert_links([updated])
+        decisions += 1
+        print(f"  -> {new_status}\n")
+
+    log.info("review_matches decisions=%d", decisions)
+    return decisions
+
+
 def run_enrichment(stores: _Stores) -> int:
     """Recompute and overwrite wallet enrichment from the local JSONL stores."""
     activity = _load_activity_records(stores.activity_path)
@@ -602,6 +745,19 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Recompute wallet skill enrichment from the local JSONL stores",
     )
 
+    fk = sub.add_parser("fetch-kalshi-markets", help="Pull Kalshi public markets into kalshi_markets.jsonl")
+    fk.add_argument("--status", default="settled", choices=["open", "closed", "settled"])
+    fk.add_argument("--max-pages", type=int, default=25)
+
+    mm = sub.add_parser("match-markets", help="Run cross-exchange title matcher")
+    mm.add_argument("--date-window-days", type=int, default=3)
+    mm.add_argument("--auto-approve-threshold", type=float, default=0.75)
+    mm.add_argument("--review-threshold", type=float, default=0.35)
+    mm.add_argument("--max-per-kalshi", type=int, default=3)
+
+    rv = sub.add_parser("review-matches", help="Interactively approve/reject pending matches")
+    rv.add_argument("--limit", type=int, default=50)
+
     sub.add_parser("all", help="Run seed + watchlist wallets + markets + enrichment in one pass")
     return parser
 
@@ -656,6 +812,18 @@ def main(argv: list[str] | None = None) -> int:
                 run_markets_backfill_from_activity(client, stores)
         elif args.mode == "enrichment":
             run_enrichment(stores)
+        elif args.mode == "fetch-kalshi-markets":
+            run_fetch_kalshi_markets(stores, status=args.status, max_pages=args.max_pages)
+        elif args.mode == "match-markets":
+            cfg = MatchConfig(
+                date_window_days=args.date_window_days,
+                auto_approve_threshold=args.auto_approve_threshold,
+                review_threshold=args.review_threshold,
+                max_per_kalshi=args.max_per_kalshi,
+            )
+            run_match_markets(stores, config=cfg)
+        elif args.mode == "review-matches":
+            run_review_matches(stores, limit=args.limit)
         elif args.mode == "all":
             addresses = seed_watchlist_from_leaderboard(
                 client, stores, _watchlist_path(), top_n_profit=50, top_n_volume=50

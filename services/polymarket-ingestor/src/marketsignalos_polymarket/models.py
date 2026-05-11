@@ -105,6 +105,33 @@ class PolymarketWalletValue:
 
 
 @dataclass(frozen=True, slots=True)
+class MarketLink:
+    """
+    A candidate cross-exchange identifier mapping.
+
+    status:
+      - "approved":  high-confidence match, used by downstream signals
+      - "pending":   mid-confidence, awaiting manual review
+      - "rejected":  explicitly disqualified (used to silence repeat false positives)
+    matched_by:
+      - "auto":   produced by the similarity matcher
+      - "manual": approved/rejected by a human via review-matches CLI
+    """
+
+    kalshi_ticker: str
+    polymarket_condition_id: str
+    polymarket_slug: str
+    kalshi_title: str
+    polymarket_title: str
+    kalshi_end_date: str
+    polymarket_end_date: str
+    confidence: float
+    status: str
+    matched_by: str
+    matched_at: str = field(default_factory=_utcnow_iso)
+
+
+@dataclass(frozen=True, slots=True)
 class PolymarketWalletEnrichment:
     """
     On-chain skill metrics for a wallet, derived from joining its activity

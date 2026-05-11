@@ -5,6 +5,7 @@ from dataclasses import replace
 from pathlib import Path
 
 from marketsignalos_polymarket.models import (
+    MarketLink,
     PolymarketActivity,
     PolymarketLeaderboardEntry,
     PolymarketMarket,
@@ -14,6 +15,7 @@ from marketsignalos_polymarket.models import (
 from marketsignalos_polymarket.storage import (
     JsonlActivityStore,
     JsonlLeaderboardStore,
+    JsonlMarketLinkStore,
     JsonlMarketStore,
     JsonlPositionStore,
     JsonlWalletValueStore,
@@ -139,3 +141,62 @@ def test_checkpoint_store_persists_across_instances(tmp_path: Path) -> None:
     path = tmp_path / "ckpt.json"
     JsonWalletCheckpointStore(path).set_last_timestamp("0xa", 1234)
     assert JsonWalletCheckpointStore(path).get_last_timestamp("0xa") == 1234
+
+
+def _link(ticker: str, cond: str, status: str, by: str, confidence: float = 0.8) -> MarketLink:
+    return MarketLink(
+        kalshi_ticker=ticker,
+        polymarket_condition_id=cond,
+        polymarket_slug="s",
+        kalshi_title="kt",
+        polymarket_title="pt",
+        kalshi_end_date="2026-01-01T00:00:00Z",
+        polymarket_end_date="2026-01-01T00:00:00Z",
+        confidence=confidence,
+        status=status,
+        matched_by=by,
+    )
+
+
+def test_market_link_store_round_trip(tmp_path: Path) -> None:
+    store = JsonlMarketLinkStore(tmp_path / "links.jsonl")
+    assert store.load_links() == []
+    written = store.upsert_links([_link("K1", "0xp1", "pending", "auto")])
+    assert written == 1
+    assert len(store.load_links()) == 1
+
+
+def test_market_link_store_manual_decisions_are_sticky(tmp_path: Path) -> None:
+    """A re-run of the auto matcher must not overwrite a human rejection."""
+    store = JsonlMarketLinkStore(tmp_path / "links.jsonl")
+    store.upsert_links([_link("K1", "0xp1", "rejected", "manual")])
+
+    # The auto matcher comes back later and tries to insert it as pending —
+    # this would silently re-surface a known false positive. Must be blocked.
+    store.upsert_links([_link("K1", "0xp1", "pending", "auto")])
+
+    links = store.load_links()
+    assert len(links) == 1
+    assert links[0].status == "rejected"
+    assert links[0].matched_by == "manual"
+
+
+def test_market_link_store_auto_can_be_updated_by_another_auto_pass(tmp_path: Path) -> None:
+    """If matched_by is still 'auto', a re-run CAN update confidence / status."""
+    store = JsonlMarketLinkStore(tmp_path / "links.jsonl")
+    store.upsert_links([_link("K1", "0xp1", "pending", "auto", confidence=0.5)])
+    store.upsert_links([_link("K1", "0xp1", "approved", "auto", confidence=0.9)])
+    links = store.load_links()
+    assert len(links) == 1
+    assert links[0].status == "approved"
+    assert links[0].confidence == 0.9
+
+
+def test_market_link_store_separate_keys_dont_collide(tmp_path: Path) -> None:
+    store = JsonlMarketLinkStore(tmp_path / "links.jsonl")
+    store.upsert_links([
+        _link("K1", "0xp1", "approved", "auto"),
+        _link("K1", "0xp2", "pending", "auto"),
+        _link("K2", "0xp1", "pending", "auto"),
+    ])
+    assert len(store.load_links()) == 3
