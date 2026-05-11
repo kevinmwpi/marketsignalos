@@ -1,6 +1,8 @@
 export const dynamic = "force-dynamic";
 
+import CrossExchangePanel, { type CrossExchangeSignal } from "./components/CrossExchangePanel";
 import IngestButton from "./components/IngestButton";
+import PolymarketLeaderboardPanel, { type PolymarketWalletSkill } from "./components/PolymarketLeaderboardPanel";
 
 type LeaderboardRow = {
   account_id: string;
@@ -131,8 +133,17 @@ async function getDashboardData(apiBase: string): Promise<{
   leaderboard: ApiResult<LeaderboardRow[]>;
   orderflow: ApiResult<OrderflowAnomaly[]>;
   profiles: ApiResult<ProfileSummary[]>;
+  polymarketLeaderboard: ApiResult<PolymarketWalletSkill[]>;
+  crossExchange: ApiResult<CrossExchangeSignal[]>;
 }> {
-  const [dashboard, leaderboard, orderflow, profiles] = await Promise.all([
+  const [
+    dashboard,
+    leaderboard,
+    orderflow,
+    profiles,
+    polymarketLeaderboard,
+    crossExchange,
+  ] = await Promise.all([
     fetchJson<OpportunityDashboard>(
       apiUrl(apiBase, "/signals/opportunities?fresh_days=30&min_resolved=20&limit=10"),
       "opportunity API",
@@ -149,9 +160,17 @@ async function getDashboardData(apiBase: string): Promise<{
       apiUrl(apiBase, "/signals/profiles?limit=50"),
       "profiles API",
     ),
+    fetchJson<PolymarketWalletSkill[]>(
+      apiUrl(apiBase, "/signals/polymarket-leaderboard?min_resolved=5&limit=10"),
+      "polymarket leaderboard API",
+    ),
+    fetchJson<CrossExchangeSignal[]>(
+      apiUrl(apiBase, "/signals/cross-exchange?min_skill=0.6&min_resolved=5&min_dislocation_pct=2&limit=15"),
+      "cross-exchange API",
+    ),
   ]);
 
-  return { dashboard, leaderboard, orderflow, profiles };
+  return { dashboard, leaderboard, orderflow, profiles, polymarketLeaderboard, crossExchange };
 }
 
 function formatPercent(value: number): string {
@@ -496,15 +515,24 @@ function ErrorBanner({ errors }: { errors: string[] }) {
 
 export default async function Home() {
   const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8080";
-  const { dashboard, leaderboard, orderflow, profiles } = await getDashboardData(apiBase);
+  const { dashboard, leaderboard, orderflow, profiles, polymarketLeaderboard, crossExchange } =
+    await getDashboardData(apiBase);
   const summary = dashboard.data?.summary ?? emptySummary;
   const opportunities = dashboard.data?.opportunities ?? [];
   const leaderboardRows = leaderboard.data ?? [];
   const orderflowRows = orderflow.data ?? [];
   const profileRows = profiles.data ?? [];
-  const errors = [dashboard.error, leaderboard.error, orderflow.error].filter(
-    (error): error is string => Boolean(error),
-  );
+  const polymarketLeaderboardRows = polymarketLeaderboard.data ?? [];
+  const crossExchangeSignals = crossExchange.data ?? [];
+  const crossExchangeGeneratedAt =
+    crossExchangeSignals.length > 0 ? crossExchangeSignals[0].observed_at : null;
+  const errors = [
+    dashboard.error,
+    leaderboard.error,
+    orderflow.error,
+    polymarketLeaderboard.error,
+    crossExchange.error,
+  ].filter((error): error is string => Boolean(error));
   const isLive = errors.length === 0;
 
   return (
@@ -582,6 +610,14 @@ export default async function Home() {
           />
         </section>
 
+        {/* Cross-exchange dislocations — the marquee signal */}
+        <div className="mb-8">
+          <CrossExchangePanel
+            generatedAt={crossExchangeGeneratedAt}
+            signals={crossExchangeSignals}
+          />
+        </div>
+
         {/* Main two-column layout */}
         <div className="grid gap-6 xl:grid-cols-[1fr_320px]">
           {/* Opportunity Queue */}
@@ -613,6 +649,7 @@ export default async function Home() {
 
           {/* Sidebar */}
           <aside className="space-y-4">
+            <PolymarketLeaderboardPanel rows={polymarketLeaderboardRows} />
             <LeaderboardPanel rows={leaderboardRows} />
             <OrderflowPanel rows={orderflowRows} />
           </aside>
