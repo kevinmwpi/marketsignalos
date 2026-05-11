@@ -15,7 +15,7 @@ class StubKalshiClient:
 
     def list_trades(
         self,
-        ticker: str,
+        ticker: str | None = None,
         *,
         limit: int = 500,
         cursor: str | None = None,
@@ -28,11 +28,12 @@ class StubKalshiClient:
             "trades": [
                 {
                     "trade_id": "trade-1",
-                    "side": "yes",
-                    "yes_price": 61,
-                    "no_price": 39,
-                    "count": 4,
+                    "taker_side": "yes",
+                    "yes_price_dollars": "0.6100",
+                    "no_price_dollars": "0.3900",
+                    "count_fp": "4.00",
                     "created_time": "2026-01-01T00:00:00Z",
+                    "ticker": "KXTEST",
                 }
             ],
         }
@@ -100,6 +101,7 @@ def test_runner_writes_trade_fill_and_resolution_outputs(
 ) -> None:
     monkeypatch.setenv("INGESTOR_DATA_DIR", str(tmp_path))
     monkeypatch.setenv("INGEST_MARKET_TICKERS", "KXTEST")
+    monkeypatch.delenv("INGEST_AUTO_DISCOVER", raising=False)
     monkeypatch.setenv("KALSHI_API_KEY", "test-key")  # satisfies startup validation
     monkeypatch.delenv("INGEST_CONTINUOUS", raising=False)
     monkeypatch.setattr(runner, "KalshiClient", StubKalshiClient)

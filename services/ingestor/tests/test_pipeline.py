@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from marketsignalos_ingestor.pipeline import (
     KalshiFillIngestionPipeline,
     KalshiResolutionIngestionPipeline,
@@ -11,18 +13,19 @@ class StubKalshiClient:
     def __init__(self) -> None:
         self.last_call: dict[str, object] | None = None
 
-    def list_trades(self, ticker: str, *, limit: int = 500, cursor: str | None = None) -> dict[str, object]:
+    def list_trades(self, ticker: str | None = None, *, limit: int = 500, cursor: str | None = None) -> dict[str, object]:
         self.last_call = {"ticker": ticker, "limit": limit, "cursor": cursor}
         return {
             "cursor": "next-page",
             "trades": [
                 {
                     "trade_id": "42",
-                    "side": "yes",
-                    "yes_price": 62,
-                    "no_price": 38,
-                    "count": 7,
+                    "taker_side": "yes",
+                    "yes_price_dollars": "0.62",
+                    "no_price_dollars": "0.38",
+                    "count_fp": "7.00",
                     "created_time": "2026-01-01T00:00:00Z",
+                    "ticker": "KXTEST-1",
                 }
             ],
         }
@@ -44,7 +47,7 @@ def test_pull_trade_batch_normalizes_payload() -> None:
     assert trade.market_ticker == "KXTEST-1"
     assert trade.trade_id == "42"
     assert trade.side == "yes"
-    assert trade.price == 62.0
+    assert trade.price == pytest.approx(0.62)
     assert trade.quantity == 7
     assert trade.traded_at == "2026-01-01T00:00:00Z"
 

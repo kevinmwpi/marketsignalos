@@ -32,3 +32,8 @@ def resolutions_store_path() -> Path:
 def enrichment_store_path() -> Path:
     configured = os.getenv("INGESTOR_ACCOUNT_ENRICHMENT_STORE_PATH")
     return Path(configured) if configured else _data_dir() / "kalshi_account_enrichment.jsonl"
+
+
+def profile_snapshots_path() -> Path:
+    configured = os.getenv("KALSHI_PROFILE_SNAPSHOTS_PATH")
+    return Path(configured) if configured else _data_dir() / "kalshi_profile_snapshots.jsonl"

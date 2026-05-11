@@ -27,6 +27,11 @@ class MarketsPayload(TypedDict, total=False):
     cursor: str | None
 
 
+class EventsPayload(TypedDict, total=False):
+    events: list[object]
+    cursor: str | None
+
+
 @dataclass(frozen=True, slots=True)
 class KalshiClientConfig:
     base_url: str = DEFAULT_BASE_URL
@@ -65,15 +70,18 @@ class KalshiClient:
 
     def list_trades(
         self,
-        ticker: str,
+        ticker: str | None = None,
         *,
         limit: int = 500,
         cursor: str | None = None,
     ) -> TradesPayload:
-        params: dict[str, str | int] = {"ticker": ticker, "limit": limit}
+        # Public endpoint — no auth required; returns all market trades with no account IDs.
+        params: dict[str, str | int] = {"limit": limit}
+        if ticker:
+            params["ticker"] = ticker
         if cursor:
             params["cursor"] = cursor
-        return self._request_with_retries("GET", "/portfolio/trades", params=params)  # type: ignore[return-value]
+        return self._request_with_retries("GET", "/markets/trades", params=params)  # type: ignore[return-value]
 
     def list_fills(
         self,
@@ -87,16 +95,34 @@ class KalshiClient:
             params["cursor"] = cursor
         return self._request_with_retries("GET", "/portfolio/fills", params=params)  # type: ignore[return-value]
 
+    def list_events(
+        self,
+        *,
+        status: str = "open",
+        limit: int = 200,
+        cursor: str | None = None,
+        series_ticker: str | None = None,
+    ) -> EventsPayload:
+        params: dict[str, str | int] = {"status": status, "limit": limit}
+        if cursor:
+            params["cursor"] = cursor
+        if series_ticker:
+            params["series_ticker"] = series_ticker
+        return self._request_with_retries("GET", "/events", params=params)  # type: ignore[return-value]
+
     def list_markets(
         self,
         *,
         status: str = "settled",
         limit: int = 200,
         cursor: str | None = None,
+        event_ticker: str | None = None,
     ) -> MarketsPayload:
         params: dict[str, str | int] = {"status": status, "limit": limit}
         if cursor:
             params["cursor"] = cursor
+        if event_ticker:
+            params["event_ticker"] = event_ticker
         return self._request_with_retries("GET", "/markets", params=params)  # type: ignore[return-value]
 
     def _request_with_retries(

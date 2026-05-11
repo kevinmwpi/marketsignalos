@@ -13,8 +13,8 @@ def test_trades_endpoint_returns_latest_rows(tmp_path: Path, monkeypatch: pytest
     trade_store.write_text(
         "\n".join(
             [
-                '{"source":"kalshi","market_ticker":"T1","trade_id":"1","side":"yes","price":61,"quantity":2,"traded_at":"2026-01-01T00:00:00Z"}',
-                '{"source":"kalshi","market_ticker":"T2","trade_id":"2","side":"no","price":44,"quantity":1,"traded_at":"2026-01-01T00:01:00Z"}',
+                '{"source":"kalshi","market_ticker":"T1","trade_id":"1","side":"yes","price":0.61,"quantity":2,"traded_at":"2026-01-01T00:00:00Z"}',
+                '{"source":"kalshi","market_ticker":"T2","trade_id":"2","side":"no","price":0.44,"quantity":1,"traded_at":"2026-01-01T00:01:00Z"}',
             ]
         )
         + "\n",
@@ -33,7 +33,7 @@ def test_trades_endpoint_returns_latest_rows(tmp_path: Path, monkeypatch: pytest
             "market_ticker": "T2",
             "trade_id": "2",
             "side": "no",
-            "price": 44.0,
+            "price": 0.44,
             "quantity": 1,
             "traded_at": "2026-01-01T00:01:00Z",
         }

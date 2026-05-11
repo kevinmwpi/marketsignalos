@@ -29,7 +29,7 @@ class ResolutionIngestionBatch:
 class TradesClient(Protocol):
     def list_trades(
         self,
-        ticker: str,
+        ticker: str | None = None,
         *,
         limit: int = 500,
         cursor: str | None = None,
@@ -71,7 +71,7 @@ class KalshiTradeIngestionPipeline:
 
     def pull_trade_batch(
         self,
-        ticker: str,
+        ticker: str | None = None,
         *,
         cursor: str | None = None,
         limit: int = 500,
@@ -84,25 +84,42 @@ class KalshiTradeIngestionPipeline:
             raise ValueError("Kalshi cursor must be a string when present")
 
         return IngestionBatch(
-            ticker=ticker,
+            ticker=ticker or "",
             trades=normalized,
             next_cursor=next_cursor,
         )
 
     @staticmethod
-    def _normalize_trade(ticker: str, payload: object) -> NormalizedTrade:
+    def _normalize_trade(ticker: str | None, payload: object) -> NormalizedTrade:
         if not isinstance(payload, dict):
             raise ValueError("Kalshi trade payload must be an object")
 
         trade_id = str(payload["trade_id"])
-        side = str(payload["side"]).lower()
-        price = float(payload["yes_price"] if side == "yes" else payload["no_price"])
-        quantity = int(payload["count"])
+
+        # Public /markets/trades uses taker_side; /portfolio/trades uses side.
+        side = str(payload.get("taker_side") or payload.get("side", "yes")).lower()
+
+        # Public endpoint: yes_price_dollars (dollar string like "0.86").
+        # Portfolio endpoint: yes_price / no_price (cents int like 86).
+        if "yes_price_dollars" in payload:
+            price = float(payload["yes_price_dollars"] if side == "yes" else payload["no_price_dollars"])
+        else:
+            raw_cents = int(payload["yes_price"] if side == "yes" else payload["no_price"])
+            price = raw_cents / 100.0
+
+        # Public endpoint: count_fp (fractional float string). Portfolio: count (int).
+        if "count_fp" in payload:
+            quantity = max(1, round(float(payload["count_fp"])))
+        else:
+            quantity = int(payload["count"])
+
+        # Public endpoint includes ticker per trade; use that if no ticker was requested.
+        actual_ticker = str(payload.get("ticker") or ticker or "")
         traded_at = str(payload["created_time"])
 
         return NormalizedTrade(
             source="kalshi",
-            market_ticker=ticker,
+            market_ticker=actual_ticker,
             trade_id=trade_id,
             side=side,
             price=price,

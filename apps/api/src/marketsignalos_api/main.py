@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, PlainTextResponse
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
 from marketsignalos_api.api.routes.health import router as health_router
+from marketsignalos_api.api.routes.ingestor import router as ingestor_router
 from marketsignalos_api.api.routes.leaderboard import router as leaderboard_router
 from marketsignalos_api.api.routes.orderflow import router as orderflow_router
 from marketsignalos_api.api.routes.opportunities import router as opportunities_router
+from marketsignalos_api.api.routes.profiles import router as profiles_router
 from marketsignalos_api.api.routes.trades import router as trades_router
 
 
@@ -371,11 +374,20 @@ def create_app() -> FastAPI:
         version="0.1.0",
     )
 
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_methods=["GET", "POST"],
+        allow_headers=["*"],
+    )
+
     app.include_router(health_router)
+    app.include_router(ingestor_router)
     app.include_router(trades_router)
     app.include_router(leaderboard_router)
     app.include_router(orderflow_router)
     app.include_router(opportunities_router)
+    app.include_router(profiles_router)
 
 
     @app.get("/", response_class=HTMLResponse, include_in_schema=False)

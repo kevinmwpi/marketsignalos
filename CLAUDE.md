@@ -55,7 +55,11 @@ npm ci
 | `PORT` | API server | Defaults to `8080`; Railway injects this automatically |
 | `NEXT_PUBLIC_API_BASE_URL` | Next.js frontend | e.g. `http://localhost:8000` |
 | `DATABASE_URL` | API + Ingestor | Postgres connection string (not yet wired in code) |
-| `KALSHI_API_KEY` | Ingestor | Kalshi auth (not yet wired in code) |
+| `KALSHI_API_KEY` | Ingestor | Kalshi bearer auth token |
+| `INGEST_AUTO_DISCOVER` | Ingestor | Set to `1` to auto-discover active markets |
+| `INGEST_SCRAPE_LEADERBOARD` | Ingestor | Set to `1` to scrape Kalshi leaderboard via Playwright |
+| `KALSHI_WATCHLIST_PATH` | Ingestor | Path to manual watchlist JSONL |
+| `KALSHI_PROFILE_SNAPSHOTS_PATH` | Ingestor + API | Path to scraped profile snapshots JSONL |
 
 ---
 

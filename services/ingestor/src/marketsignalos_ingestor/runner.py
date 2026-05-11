@@ -8,6 +8,12 @@ from pathlib import Path
 
 from .enrichment import compute_enrichment
 from .kalshi_client import KalshiClient, KalshiClientConfig
+from .leaderboard_scraper import (
+    load_watchlist,
+    scrape_leaderboard_with_playwright,
+    scrape_profiles_with_playwright,
+)
+from .market_discovery import discover_active_tickers
 from .pipeline import (
     KalshiFillIngestionPipeline,
     KalshiResolutionIngestionPipeline,
@@ -53,10 +59,11 @@ def _data_dir() -> Path:
 
 def _tickers() -> list[str]:
     raw = os.getenv("INGEST_MARKET_TICKERS", "")
-    out = [ticker.strip() for ticker in raw.split(",") if ticker.strip()]
-    if not out:
-        raise ValueError("INGEST_MARKET_TICKERS must contain at least one ticker")
-    return out
+    return [ticker.strip() for ticker in raw.split(",") if ticker.strip()]
+
+
+def _auto_discover() -> bool:
+    return os.getenv("INGEST_AUTO_DISCOVER", "false").strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _interval_seconds() -> float:
@@ -72,9 +79,20 @@ def _continuous_mode() -> bool:
     return raw in {"1", "true", "yes", "on"}
 
 
+def _scrape_leaderboard_enabled() -> bool:
+    return os.getenv("INGEST_SCRAPE_LEADERBOARD", "false").strip().lower() in {
+        "1", "true", "yes", "on"
+    }
+
+
 def _validate_config() -> None:
     """Fail fast at startup if required configuration is missing."""
-    _tickers()  # raises ValueError when empty
+    tickers = _tickers()
+    if not tickers and not _auto_discover():
+        raise ValueError(
+            "No markets configured. Set INGEST_MARKET_TICKERS=TICKER1,TICKER2 "
+            "or INGEST_AUTO_DISCOVER=1 to discover markets automatically."
+        )
 
     has_bearer = bool(os.getenv("KALSHI_API_KEY"))
     has_keypair = bool(os.getenv("KALSHI_API_KEY_ID")) and bool(
@@ -153,16 +171,25 @@ def main() -> int:
         checkpoints,
     )
 
-    tickers = _tickers()
+    static_tickers = _tickers()
+    auto_discover = _auto_discover()
     continuous = _continuous_mode()
     interval_seconds = _interval_seconds() if continuous else 0.0
 
     log.info(
-        "ingestor starting tickers=%s continuous=%s interval_seconds=%s",
-        tickers,
+        "ingestor starting static_tickers=%s auto_discover=%s continuous=%s interval_seconds=%s",
+        static_tickers,
+        auto_discover,
         continuous,
         interval_seconds,
     )
+
+    # Discover tickers now if auto-discover is on; re-discover each cycle in continuous mode.
+    tickers: list[str] = static_tickers
+    if auto_discover and not static_tickers:
+        log.info("discovery running initial market scan")
+        tickers = discover_active_tickers(client)
+        log.info("discovery found=%d tickers", len(tickers))
 
     try:
         while not stop:
@@ -210,6 +237,26 @@ def main() -> int:
             except Exception as exc:
                 log.warning("enrichment computation failed (non-fatal): %s", exc)
 
+            # Optionally scrape the Kalshi leaderboard page for public account data.
+            if _scrape_leaderboard_enabled():
+                try:
+                    scrape_snapshots = scrape_leaderboard_with_playwright(persist=True)
+                    log.info("leaderboard_scrape snapshots=%d", len(scrape_snapshots))
+                    # Also scrape individual profiles for anyone on the watchlist.
+                    watchlist = load_watchlist()
+                    if watchlist:
+                        watched_usernames = [e.username for e in watchlist]
+                        profile_snapshots = scrape_profiles_with_playwright(
+                            watched_usernames, persist=True
+                        )
+                        log.info(
+                            "profile_scrape snapshots=%d usernames=%d",
+                            len(profile_snapshots),
+                            len(watched_usernames),
+                        )
+                except Exception as exc:
+                    log.warning("leaderboard scrape failed (non-fatal): %s", exc)
+
             log.info(
                 "cycle_summary tickers=%d trades_written=%d fills_written=%d "
                 "resolutions_written=%d",
@@ -222,6 +269,14 @@ def main() -> int:
             if stop or not continuous:
                 break
             time.sleep(interval_seconds)
+
+            # Refresh the ticker list each cycle when auto-discovering.
+            if auto_discover and not static_tickers and not stop:
+                try:
+                    tickers = discover_active_tickers(client)
+                    log.info("discovery refreshed tickers=%d", len(tickers))
+                except Exception as exc:
+                    log.warning("discovery refresh failed (non-fatal): %s", exc)
     finally:
         client.close()
         log.info("ingestor stopped")

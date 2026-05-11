@@ -24,6 +24,9 @@ dev = [
   "pytest",
   "ruff",
 ]
+scraper = [
+  "playwright>=1.44",
+]
 
 [tool.setuptools]
 package-dir = {"" = "src"}
