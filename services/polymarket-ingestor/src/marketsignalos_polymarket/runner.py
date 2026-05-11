@@ -29,8 +29,10 @@ from .models import (
     PolymarketWalletValue,
 )
 from .polymarket_client import PolymarketClient, PolymarketClientConfig
+from .skill_computation import compute_all_enrichment
 from .storage import (
     JsonlActivityStore,
+    JsonlEnrichmentStore,
     JsonlLeaderboardStore,
     JsonlMarketStore,
     JsonlPositionStore,
@@ -192,17 +194,30 @@ class _Stores:
     markets: JsonlMarketStore
     values: JsonlWalletValueStore
     checkpoints: JsonWalletCheckpointStore
+    enrichment: JsonlEnrichmentStore
+
+    # Paths exposed so the enrichment step can re-read the JSONL files.
+    activity_path: Path
+    markets_path: Path
+    leaderboard_path: Path
 
 
 def _build_stores(data_dir: Path) -> _Stores:
     data_dir.mkdir(parents=True, exist_ok=True)
+    activity_path = data_dir / "polymarket_activity.jsonl"
+    markets_path = data_dir / "polymarket_markets.jsonl"
+    leaderboard_path = data_dir / "polymarket_leaderboard.jsonl"
     return _Stores(
-        leaderboard=JsonlLeaderboardStore(data_dir / "polymarket_leaderboard.jsonl"),
-        activity=JsonlActivityStore(data_dir / "polymarket_activity.jsonl"),
+        leaderboard=JsonlLeaderboardStore(leaderboard_path),
+        activity=JsonlActivityStore(activity_path),
         positions=JsonlPositionStore(data_dir / "polymarket_positions.jsonl"),
-        markets=JsonlMarketStore(data_dir / "polymarket_markets.jsonl"),
+        markets=JsonlMarketStore(markets_path),
         values=JsonlWalletValueStore(data_dir / "polymarket_wallet_values.jsonl"),
         checkpoints=JsonWalletCheckpointStore(data_dir / "polymarket_wallet_checkpoints.json"),
+        enrichment=JsonlEnrichmentStore(data_dir / "polymarket_wallet_enrichment.jsonl"),
+        activity_path=activity_path,
+        markets_path=markets_path,
+        leaderboard_path=leaderboard_path,
     )
 
 
@@ -375,10 +390,18 @@ def run_markets(
     closed: bool | None,
     pages: int,
     page_size: int,
+    order: str = "endDate",
+    ascending: bool = False,
 ) -> int:
     total = 0
     for page in range(pages):
-        raw = client.get_markets(closed=closed, limit=page_size, offset=page * page_size)
+        raw = client.get_markets(
+            closed=closed,
+            limit=page_size,
+            offset=page * page_size,
+            order=order,
+            ascending=ascending,
+        )
         if not raw:
             break
         parsed = [parse_market_row(r) for r in raw]
@@ -387,6 +410,152 @@ def run_markets(
         if len(raw) < page_size:
             break
     return total
+
+
+def run_markets_backfill_from_activity(
+    client: PolymarketClient, stores: _Stores
+) -> int:
+    """
+    Find every condition_id referenced in the local activity store, look up
+    which ones we DON'T already have in the markets store, and fetch them
+    directly by condition_id. This closes the join gap for skill scoring.
+    """
+    activity_rows = _read_jsonl(stores.activity_path)
+    activity_conds = {
+        str(r.get("condition_id", "")) for r in activity_rows
+        if r.get("type") == "TRADE" and r.get("condition_id")
+    }
+    if not activity_conds:
+        return 0
+
+    existing_market_rows = _read_jsonl(stores.markets_path)
+    known_conds = {str(r.get("condition_id", "")) for r in existing_market_rows}
+    missing = sorted(activity_conds - known_conds)
+    if not missing:
+        log.info("markets_backfill missing=0 (all activity condition_ids already cached)")
+        return 0
+
+    log.info(
+        "markets_backfill activity_conds=%d known=%d missing=%d",
+        len(activity_conds), len(known_conds), len(missing),
+    )
+    raw = client.get_markets_by_condition_ids(missing)
+    parsed = [parse_market_row(r) for r in raw]
+    written = stores.markets.write_markets(parsed)
+    log.info("markets_backfill fetched=%d written=%d", len(raw), written)
+    return written
+
+
+# ── JSONL readers (for the enrichment pass) ──────────────────────────────────
+
+def _read_jsonl(path: Path) -> list[dict[str, Any]]:
+    if not path.exists():
+        return []
+    rows: list[dict[str, Any]] = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            obj = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(obj, dict):
+            rows.append(obj)
+    return rows
+
+
+def _load_activity_records(path: Path) -> list[PolymarketActivity]:
+    out: list[PolymarketActivity] = []
+    for row in _read_jsonl(path):
+        try:
+            out.append(
+                PolymarketActivity(
+                    proxy_wallet=str(row.get("proxy_wallet", "")),
+                    timestamp=int(row.get("timestamp", 0) or 0),
+                    condition_id=str(row.get("condition_id", "")),
+                    type=str(row.get("type", "")),
+                    side=str(row.get("side", "")),
+                    size=_as_float(row.get("size")),
+                    usdc_size=_as_float(row.get("usdc_size")),
+                    price=_as_float(row.get("price")),
+                    outcome_index=int(row.get("outcome_index", 0) or 0),
+                    outcome=str(row.get("outcome", "")),
+                    slug=str(row.get("slug", "")),
+                    title=str(row.get("title", "")),
+                    event_slug=str(row.get("event_slug", "")),
+                    transaction_hash=str(row.get("transaction_hash", "")),
+                    name=str(row.get("name", "")),
+                    pseudonym=str(row.get("pseudonym", "")),
+                )
+            )
+        except (TypeError, ValueError) as exc:
+            log.warning("activity_row_parse_failed error=%s row_keys=%s", exc, list(row.keys())[:5])
+    return out
+
+
+def _load_market_records(path: Path) -> list[PolymarketMarket]:
+    out: list[PolymarketMarket] = []
+    for row in _read_jsonl(path):
+        try:
+            outcomes_raw = row.get("outcomes")
+            prices_raw = row.get("outcome_prices")
+            out.append(
+                PolymarketMarket(
+                    gamma_id=str(row.get("gamma_id", "")),
+                    condition_id=str(row.get("condition_id", "")),
+                    slug=str(row.get("slug", "")),
+                    question=str(row.get("question", "")),
+                    category=str(row.get("category", "")),
+                    end_date=str(row.get("end_date", "")),
+                    outcomes=[str(o) for o in outcomes_raw] if isinstance(outcomes_raw, list) else [],
+                    outcome_prices=[_as_float(p) for p in prices_raw] if isinstance(prices_raw, list) else [],
+                    volume_usdc=_as_float(row.get("volume_usdc")),
+                    liquidity_usdc=_as_float(row.get("liquidity_usdc")),
+                    closed=bool(row.get("closed", False)),
+                    active=bool(row.get("active", False)),
+                    last_trade_price=_as_float_or_none(row.get("last_trade_price")),
+                    best_bid=_as_float_or_none(row.get("best_bid")),
+                    best_ask=_as_float_or_none(row.get("best_ask")),
+                    fetched_at=str(row.get("fetched_at", "")),
+                )
+            )
+        except (TypeError, ValueError) as exc:
+            log.warning("market_row_parse_failed error=%s", exc)
+    return out
+
+
+def _load_leaderboard_records(path: Path) -> list[PolymarketLeaderboardEntry]:
+    out: list[PolymarketLeaderboardEntry] = []
+    for row in _read_jsonl(path):
+        try:
+            out.append(
+                PolymarketLeaderboardEntry(
+                    proxy_wallet=str(row.get("proxy_wallet", "")),
+                    name=str(row.get("name", "")),
+                    pseudonym=str(row.get("pseudonym", "")),
+                    amount_usdc=_as_float(row.get("amount_usdc")),
+                    metric=str(row.get("metric", "")),
+                    window=str(row.get("window", "")),
+                    fetched_at=str(row.get("fetched_at", "")),
+                )
+            )
+        except (TypeError, ValueError):
+            continue
+    return out
+
+
+def run_enrichment(stores: _Stores) -> int:
+    """Recompute and overwrite wallet enrichment from the local JSONL stores."""
+    activity = _load_activity_records(stores.activity_path)
+    markets = _load_market_records(stores.markets_path)
+    leaderboard = _load_leaderboard_records(stores.leaderboard_path)
+    enrichments = compute_all_enrichment(
+        activity=activity, markets=markets, leaderboard=leaderboard
+    )
+    written = stores.enrichment.write_enrichment(enrichments)
+    log.info("enrichment_written wallets=%d", written)
+    return written
 
 
 # ── CLI ───────────────────────────────────────────────────────────────────────
@@ -420,8 +589,20 @@ def _build_parser() -> argparse.ArgumentParser:
     mk.add_argument("--active", action="store_true", help="Fetch only active markets")
     mk.add_argument("--pages", type=int, default=5)
     mk.add_argument("--page-size", type=int, default=100)
+    mk.add_argument("--order", default="endDate", help="Sort field (endDate, updatedAt, volumeNum)")
+    mk.add_argument("--ascending", action="store_true", help="Sort ascending (default: descending)")
+    mk.add_argument(
+        "--backfill-from-activity",
+        action="store_true",
+        help="Also fetch any condition_ids present in activity but missing from markets store",
+    )
 
-    sub.add_parser("all", help="Run leaderboard + watchlist wallets + markets in one pass")
+    sub.add_parser(
+        "enrichment",
+        help="Recompute wallet skill enrichment from the local JSONL stores",
+    )
+
+    sub.add_parser("all", help="Run seed + watchlist wallets + markets + enrichment in one pass")
     return parser
 
 
@@ -467,7 +648,14 @@ def main(argv: list[str] | None = None) -> int:
                 closed = True
             elif args.active:
                 closed = False
-            run_markets(client, stores, closed=closed, pages=args.pages, page_size=args.page_size)
+            run_markets(
+                client, stores, closed=closed, pages=args.pages, page_size=args.page_size,
+                order=args.order, ascending=args.ascending,
+            )
+            if args.backfill_from_activity:
+                run_markets_backfill_from_activity(client, stores)
+        elif args.mode == "enrichment":
+            run_enrichment(stores)
         elif args.mode == "all":
             addresses = seed_watchlist_from_leaderboard(
                 client, stores, _watchlist_path(), top_n_profit=50, top_n_volume=50
@@ -480,7 +668,11 @@ def main(argv: list[str] | None = None) -> int:
                     activity_page_size=500,
                     max_pages_per_wallet=20,
                 )
-            run_markets(client, stores, closed=None, pages=5, page_size=100)
+            run_markets(client, stores, closed=True, pages=5, page_size=100)
+            # Backfill any condition_ids that wallets traded on but we haven't fetched yet —
+            # this is what makes skill scoring actually work for top-trader wallets.
+            run_markets_backfill_from_activity(client, stores)
+            run_enrichment(stores)
     finally:
         client.close()
     return 0

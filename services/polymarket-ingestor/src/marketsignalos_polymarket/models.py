@@ -102,3 +102,27 @@ class PolymarketWalletValue:
     proxy_wallet: str
     value_usdc: float
     snapshot_at: str = field(default_factory=_utcnow_iso)
+
+
+@dataclass(frozen=True, slots=True)
+class PolymarketWalletEnrichment:
+    """
+    On-chain skill metrics for a wallet, derived from joining its activity
+    stream against resolved markets. Recomputed each enrichment pass.
+    """
+
+    proxy_wallet: str
+    name: str
+    pseudonym: str
+    resolved_trades: int  # bets that settled (won + lost)
+    wins: int
+    losses: int
+    win_rate: float
+    skill_likelihood: float  # 1 - binomial_cdf(wins-1, n=resolved, p=0.5)
+    stddevs_above_expected: float  # z-score vs 50% null
+    total_volume_usdc: float  # sum of |usdc_size| across all TRADE events
+    total_pnl_usdc: float  # realized + unrealized-at-resolution
+    avg_position_size_usdc: float
+    trade_count: int  # total TRADE events (not bets — fills can be multiple per bet)
+    last_activity_at: int  # unix timestamp of most recent activity
+    computed_at: str = field(default_factory=_utcnow_iso)

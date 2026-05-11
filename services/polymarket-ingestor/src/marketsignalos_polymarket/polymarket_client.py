@@ -131,6 +131,9 @@ class PolymarketClient:
         closed: bool | None = None,
         limit: int = 100,
         offset: int = 0,
+        order: str | None = None,
+        ascending: bool | None = None,
+        condition_ids: list[str] | None = None,
     ) -> list[dict[str, Any]]:
         params: dict[str, Any] = {"limit": limit}
         if active is not None:
@@ -139,10 +142,28 @@ class PolymarketClient:
             params["closed"] = "true" if closed else "false"
         if offset:
             params["offset"] = offset
+        if order:
+            params["order"] = order
+        if ascending is not None:
+            params["ascending"] = "true" if ascending else "false"
+        # When condition_ids is provided, httpx serializes a list as repeated params
+        # (?condition_ids=a&condition_ids=b) — exactly what Gamma expects.
+        if condition_ids:
+            params["condition_ids"] = condition_ids
         payload = self._get_json(f"{GAMMA_API}/markets", params=params)
         if not isinstance(payload, list):
             raise ValueError(f"Expected list, got {type(payload).__name__}")
         return cast(list[dict[str, Any]], payload)
+
+    def get_markets_by_condition_ids(
+        self, condition_ids: list[str], *, batch_size: int = 25
+    ) -> list[dict[str, Any]]:
+        """Targeted lookup. Batches because URLs can get long."""
+        out: list[dict[str, Any]] = []
+        for i in range(0, len(condition_ids), batch_size):
+            batch = condition_ids[i : i + batch_size]
+            out.extend(self.get_markets(condition_ids=batch, limit=batch_size))
+        return out
 
     # ── Internals ─────────────────────────────────────────────────────────────
 

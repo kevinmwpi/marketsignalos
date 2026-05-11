@@ -10,6 +10,7 @@ from marketsignalos_api.api.routes.ingestor import router as ingestor_router
 from marketsignalos_api.api.routes.leaderboard import router as leaderboard_router
 from marketsignalos_api.api.routes.orderflow import router as orderflow_router
 from marketsignalos_api.api.routes.opportunities import router as opportunities_router
+from marketsignalos_api.api.routes.polymarket import router as polymarket_router
 from marketsignalos_api.api.routes.profiles import router as profiles_router
 from marketsignalos_api.api.routes.trades import router as trades_router
 
@@ -387,6 +388,7 @@ def create_app() -> FastAPI:
     app.include_router(leaderboard_router)
     app.include_router(orderflow_router)
     app.include_router(opportunities_router)
+    app.include_router(polymarket_router)
     app.include_router(profiles_router)
 
 

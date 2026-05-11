@@ -26,6 +26,7 @@ from .models import (
     PolymarketLeaderboardEntry,
     PolymarketMarket,
     PolymarketPosition,
+    PolymarketWalletEnrichment,
     PolymarketWalletValue,
 )
 
@@ -55,6 +56,10 @@ class WalletValueStore(Protocol):
 class WalletCheckpointStore(Protocol):
     def get_last_timestamp(self, wallet: str) -> int | None: ...
     def set_last_timestamp(self, wallet: str, timestamp: int) -> None: ...
+
+
+class EnrichmentStore(Protocol):
+    def write_enrichment(self, enrichments: list[PolymarketWalletEnrichment]) -> int: ...
 
 
 # ── JSONL implementations ─────────────────────────────────────────────────────
@@ -174,6 +179,21 @@ class JsonlWalletValueStore:
             for v in values:
                 fh.write(json.dumps(asdict(v), separators=(",", ":")) + "\n")
         return len(values)
+
+
+class JsonlEnrichmentStore:
+    """Overwrite semantics: each computation pass replaces the whole file."""
+
+    def __init__(self, path: Path) -> None:
+        self._path = path
+        self._path.parent.mkdir(parents=True, exist_ok=True)
+
+    def write_enrichment(self, enrichments: list[PolymarketWalletEnrichment]) -> int:
+        # Truncate + rewrite — enrichment is always recomputed from scratch.
+        with self._path.open("w", encoding="utf-8") as fh:
+            for e in enrichments:
+                fh.write(json.dumps(asdict(e), separators=(",", ":")) + "\n")
+        return len(enrichments)
 
 
 class JsonWalletCheckpointStore:

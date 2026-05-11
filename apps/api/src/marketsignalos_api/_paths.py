@@ -37,3 +37,13 @@ def enrichment_store_path() -> Path:
 def profile_snapshots_path() -> Path:
     configured = os.getenv("KALSHI_PROFILE_SNAPSHOTS_PATH")
     return Path(configured) if configured else _data_dir() / "kalshi_profile_snapshots.jsonl"
+
+
+def polymarket_enrichment_path() -> Path:
+    configured = os.getenv("POLYMARKET_ENRICHMENT_PATH")
+    if configured:
+        return Path(configured)
+    base = os.getenv("POLYMARKET_DATA_DIR")
+    if base:
+        return Path(base) / "polymarket_wallet_enrichment.jsonl"
+    return _data_dir() / "polymarket_wallet_enrichment.jsonl"
