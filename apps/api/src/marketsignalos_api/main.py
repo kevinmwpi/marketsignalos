@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, PlainTextResponse
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
+from marketsignalos_api.api.routes.cross_exchange import router as cross_exchange_router
 from marketsignalos_api.api.routes.health import router as health_router
 from marketsignalos_api.api.routes.ingestor import router as ingestor_router
 from marketsignalos_api.api.routes.leaderboard import router as leaderboard_router
@@ -389,6 +390,7 @@ def create_app() -> FastAPI:
     app.include_router(orderflow_router)
     app.include_router(opportunities_router)
     app.include_router(polymarket_router)
+    app.include_router(cross_exchange_router)
     app.include_router(profiles_router)
 
 

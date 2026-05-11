@@ -47,3 +47,25 @@ def polymarket_enrichment_path() -> Path:
     if base:
         return Path(base) / "polymarket_wallet_enrichment.jsonl"
     return _data_dir() / "polymarket_wallet_enrichment.jsonl"
+
+
+def _polymarket_dir() -> Path:
+    """Same as _data_dir, but honors POLYMARKET_DATA_DIR override."""
+    base = os.getenv("POLYMARKET_DATA_DIR")
+    return Path(base) if base else _data_dir()
+
+
+def polymarket_positions_path() -> Path:
+    return _polymarket_dir() / "polymarket_positions.jsonl"
+
+
+def polymarket_markets_path() -> Path:
+    return _polymarket_dir() / "polymarket_markets.jsonl"
+
+
+def kalshi_markets_path() -> Path:
+    return _polymarket_dir() / "kalshi_markets.jsonl"
+
+
+def market_links_path() -> Path:
+    return _polymarket_dir() / "market_links.jsonl"

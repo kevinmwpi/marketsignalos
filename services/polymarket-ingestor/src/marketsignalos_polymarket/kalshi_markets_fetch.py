@@ -33,7 +33,13 @@ def _utcnow_iso() -> str:
 
 @dataclass(frozen=True, slots=True)
 class KalshiMarket:
-    """Subset of fields needed by the matcher; raw_blob preserves the rest."""
+    """
+    Subset of fields needed by the matcher + cross-exchange signal.
+
+    Kalshi prices are quoted in cents (0-100) for YES; we store them as the
+    raw values returned by the API and convert to decimal probability at
+    the dislocation-computation step.
+    """
 
     ticker: str
     event_ticker: str
@@ -44,7 +50,23 @@ class KalshiMarket:
     status: str
     expiration_time: str  # ISO-8601
     close_time: str
+    yes_bid: int  # cents (0-100); 0 if missing
+    yes_ask: int  # cents (0-100); 0 if missing
+    last_price: int  # cents (0-100); last YES trade
     fetched_at: str = field(default_factory=_utcnow_iso)
+
+
+def _coerce_int(val: Any) -> int:
+    if val is None:
+        return 0
+    if isinstance(val, bool):
+        return int(val)
+    if isinstance(val, (int, float)):
+        return int(val)
+    try:
+        return int(float(str(val)))
+    except (TypeError, ValueError):
+        return 0
 
 
 def _parse_market_row(row: dict[str, Any]) -> KalshiMarket | None:
@@ -61,6 +83,9 @@ def _parse_market_row(row: dict[str, Any]) -> KalshiMarket | None:
         status=str(row.get("status", "")),
         expiration_time=str(row.get("expiration_time", "")),
         close_time=str(row.get("close_time", "")),
+        yes_bid=_coerce_int(row.get("yes_bid")),
+        yes_ask=_coerce_int(row.get("yes_ask")),
+        last_price=_coerce_int(row.get("last_price")),
     )
 
 
