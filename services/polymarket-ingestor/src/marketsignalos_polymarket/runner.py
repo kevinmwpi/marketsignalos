@@ -10,6 +10,10 @@ Usage:
 Env vars:
     POLYMARKET_DATA_DIR          override the default services/ingestor/data
     POLYMARKET_WATCHLIST_PATH    default wallet watchlist (one address per line)
+    INGEST_POLYMARKET            kill switch for 'all' mode (set to "1" to enable);
+                                 individual subcommands always run. This lets the
+                                 ingestor be safely deployed alongside the API
+                                 before any backfill load is desired.
 """
 from __future__ import annotations
 
@@ -825,6 +829,9 @@ def main(argv: list[str] | None = None) -> int:
         elif args.mode == "review-matches":
             run_review_matches(stores, limit=args.limit)
         elif args.mode == "all":
+            if os.getenv("INGEST_POLYMARKET", "").strip().lower() not in {"1", "true", "yes", "on"}:
+                log.info("INGEST_POLYMARKET not set — skipping 'all' pass (set to '1' to enable)")
+                return 0
             addresses = seed_watchlist_from_leaderboard(
                 client, stores, _watchlist_path(), top_n_profit=50, top_n_volume=50
             )
