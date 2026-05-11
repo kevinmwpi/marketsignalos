@@ -1,11 +1,52 @@
 from __future__ import annotations
 
+from pathlib import Path
+from typing import Any
+
+import httpx
+
+from marketsignalos_polymarket.polymarket_client import (
+    PolymarketClient,
+    PolymarketClientConfig,
+)
 from marketsignalos_polymarket.runner import (
+    _build_stores,
+    _paginate_activity,
     parse_activity_row,
     parse_leaderboard_row,
     parse_market_row,
     parse_position_row,
+    run_wallets,
+    seed_watchlist_from_leaderboard,
 )
+
+
+def _client_with_handler(handler: Any) -> PolymarketClient:
+    transport = httpx.MockTransport(handler)
+    http = httpx.Client(transport=transport, headers={"Accept": "application/json"})
+    return PolymarketClient(
+        config=PolymarketClientConfig(max_retries=1, retry_backoff_seconds=0.001),
+        client=http,
+    )
+
+
+def _activity_row(ts: int, tx: str, cond: str = "0xc", oi: int = 0) -> dict[str, Any]:
+    return {
+        "proxyWallet": "0xabc",
+        "timestamp": ts,
+        "conditionId": cond,
+        "type": "TRADE",
+        "size": 1.0,
+        "usdcSize": 0.5,
+        "transactionHash": tx,
+        "price": 0.5,
+        "side": "BUY",
+        "outcomeIndex": oi,
+        "title": "t",
+        "slug": "s",
+        "eventSlug": "e",
+        "outcome": "Yes",
+    }
 
 
 def test_parse_leaderboard_row_matches_real_shape() -> None:
@@ -121,6 +162,139 @@ def test_parse_market_row_handles_resolved_with_category() -> None:
     assert m.category == "US-current-affairs"
     assert m.closed is True
     assert m.outcome_prices == [0.0, 1.0]
+
+
+def test_paginate_activity_walks_until_empty_page() -> None:
+    pages = [
+        [_activity_row(ts=1000, tx="0xa"), _activity_row(ts=999, tx="0xb")],
+        [_activity_row(ts=998, tx="0xc")],
+        [],  # exhausted
+    ]
+    call_count = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        expected_offset = call_count["n"] * 2
+        actual = request.url.params.get("offset")
+        # Client omits offset=0 from the query string; offsets > 0 are sent.
+        if expected_offset == 0:
+            assert actual is None
+        else:
+            assert actual == str(expected_offset)
+        body = pages[call_count["n"]]
+        call_count["n"] += 1
+        return httpx.Response(200, json=body)
+
+    client = _client_with_handler(handler)
+    result = _paginate_activity(client, "0xabc", page_size=2, max_pages=10, since_timestamp=None)
+    assert [a.transaction_hash for a in result] == ["0xa", "0xb", "0xc"]
+    client.close()
+
+
+def test_paginate_activity_stops_at_watermark() -> None:
+    """When a page contains rows older than since_timestamp, we stop after that page."""
+    pages = [
+        [_activity_row(ts=1000, tx="0xa"), _activity_row(ts=999, tx="0xb")],
+        [_activity_row(ts=998, tx="0xc"), _activity_row(ts=900, tx="0xd")],  # 900 <= 950
+        [_activity_row(ts=800, tx="0xe")],  # should not be fetched
+    ]
+    call_count = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if call_count["n"] >= len(pages):
+            return httpx.Response(200, json=[])
+        body = pages[call_count["n"]]
+        call_count["n"] += 1
+        return httpx.Response(200, json=body)
+
+    client = _client_with_handler(handler)
+    result = _paginate_activity(client, "0xabc", page_size=2, max_pages=10, since_timestamp=950)
+    # Only events with ts > 950 should be returned, and the third page should never be fetched.
+    assert sorted(a.transaction_hash for a in result) == ["0xa", "0xb", "0xc"]
+    assert call_count["n"] == 2
+    client.close()
+
+
+def test_paginate_activity_respects_max_pages() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        # Always return a full page so the only stop condition is max_pages.
+        return httpx.Response(200, json=[_activity_row(ts=1000, tx="0xa"),
+                                         _activity_row(ts=999, tx="0xb")])
+
+    client = _client_with_handler(handler)
+    result = _paginate_activity(client, "0xabc", page_size=2, max_pages=3, since_timestamp=None)
+    assert len(result) == 6  # 3 pages × 2 rows
+    client.close()
+
+
+def test_run_wallets_advances_checkpoint(tmp_path: Path) -> None:
+    pages = [
+        [_activity_row(ts=2000, tx="0xa"), _activity_row(ts=1500, tx="0xb")],
+        [],
+    ]
+    call_count = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if path == "/activity":
+            body = pages[min(call_count["n"], len(pages) - 1)]
+            call_count["n"] += 1
+            return httpx.Response(200, json=body)
+        if path == "/positions":
+            return httpx.Response(200, json=[])
+        if path == "/value":
+            return httpx.Response(200, json=[{"user": "0xabc", "value": 1234.5}])
+        return httpx.Response(404)
+
+    client = _client_with_handler(handler)
+    stores = _build_stores(tmp_path)
+    run_wallets(client, stores, addresses=["0xabc"], activity_page_size=2, max_pages_per_wallet=5)
+
+    assert stores.checkpoints.get_last_timestamp("0xabc") == 2000
+
+    # Second run should fetch nothing new (page0 still returns ts <= 2000, so paginator stops).
+    call_count["n"] = 0
+    written_a, _, _ = run_wallets(
+        client, stores, addresses=["0xabc"], activity_page_size=2, max_pages_per_wallet=5
+    )
+    # All rows in page0 have ts ∈ {2000, 1500} — neither is > 2000, so nothing new is collected.
+    assert written_a == 0
+    client.close()
+
+
+def test_seed_watchlist_merges_with_existing(tmp_path: Path) -> None:
+    """seed-watchlist preserves manually added wallets and adds top traders."""
+    watchlist = tmp_path / "wl.txt"
+    watchlist.write_text("# manual\n0xmanual1\n0xmanual2\n", encoding="utf-8")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        metric = request.url.path.lstrip("/")
+        if metric == "profit":
+            return httpx.Response(200, json=[
+                {"proxyWallet": "0xProfit1", "amount": 1.0, "pseudonym": "p1", "name": "p1"},
+                {"proxyWallet": "0xmanual1", "amount": 0.5, "pseudonym": "m1", "name": "m1"},  # overlap
+            ])
+        if metric == "volume":
+            return httpx.Response(200, json=[
+                {"proxyWallet": "0xVolume1", "amount": 2.0, "pseudonym": "v1", "name": "v1"},
+            ])
+        return httpx.Response(404)
+
+    client = _client_with_handler(handler)
+    stores = _build_stores(tmp_path)
+    merged = seed_watchlist_from_leaderboard(
+        client, stores, watchlist, top_n_profit=2, top_n_volume=1
+    )
+    # Wallets are lowercased and deduped.
+    assert "0xprofit1" in merged
+    assert "0xvolume1" in merged
+    assert "0xmanual1" in merged
+    assert "0xmanual2" in merged
+    assert len(merged) == 4
+
+    contents = watchlist.read_text(encoding="utf-8")
+    assert "0xprofit1" in contents
+    assert "0xmanual2" in contents  # manual entry preserved
+    client.close()
 
 
 def test_parse_position_row_falls_back_on_alt_field_names() -> None:

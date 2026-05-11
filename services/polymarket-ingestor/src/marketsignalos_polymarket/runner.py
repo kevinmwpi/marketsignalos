@@ -35,6 +35,7 @@ from .storage import (
     JsonlMarketStore,
     JsonlPositionStore,
     JsonlWalletValueStore,
+    JsonWalletCheckpointStore,
 )
 
 logging.basicConfig(
@@ -190,6 +191,7 @@ class _Stores:
     positions: JsonlPositionStore
     markets: JsonlMarketStore
     values: JsonlWalletValueStore
+    checkpoints: JsonWalletCheckpointStore
 
 
 def _build_stores(data_dir: Path) -> _Stores:
@@ -200,6 +202,7 @@ def _build_stores(data_dir: Path) -> _Stores:
         positions=JsonlPositionStore(data_dir / "polymarket_positions.jsonl"),
         markets=JsonlMarketStore(data_dir / "polymarket_markets.jsonl"),
         values=JsonlWalletValueStore(data_dir / "polymarket_wallet_values.jsonl"),
+        checkpoints=JsonWalletCheckpointStore(data_dir / "polymarket_wallet_checkpoints.json"),
     )
 
 
@@ -225,20 +228,75 @@ def run_leaderboard(
     return written
 
 
+def _paginate_activity(
+    client: PolymarketClient,
+    address: str,
+    *,
+    page_size: int,
+    max_pages: int,
+    since_timestamp: int | None,
+) -> list[PolymarketActivity]:
+    """
+    Walk /activity with offset pagination until we either exhaust the API,
+    hit max_pages, or reach an event older than since_timestamp.
+
+    Activity is returned newest-first, so we stop as soon as the oldest row
+    in a page is <= since_timestamp.
+    """
+    collected: list[PolymarketActivity] = []
+    for page in range(max_pages):
+        raw = client.get_wallet_activity(address, limit=page_size, offset=page * page_size)
+        if not raw:
+            break
+        parsed = [parse_activity_row(r) for r in raw]
+
+        if since_timestamp is not None:
+            fresh = [a for a in parsed if a.timestamp > since_timestamp]
+            collected.extend(fresh)
+            if len(fresh) < len(parsed):
+                # Hit the watermark — older rows below this are already stored.
+                break
+        else:
+            collected.extend(parsed)
+
+        if len(raw) < page_size:
+            break
+    return collected
+
+
 def run_wallets(
     client: PolymarketClient,
     stores: _Stores,
     *,
     addresses: list[str],
-    activity_limit: int,
+    activity_page_size: int = 500,
+    max_pages_per_wallet: int = 20,
+    full_backfill: bool = False,
 ) -> tuple[int, int, int]:
-    """Returns (activity_written, positions_written, values_written)."""
+    """
+    Returns (activity_written, positions_written, values_written).
+
+    full_backfill=True ignores the per-wallet checkpoint and walks every page
+    up to max_pages. Default (False) only fetches events newer than the last
+    seen timestamp — the steady-state path.
+    """
     total_activity = total_positions = total_values = 0
     for addr in addresses:
         try:
-            raw_activity = client.get_wallet_activity(addr, limit=activity_limit)
-            parsed_activity = [parse_activity_row(r) for r in raw_activity]
-            total_activity += stores.activity.write_activity(parsed_activity)
+            since = None if full_backfill else stores.checkpoints.get_last_timestamp(addr)
+
+            activity = _paginate_activity(
+                client,
+                addr,
+                page_size=activity_page_size,
+                max_pages=max_pages_per_wallet,
+                since_timestamp=since,
+            )
+            total_activity += stores.activity.write_activity(activity)
+            if activity:
+                # Activity is newest-first; bump the watermark to the max we saw.
+                max_ts = max(a.timestamp for a in activity)
+                stores.checkpoints.set_last_timestamp(addr, max_ts)
 
             raw_positions = client.get_wallet_positions(addr)
             parsed_positions = [parse_position_row(r, proxy_wallet=addr) for r in raw_positions]
@@ -252,15 +310,62 @@ def run_wallets(
             total_values += stores.values.write_values([value])
 
             log.info(
-                "wallet wallet=%s activity_new=%d positions=%d value_usdc=%.2f",
+                "wallet wallet=%s since=%s activity_new=%d positions=%d value_usdc=%.2f",
                 addr,
-                len(parsed_activity),
+                since,
+                len(activity),
                 len(parsed_positions),
                 value.value_usdc,
             )
         except Exception as exc:  # noqa: BLE001
             log.warning("wallet_failed wallet=%s error=%s", addr, exc)
     return total_activity, total_positions, total_values
+
+
+def seed_watchlist_from_leaderboard(
+    client: PolymarketClient,
+    stores: _Stores,
+    watchlist_path: Path,
+    *,
+    top_n_profit: int = 50,
+    top_n_volume: int = 50,
+) -> list[str]:
+    """
+    Fetch profit + volume leaderboards, union the wallets, and write them to
+    the watchlist file. Existing addresses in the file are preserved.
+
+    Returns the merged watchlist (sorted, deduped, lowercase).
+    """
+    raw_profit = client.get_leaderboard(metric="profit", window="all", limit=top_n_profit)
+    profit_entries = [parse_leaderboard_row(r, metric="profit", window="all") for r in raw_profit]
+    stores.leaderboard.write_leaderboard(profit_entries)
+
+    raw_volume = client.get_leaderboard(metric="volume", window="all", limit=top_n_volume)
+    volume_entries = [parse_leaderboard_row(r, metric="volume", window="all") for r in raw_volume]
+    stores.leaderboard.write_leaderboard(volume_entries)
+
+    new_wallets = {e.proxy_wallet for e in profit_entries + volume_entries if e.proxy_wallet}
+    existing = set(_load_watchlist(watchlist_path)) if watchlist_path.exists() else set()
+    merged = sorted(new_wallets | existing)
+
+    watchlist_path.parent.mkdir(parents=True, exist_ok=True)
+    watchlist_path.write_text(
+        "\n".join(
+            ["# Polymarket wallet watchlist — auto-seeded + manual additions"]
+            + merged
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    log.info(
+        "watchlist_seeded profit=%d volume=%d total=%d new=%d path=%s",
+        len(profit_entries),
+        len(volume_entries),
+        len(merged),
+        len(new_wallets - existing),
+        watchlist_path,
+    )
+    return merged
 
 
 def run_markets(
@@ -298,7 +403,17 @@ def _build_parser() -> argparse.ArgumentParser:
     wa = sub.add_parser("wallets", help="Pull activity + positions + value for a wallet list")
     wa.add_argument("--watchlist", type=Path, default=None)
     wa.add_argument("--address", action="append", default=[], help="One-off address (repeatable)")
-    wa.add_argument("--activity-limit", type=int, default=500)
+    wa.add_argument("--activity-page-size", type=int, default=500)
+    wa.add_argument("--max-pages-per-wallet", type=int, default=20)
+    wa.add_argument(
+        "--full-backfill",
+        action="store_true",
+        help="Ignore checkpoint and walk all pages",
+    )
+
+    sd = sub.add_parser("seed-watchlist", help="Seed the watchlist from profit + volume leaderboards")
+    sd.add_argument("--top-n-profit", type=int, default=50)
+    sd.add_argument("--top-n-volume", type=int, default=50)
 
     mk = sub.add_parser("markets", help="Fetch market metadata from Gamma")
     mk.add_argument("--closed", action="store_true", help="Fetch resolved markets")
@@ -324,9 +439,28 @@ def main(argv: list[str] | None = None) -> int:
             addresses.extend(_load_watchlist(wl_path))
             addresses = sorted(set(a for a in addresses if a))
             if not addresses:
-                log.error("no wallets to ingest — pass --address or populate %s", wl_path)
+                log.error(
+                    "no wallets to ingest — run 'seed-watchlist' first, pass --address, "
+                    "or populate %s",
+                    wl_path,
+                )
                 return 1
-            run_wallets(client, stores, addresses=addresses, activity_limit=args.activity_limit)
+            run_wallets(
+                client,
+                stores,
+                addresses=addresses,
+                activity_page_size=args.activity_page_size,
+                max_pages_per_wallet=args.max_pages_per_wallet,
+                full_backfill=args.full_backfill,
+            )
+        elif args.mode == "seed-watchlist":
+            seed_watchlist_from_leaderboard(
+                client,
+                stores,
+                _watchlist_path(),
+                top_n_profit=args.top_n_profit,
+                top_n_volume=args.top_n_volume,
+            )
         elif args.mode == "markets":
             closed: bool | None = None
             if args.closed:
@@ -335,13 +469,17 @@ def main(argv: list[str] | None = None) -> int:
                 closed = False
             run_markets(client, stores, closed=closed, pages=args.pages, page_size=args.page_size)
         elif args.mode == "all":
-            run_leaderboard(client, stores, metric="profit", window="all", limit=50)
-            run_leaderboard(client, stores, metric="volume", window="all", limit=50)
-            addresses = _load_watchlist(_watchlist_path())
+            addresses = seed_watchlist_from_leaderboard(
+                client, stores, _watchlist_path(), top_n_profit=50, top_n_volume=50
+            )
             if addresses:
-                run_wallets(client, stores, addresses=addresses, activity_limit=500)
-            else:
-                log.info("watchlist empty — skipping wallets pass")
+                run_wallets(
+                    client,
+                    stores,
+                    addresses=addresses,
+                    activity_page_size=500,
+                    max_pages_per_wallet=20,
+                )
             run_markets(client, stores, closed=None, pages=5, page_size=100)
     finally:
         client.close()

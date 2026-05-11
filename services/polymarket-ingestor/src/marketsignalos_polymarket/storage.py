@@ -52,6 +52,11 @@ class WalletValueStore(Protocol):
     def write_values(self, values: list[PolymarketWalletValue]) -> int: ...
 
 
+class WalletCheckpointStore(Protocol):
+    def get_last_timestamp(self, wallet: str) -> int | None: ...
+    def set_last_timestamp(self, wallet: str, timestamp: int) -> None: ...
+
+
 # ── JSONL implementations ─────────────────────────────────────────────────────
 
 def _read_index(index_path: Path) -> set[str]:
@@ -169,6 +174,42 @@ class JsonlWalletValueStore:
             for v in values:
                 fh.write(json.dumps(asdict(v), separators=(",", ":")) + "\n")
         return len(values)
+
+
+class JsonWalletCheckpointStore:
+    """
+    Per-wallet checkpoint: last seen activity timestamp.
+
+    Re-running ingestion only pulls activity newer than this watermark, so
+    backfills are bounded and steady-state runs stay cheap.
+    """
+
+    def __init__(self, path: Path) -> None:
+        self._path = path
+        self._path.parent.mkdir(parents=True, exist_ok=True)
+        self._state: dict[str, int] = self._read()
+
+    def get_last_timestamp(self, wallet: str) -> int | None:
+        return self._state.get(wallet.lower())
+
+    def set_last_timestamp(self, wallet: str, timestamp: int) -> None:
+        prior = self._state.get(wallet.lower())
+        if prior is None or timestamp > prior:
+            self._state[wallet.lower()] = timestamp
+            self._write()
+
+    def _read(self) -> dict[str, int]:
+        if not self._path.exists():
+            return {}
+        raw = json.loads(self._path.read_text(encoding="utf-8"))
+        if not isinstance(raw, dict):
+            raise ValueError(f"{self._path} must contain a JSON object")
+        return {str(k).lower(): int(v) for k, v in raw.items() if isinstance(v, (int, float))}
+
+    def _write(self) -> None:
+        self._path.write_text(
+            json.dumps(self._state, indent=2, sort_keys=True), encoding="utf-8"
+        )
 
 
 # ── Postgres stubs (Phase 7) ──────────────────────────────────────────────────

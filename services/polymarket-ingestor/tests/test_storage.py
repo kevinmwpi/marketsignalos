@@ -17,6 +17,7 @@ from marketsignalos_polymarket.storage import (
     JsonlMarketStore,
     JsonlPositionStore,
     JsonlWalletValueStore,
+    JsonWalletCheckpointStore,
 )
 
 
@@ -115,3 +116,26 @@ def test_position_store_appends_snapshots(tmp_path: Path) -> None:
 def test_wallet_value_store(tmp_path: Path) -> None:
     store = JsonlWalletValueStore(tmp_path / "values.jsonl")
     assert store.write_values([PolymarketWalletValue(proxy_wallet="0xabc", value_usdc=12345.67)]) == 1
+
+
+def test_checkpoint_store_round_trip_and_monotonic(tmp_path: Path) -> None:
+    store = JsonWalletCheckpointStore(tmp_path / "ckpt.json")
+    assert store.get_last_timestamp("0xABC") is None
+
+    store.set_last_timestamp("0xABC", 1_700_000_000)
+    # Wallet keys must normalize to lowercase so case variations don't multiply checkpoints.
+    assert store.get_last_timestamp("0xabc") == 1_700_000_000
+
+    # Setting an OLDER timestamp must not regress the watermark.
+    store.set_last_timestamp("0xabc", 1_600_000_000)
+    assert store.get_last_timestamp("0xabc") == 1_700_000_000
+
+    # Setting a NEWER timestamp advances it.
+    store.set_last_timestamp("0xabc", 1_800_000_000)
+    assert store.get_last_timestamp("0xabc") == 1_800_000_000
+
+
+def test_checkpoint_store_persists_across_instances(tmp_path: Path) -> None:
+    path = tmp_path / "ckpt.json"
+    JsonWalletCheckpointStore(path).set_last_timestamp("0xa", 1234)
+    assert JsonWalletCheckpointStore(path).get_last_timestamp("0xa") == 1234
