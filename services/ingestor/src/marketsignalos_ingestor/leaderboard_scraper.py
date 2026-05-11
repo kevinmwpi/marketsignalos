@@ -324,15 +324,16 @@ def _extract_snapshots_from_response(
 # ──────────────────────────────────────────────────────────────────────────────
 
 def scrape_leaderboard_with_playwright(
-    url: str = "https://kalshi.com/leaderboard",
+    url: str = "https://kalshi.com/social/leaderboard",
     *,
     headless: bool = True,
-    timeout_ms: int = 20_000,
+    timeout_ms: int = 30_000,
     persist: bool = True,
 ) -> list[ProfileSnapshot]:
     """
-    Load kalshi.com/leaderboard in a headless browser, intercept all API
-    responses, and return structured ProfileSnapshot objects.
+    Load kalshi.com/social/leaderboard in a headless browser, click each
+    category tab (Profit, Volume, Prediction), intercept all API responses,
+    and return structured ProfileSnapshot objects.
 
     Requires: pip install playwright && playwright install chromium
 
@@ -347,23 +348,12 @@ def scrape_leaderboard_with_playwright(
         )
         return []
 
-    intercepted: list[tuple[str, Any]] = []
-    discovered_urls: dict[str, str] = {}
+    # Category tab labels to click through on the leaderboard.
+    # Each tab fires a fresh API request with different sort/filter params.
+    _LEADERBOARD_TABS = ["Profit", "Volume", "Prediction"]
 
-    def _handle_response(response: Any) -> None:
-        url_lower = response.url.lower()
-        # Only capture JSON responses that look like API calls.
-        content_type = response.headers.get("content-type", "")
-        if "json" not in content_type:
-            return
-        if not any(kw in url_lower for kw in ("trade-api", "api.kalshi", "leaderboard", "user")):
-            return
-        try:
-            body = response.json()
-            intercepted.append((response.url, body))
-            log.debug("intercepted url=%s", response.url)
-        except Exception:
-            pass
+    intercepted: list[tuple[str, Any, str]] = []  # (url, body, category)
+    discovered_urls: dict[str, str] = {}
 
     snapshots: list[ProfileSnapshot] = []
 
@@ -377,26 +367,71 @@ def scrape_leaderboard_with_playwright(
             )
         )
         page = context.new_page()
+        active_category: list[str] = ["default"]
+
+        def _handle_response(response: Any) -> None:
+            resp_url_lower = response.url.lower()
+            content_type = response.headers.get("content-type", "")
+            if "json" not in content_type:
+                return
+            if not any(kw in resp_url_lower for kw in ("trade-api", "api.kalshi", "leaderboard", "social", "user")):
+                return
+            try:
+                body = response.json()
+                intercepted.append((response.url, body, active_category[0]))
+                log.debug("intercepted url=%s category=%s", response.url, active_category[0])
+            except Exception:
+                pass
+
         page.on("response", _handle_response)
 
         try:
             log.info("playwright navigating to %s", url)
             page.goto(url, timeout=timeout_ms, wait_until="networkidle")
         except Exception as exc:
-            log.warning("playwright navigation warning: %s", exc)
-        finally:
-            browser.close()
+            log.warning("playwright initial navigation warning: %s", exc)
 
-    # Parse intercepted responses.
-    for resp_url, body in intercepted:
+        # Click through each category tab to capture all leaderboard segments.
+        for tab_label in _LEADERBOARD_TABS:
+            active_category[0] = tab_label.lower()
+            try:
+                # Try role-based click first (most reliable), fall back to text.
+                tab = page.get_by_role("tab", name=tab_label)
+                if not tab.count():
+                    tab = page.get_by_text(tab_label, exact=True)
+                if tab.count():
+                    tab.first.click()
+                    page.wait_for_load_state("networkidle", timeout=timeout_ms)
+                    log.info("playwright tab_click tab=%s", tab_label)
+                else:
+                    log.warning("playwright tab not found tab=%s", tab_label)
+            except Exception as exc:
+                log.warning("playwright tab_click failed tab=%s error=%s", tab_label, exc)
+
+        browser.close()
+
+    # Parse intercepted responses — tag each snapshot with its leaderboard category.
+    for resp_url, body, category in intercepted:
         parsed = _extract_snapshots_from_response(resp_url, body)
         if parsed:
+            for snap in parsed:
+                if category not in snap.categories:
+                    snap.categories = [category] + snap.categories
             snapshots.extend(parsed)
-            # Record endpoint URL by type for future direct calls.
-            if "leaderboard" in resp_url.lower():
-                discovered_urls["leaderboard"] = resp_url
+            if "leaderboard" in resp_url.lower() or "social" in resp_url.lower():
+                discovered_urls[f"leaderboard_{category}"] = resp_url
             elif "user" in resp_url.lower():
                 discovered_urls["user_profile"] = resp_url
+
+    # Deduplicate: keep the highest-rank snapshot per username per category.
+    seen: dict[tuple[str, str], ProfileSnapshot] = {}
+    for snap in snapshots:
+        cat = snap.categories[0] if snap.categories else "default"
+        key = (snap.username, cat)
+        existing = seen.get(key)
+        if existing is None or (snap.rank is not None and (existing.rank is None or snap.rank < existing.rank)):
+            seen[key] = snap
+    snapshots = list(seen.values())
 
     if not snapshots:
         log.warning(

@@ -79,6 +79,7 @@ type ProfileSummary = {
   latest_win_rate: number | null;
   latest_profit_dollars: number | null;
   latest_resolved_trades: number | null;
+  skill_likelihood: number | null;
   categories: string[];
 };
 
@@ -425,6 +426,7 @@ function ProfilesSection({ profiles }: { profiles: ProfileSummary[] }) {
               <tr className="border-b border-zinc-100">
                 <th className="px-4 py-2 text-left text-xs font-medium text-zinc-400">Username</th>
                 <th className="px-4 py-2 text-right text-xs font-medium text-zinc-400">Rank</th>
+                <th className="px-4 py-2 text-right text-xs font-medium text-zinc-400">Skill</th>
                 <th className="px-4 py-2 text-right text-xs font-medium text-zinc-400">Win rate</th>
                 <th className="px-4 py-2 text-right text-xs font-medium text-zinc-400">Profit</th>
                 <th className="px-4 py-2 text-right text-xs font-medium text-zinc-400">Resolved</th>
@@ -445,6 +447,13 @@ function ProfilesSection({ profiles }: { profiles: ProfileSummary[] }) {
                   </td>
                   <td className="px-4 py-2.5 text-right font-mono text-xs text-zinc-700">
                     {p.latest_rank != null ? `#${p.latest_rank}` : "—"}
+                  </td>
+                  <td className="px-4 py-2.5 text-right font-mono text-xs">
+                    {p.skill_likelihood != null ? (
+                      <span className={p.skill_likelihood >= 0.95 ? "font-semibold text-emerald-700" : "text-zinc-700"}>
+                        {formatPercent(p.skill_likelihood)}
+                      </span>
+                    ) : "—"}
                   </td>
                   <td className="px-4 py-2.5 text-right font-mono text-xs text-zinc-700">
                     {p.latest_win_rate != null ? formatPercent(p.latest_win_rate) : "—"}
@@ -486,7 +495,7 @@ function ErrorBanner({ errors }: { errors: string[] }) {
 }
 
 export default async function Home() {
-  const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
+  const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8080";
   const { dashboard, leaderboard, orderflow, profiles } = await getDashboardData(apiBase);
   const summary = dashboard.data?.summary ?? emptySummary;
   const opportunities = dashboard.data?.opportunities ?? [];
