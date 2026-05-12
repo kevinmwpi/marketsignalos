@@ -47,6 +47,16 @@ from .models import (
 from .polymarket_client import PolymarketClient, PolymarketClientConfig
 from .skill_computation import compute_all_enrichment
 from .storage import (
+    ActivityStore,
+    DualActivityStore,
+    DualEnrichmentStore,
+    DualLeaderboardStore,
+    DualMarketLinkStore,
+    DualMarketStore,
+    DualPositionStore,
+    DualWalletCheckpointStore,
+    DualWalletValueStore,
+    EnrichmentStore,
     JsonlActivityStore,
     JsonlEnrichmentStore,
     JsonlLeaderboardStore,
@@ -55,6 +65,20 @@ from .storage import (
     JsonlPositionStore,
     JsonlWalletValueStore,
     JsonWalletCheckpointStore,
+    LeaderboardStore,
+    MarketLinkStore,
+    MarketStore,
+    PositionStore,
+    PostgresActivityStore,
+    PostgresEnrichmentStore,
+    PostgresLeaderboardStore,
+    PostgresMarketLinkStore,
+    PostgresMarketStore,
+    PostgresPositionStore,
+    PostgresWalletCheckpointStore,
+    PostgresWalletValueStore,
+    WalletCheckpointStore,
+    WalletValueStore,
 )
 
 logging.basicConfig(
@@ -205,14 +229,14 @@ def parse_market_row(row: dict[str, Any]) -> PolymarketMarket:
 
 @dataclass(slots=True)
 class _Stores:
-    leaderboard: JsonlLeaderboardStore
-    activity: JsonlActivityStore
-    positions: JsonlPositionStore
-    markets: JsonlMarketStore
-    values: JsonlWalletValueStore
-    checkpoints: JsonWalletCheckpointStore
-    enrichment: JsonlEnrichmentStore
-    market_links: JsonlMarketLinkStore
+    leaderboard: LeaderboardStore
+    activity: ActivityStore
+    positions: PositionStore
+    markets: MarketStore
+    values: WalletValueStore
+    checkpoints: WalletCheckpointStore
+    enrichment: EnrichmentStore
+    market_links: MarketLinkStore
 
     # Paths exposed so reading-only steps can re-read the JSONL files.
     activity_path: Path
@@ -227,15 +251,58 @@ def _build_stores(data_dir: Path) -> _Stores:
     markets_path = data_dir / "polymarket_markets.jsonl"
     leaderboard_path = data_dir / "polymarket_leaderboard.jsonl"
     kalshi_markets_path = data_dir / "kalshi_markets.jsonl"
+
+    jsonl_leaderboard = JsonlLeaderboardStore(leaderboard_path)
+    jsonl_activity = JsonlActivityStore(activity_path)
+    jsonl_positions = JsonlPositionStore(data_dir / "polymarket_positions.jsonl")
+    jsonl_markets = JsonlMarketStore(markets_path)
+    jsonl_values = JsonlWalletValueStore(data_dir / "polymarket_wallet_values.jsonl")
+    jsonl_checkpoints = JsonWalletCheckpointStore(
+        data_dir / "polymarket_wallet_checkpoints.json"
+    )
+    jsonl_enrichment = JsonlEnrichmentStore(data_dir / "polymarket_wallet_enrichment.jsonl")
+    jsonl_market_links = JsonlMarketLinkStore(data_dir / "market_links.jsonl")
+
+    # When DATABASE_URL is set, fan every write out to Postgres as well. The
+    # API continues reading from JSONL during Phase 7.5, so JSONL stays the
+    # system of record — Dual wrappers report the JSONL write count and read
+    # from JSONL.
+    database_url = os.getenv("DATABASE_URL", "").strip()
+    leaderboard: LeaderboardStore = jsonl_leaderboard
+    activity: ActivityStore = jsonl_activity
+    positions: PositionStore = jsonl_positions
+    markets: MarketStore = jsonl_markets
+    values: WalletValueStore = jsonl_values
+    checkpoints: WalletCheckpointStore = jsonl_checkpoints
+    enrichment: EnrichmentStore = jsonl_enrichment
+    market_links: MarketLinkStore = jsonl_market_links
+    if database_url:
+        log.info("dual-write enabled (DATABASE_URL set)")
+        leaderboard = DualLeaderboardStore(jsonl_leaderboard,
+                                          PostgresLeaderboardStore(database_url))
+        activity = DualActivityStore(jsonl_activity,
+                                    PostgresActivityStore(database_url))
+        positions = DualPositionStore(jsonl_positions,
+                                     PostgresPositionStore(database_url))
+        markets = DualMarketStore(jsonl_markets, PostgresMarketStore(database_url))
+        values = DualWalletValueStore(jsonl_values,
+                                     PostgresWalletValueStore(database_url))
+        checkpoints = DualWalletCheckpointStore(jsonl_checkpoints,
+                                               PostgresWalletCheckpointStore(database_url))
+        enrichment = DualEnrichmentStore(jsonl_enrichment,
+                                        PostgresEnrichmentStore(database_url))
+        market_links = DualMarketLinkStore(jsonl_market_links,
+                                          PostgresMarketLinkStore(database_url))
+
     return _Stores(
-        leaderboard=JsonlLeaderboardStore(leaderboard_path),
-        activity=JsonlActivityStore(activity_path),
-        positions=JsonlPositionStore(data_dir / "polymarket_positions.jsonl"),
-        markets=JsonlMarketStore(markets_path),
-        values=JsonlWalletValueStore(data_dir / "polymarket_wallet_values.jsonl"),
-        checkpoints=JsonWalletCheckpointStore(data_dir / "polymarket_wallet_checkpoints.json"),
-        enrichment=JsonlEnrichmentStore(data_dir / "polymarket_wallet_enrichment.jsonl"),
-        market_links=JsonlMarketLinkStore(data_dir / "market_links.jsonl"),
+        leaderboard=leaderboard,
+        activity=activity,
+        positions=positions,
+        markets=markets,
+        values=values,
+        checkpoints=checkpoints,
+        enrichment=enrichment,
+        market_links=market_links,
         activity_path=activity_path,
         markets_path=markets_path,
         leaderboard_path=leaderboard_path,

@@ -286,42 +286,532 @@ class JsonWalletCheckpointStore:
         )
 
 
-# ── Postgres stubs (Phase 7) ──────────────────────────────────────────────────
+# ── Postgres implementations (Phase 7.5) ──────────────────────────────────────
+#
+# Writes-only path: ingestor persists to Postgres when DATABASE_URL is set,
+# API still reads from JSONL. Connections are short-lived per write call to
+# match the Kalshi pattern — no shared pool yet.
 
-class _PostgresStoreStub:
-    def __init__(self, database_url: str) -> None:  # pragma: no cover
-        self._database_url = database_url
-
-    def _not_implemented(self) -> None:
-        raise NotImplementedError(
-            "Polymarket Postgres stores are not yet implemented — "
-            "use the JSONL stores until Phase 7 migration lands."
-        )
+def _pg_connect(dsn: str):  # type: ignore[no-untyped-def]
+    """Lazy psycopg2 import so JSONL-only test paths don't need the driver."""
+    import psycopg2
+    return psycopg2.connect(dsn)
 
 
-class PostgresLeaderboardStore(_PostgresStoreStub):
+class PostgresLeaderboardStore:
+    """Append-only snapshots; PK (proxy_wallet, metric, window, fetched_at)
+    means re-running the same snapshot is a no-op via ON CONFLICT DO NOTHING."""
+
+    def __init__(self, database_url: str) -> None:
+        self._dsn = database_url
+
     def write_leaderboard(self, entries: list[PolymarketLeaderboardEntry]) -> int:
-        del entries
-        self._not_implemented()
-        return 0
+        if not entries:
+            return 0
+        conn = _pg_connect(self._dsn)
+        try:
+            with conn.cursor() as cur:
+                cur.executemany(
+                    """
+                    INSERT INTO polymarket_leaderboard
+                        (proxy_wallet, name, pseudonym, amount_usdc,
+                         metric, window_label, fetched_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s::timestamptz)
+                    ON CONFLICT (proxy_wallet, metric, window_label, fetched_at) DO NOTHING
+                    """,
+                    [
+                        (e.proxy_wallet, e.name, e.pseudonym, e.amount_usdc,
+                         e.metric, e.window, e.fetched_at)
+                        for e in entries
+                    ],
+                )
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+        return len(entries)
 
 
-class PostgresActivityStore(_PostgresStoreStub):
+class PostgresActivityStore:
+    """One row per (tx_hash, condition_id, outcome_index, type). Activity rows
+    are immutable on-chain, so duplicates are silently skipped. The model's
+    `timestamp` (unix seconds) is materialized into `traded_at TIMESTAMPTZ`."""
+
+    def __init__(self, database_url: str) -> None:
+        self._dsn = database_url
+
     def write_activity(self, events: list[PolymarketActivity]) -> int:
-        del events
-        self._not_implemented()
-        return 0
+        if not events:
+            return 0
+        conn = _pg_connect(self._dsn)
+        try:
+            with conn.cursor() as cur:
+                cur.executemany(
+                    """
+                    INSERT INTO polymarket_activity
+                        (proxy_wallet, transaction_hash, condition_id,
+                         outcome_index, type, side, size, usdc_size, price,
+                         outcome, slug, title, event_slug, name, pseudonym,
+                         traded_at, fetched_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s,
+                            %s, %s, %s, %s, %s, %s,
+                            to_timestamp(%s), %s::timestamptz)
+                    ON CONFLICT (transaction_hash, condition_id, outcome_index, type)
+                        DO NOTHING
+                    """,
+                    [
+                        (e.proxy_wallet, e.transaction_hash, e.condition_id,
+                         e.outcome_index, e.type, e.side, e.size, e.usdc_size, e.price,
+                         e.outcome, e.slug, e.title, e.event_slug, e.name, e.pseudonym,
+                         e.timestamp, e.fetched_at)
+                        for e in events
+                    ],
+                )
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+        return len(events)
 
 
-class PostgresPositionStore(_PostgresStoreStub):
+class PostgresPositionStore:
+    """Snapshot semantics — PK includes snapshot_at so each fetch persists.
+    Same-instant duplicates (rare) collapse via ON CONFLICT DO NOTHING."""
+
+    def __init__(self, database_url: str) -> None:
+        self._dsn = database_url
+
     def write_positions(self, positions: list[PolymarketPosition]) -> int:
-        del positions
-        self._not_implemented()
-        return 0
+        if not positions:
+            return 0
+        conn = _pg_connect(self._dsn)
+        try:
+            with conn.cursor() as cur:
+                cur.executemany(
+                    """
+                    INSERT INTO polymarket_positions
+                        (proxy_wallet, condition_id, outcome_index, outcome,
+                         size, avg_price, current_value_usdc,
+                         slug, title, event_slug, snapshot_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::timestamptz)
+                    ON CONFLICT (proxy_wallet, condition_id, outcome_index, snapshot_at)
+                        DO NOTHING
+                    """,
+                    [
+                        (p.proxy_wallet, p.condition_id, p.outcome_index, p.outcome,
+                         p.size, p.avg_price, p.current_value_usdc,
+                         p.slug, p.title, p.event_slug, p.snapshot_at)
+                        for p in positions
+                    ],
+                )
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+        return len(positions)
 
 
-class PostgresMarketStore(_PostgresStoreStub):
+class PostgresMarketStore:
+    """Reference data — upsert by condition_id, always overwrite to the
+    freshest fetched_at. outcomes / outcome_prices are stored as JSONB."""
+
+    def __init__(self, database_url: str) -> None:
+        self._dsn = database_url
+
     def write_markets(self, markets: list[PolymarketMarket]) -> int:
-        del markets
-        self._not_implemented()
-        return 0
+        if not markets:
+            return 0
+        conn = _pg_connect(self._dsn)
+        try:
+            with conn.cursor() as cur:
+                cur.executemany(
+                    """
+                    INSERT INTO polymarket_markets
+                        (condition_id, gamma_id, slug, question, category,
+                         end_date, outcomes, outcome_prices, volume_usdc,
+                         liquidity_usdc, closed, active, last_trade_price,
+                         best_bid, best_ask, fetched_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s::jsonb, %s::jsonb, %s,
+                            %s, %s, %s, %s, %s, %s, %s::timestamptz)
+                    ON CONFLICT (condition_id) DO UPDATE SET
+                        gamma_id         = EXCLUDED.gamma_id,
+                        slug             = EXCLUDED.slug,
+                        question         = EXCLUDED.question,
+                        category         = EXCLUDED.category,
+                        end_date         = EXCLUDED.end_date,
+                        outcomes         = EXCLUDED.outcomes,
+                        outcome_prices   = EXCLUDED.outcome_prices,
+                        volume_usdc      = EXCLUDED.volume_usdc,
+                        liquidity_usdc   = EXCLUDED.liquidity_usdc,
+                        closed           = EXCLUDED.closed,
+                        active           = EXCLUDED.active,
+                        last_trade_price = EXCLUDED.last_trade_price,
+                        best_bid         = EXCLUDED.best_bid,
+                        best_ask         = EXCLUDED.best_ask,
+                        fetched_at       = EXCLUDED.fetched_at
+                    """,
+                    [
+                        (m.condition_id, m.gamma_id, m.slug, m.question, m.category,
+                         m.end_date, json.dumps(m.outcomes), json.dumps(m.outcome_prices),
+                         m.volume_usdc, m.liquidity_usdc, m.closed, m.active,
+                         m.last_trade_price, m.best_bid, m.best_ask, m.fetched_at)
+                        for m in markets
+                    ],
+                )
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+        return len(markets)
+
+
+class PostgresWalletValueStore:
+    def __init__(self, database_url: str) -> None:
+        self._dsn = database_url
+
+    def write_values(self, values: list[PolymarketWalletValue]) -> int:
+        if not values:
+            return 0
+        conn = _pg_connect(self._dsn)
+        try:
+            with conn.cursor() as cur:
+                cur.executemany(
+                    """
+                    INSERT INTO polymarket_wallet_values
+                        (proxy_wallet, value_usdc, snapshot_at)
+                    VALUES (%s, %s, %s::timestamptz)
+                    ON CONFLICT (proxy_wallet, snapshot_at) DO NOTHING
+                    """,
+                    [(v.proxy_wallet, v.value_usdc, v.snapshot_at) for v in values],
+                )
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+        return len(values)
+
+
+class PostgresEnrichmentStore:
+    """One row per wallet. Each pass overwrites all fields including computed_at."""
+
+    def __init__(self, database_url: str) -> None:
+        self._dsn = database_url
+
+    def write_enrichment(self, enrichments: list[PolymarketWalletEnrichment]) -> int:
+        if not enrichments:
+            return 0
+        conn = _pg_connect(self._dsn)
+        try:
+            with conn.cursor() as cur:
+                cur.executemany(
+                    """
+                    INSERT INTO polymarket_wallet_enrichment
+                        (proxy_wallet, name, pseudonym, resolved_trades, wins, losses,
+                         win_rate, skill_likelihood, stddevs_above_expected,
+                         total_volume_usdc, total_pnl_usdc, avg_position_size_usdc,
+                         trade_count, last_activity_at, computed_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s,
+                            %s, %s, %s, %s, %s, %s::timestamptz)
+                    ON CONFLICT (proxy_wallet) DO UPDATE SET
+                        name                   = EXCLUDED.name,
+                        pseudonym              = EXCLUDED.pseudonym,
+                        resolved_trades        = EXCLUDED.resolved_trades,
+                        wins                   = EXCLUDED.wins,
+                        losses                 = EXCLUDED.losses,
+                        win_rate               = EXCLUDED.win_rate,
+                        skill_likelihood       = EXCLUDED.skill_likelihood,
+                        stddevs_above_expected = EXCLUDED.stddevs_above_expected,
+                        total_volume_usdc      = EXCLUDED.total_volume_usdc,
+                        total_pnl_usdc         = EXCLUDED.total_pnl_usdc,
+                        avg_position_size_usdc = EXCLUDED.avg_position_size_usdc,
+                        trade_count            = EXCLUDED.trade_count,
+                        last_activity_at       = EXCLUDED.last_activity_at,
+                        computed_at            = EXCLUDED.computed_at
+                    """,
+                    [
+                        (e.proxy_wallet, e.name, e.pseudonym, e.resolved_trades,
+                         e.wins, e.losses, e.win_rate, e.skill_likelihood,
+                         e.stddevs_above_expected, e.total_volume_usdc,
+                         e.total_pnl_usdc, e.avg_position_size_usdc,
+                         e.trade_count, e.last_activity_at, e.computed_at)
+                        for e in enrichments
+                    ],
+                )
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+        return len(enrichments)
+
+
+class PostgresMarketLinkStore:
+    """
+    Mirrors JsonlMarketLinkStore.upsert_links semantics:
+      - Manual decisions are sticky (auto runs can't overwrite them).
+      - Auto runs CAN update other auto rows.
+
+    The WHERE clause on the ON CONFLICT branch blocks the update when the
+    existing row is manual. Returned `written` counts incoming links that
+    were not blocked by a manual decision (matching the JSONL store's count).
+    """
+
+    def __init__(self, database_url: str) -> None:
+        self._dsn = database_url
+
+    def load_links(self) -> list[MarketLink]:
+        conn = _pg_connect(self._dsn)
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT kalshi_ticker, polymarket_condition_id, polymarket_slug,
+                           kalshi_title, polymarket_title, kalshi_end_date,
+                           polymarket_end_date, confidence, status, matched_by,
+                           matched_at
+                    FROM polymarket_market_links
+                    """
+                )
+                rows = cur.fetchall()
+        finally:
+            conn.close()
+        out: list[MarketLink] = []
+        for r in rows:
+            matched_at_raw = r[10]
+            matched_at = (
+                matched_at_raw.isoformat().replace("+00:00", "Z")
+                if hasattr(matched_at_raw, "isoformat")
+                else str(matched_at_raw)
+            )
+            out.append(MarketLink(
+                kalshi_ticker=r[0],
+                polymarket_condition_id=r[1],
+                polymarket_slug=r[2],
+                kalshi_title=r[3],
+                polymarket_title=r[4],
+                kalshi_end_date=r[5],
+                polymarket_end_date=r[6],
+                confidence=float(r[7]),
+                status=r[8],
+                matched_by=r[9],
+                matched_at=matched_at,
+            ))
+        return out
+
+    def upsert_links(self, links: list[MarketLink]) -> int:
+        if not links:
+            return 0
+        written = 0
+        conn = _pg_connect(self._dsn)
+        try:
+            with conn.cursor() as cur:
+                for link in links:
+                    cur.execute(
+                        """
+                        SELECT matched_by
+                        FROM polymarket_market_links
+                        WHERE kalshi_ticker = %s AND polymarket_condition_id = %s
+                        """,
+                        (link.kalshi_ticker, link.polymarket_condition_id),
+                    )
+                    row = cur.fetchone()
+                    if row is not None and row[0] == "manual":
+                        # Sticky-manual: skip and don't count.
+                        continue
+                    cur.execute(
+                        """
+                        INSERT INTO polymarket_market_links
+                            (kalshi_ticker, polymarket_condition_id, polymarket_slug,
+                             kalshi_title, polymarket_title, kalshi_end_date,
+                             polymarket_end_date, confidence, status, matched_by,
+                             matched_at)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::timestamptz)
+                        ON CONFLICT (kalshi_ticker, polymarket_condition_id) DO UPDATE SET
+                            polymarket_slug      = EXCLUDED.polymarket_slug,
+                            kalshi_title         = EXCLUDED.kalshi_title,
+                            polymarket_title     = EXCLUDED.polymarket_title,
+                            kalshi_end_date      = EXCLUDED.kalshi_end_date,
+                            polymarket_end_date  = EXCLUDED.polymarket_end_date,
+                            confidence           = EXCLUDED.confidence,
+                            status               = EXCLUDED.status,
+                            matched_by           = EXCLUDED.matched_by,
+                            matched_at           = EXCLUDED.matched_at
+                        """,
+                        (link.kalshi_ticker, link.polymarket_condition_id,
+                         link.polymarket_slug, link.kalshi_title, link.polymarket_title,
+                         link.kalshi_end_date, link.polymarket_end_date, link.confidence,
+                         link.status, link.matched_by, link.matched_at),
+                    )
+                    written += 1
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+        return written
+
+
+class PostgresWalletCheckpointStore:
+    """Monotonic per-wallet watermark. ON CONFLICT keeps the GREATEST value,
+    so an out-of-order older fetch never rewinds the checkpoint."""
+
+    def __init__(self, database_url: str) -> None:
+        self._dsn = database_url
+
+    def get_last_timestamp(self, wallet: str) -> int | None:
+        conn = _pg_connect(self._dsn)
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT last_timestamp FROM polymarket_wallet_checkpoints "
+                    "WHERE proxy_wallet = %s",
+                    (wallet.lower(),),
+                )
+                row = cur.fetchone()
+        finally:
+            conn.close()
+        return int(row[0]) if row is not None else None
+
+    def set_last_timestamp(self, wallet: str, timestamp: int) -> None:
+        conn = _pg_connect(self._dsn)
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO polymarket_wallet_checkpoints (proxy_wallet, last_timestamp)
+                    VALUES (%s, %s)
+                    ON CONFLICT (proxy_wallet) DO UPDATE
+                        SET last_timestamp = GREATEST(
+                            polymarket_wallet_checkpoints.last_timestamp,
+                            EXCLUDED.last_timestamp
+                        )
+                    """,
+                    (wallet.lower(), timestamp),
+                )
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+
+
+# ── Dual-write wrappers (Phase 7.5) ──────────────────────────────────────────
+#
+# When DATABASE_URL is set, the runner wraps each JSONL store with the matching
+# Dual* class so every write fans out to BOTH JSONL and Postgres. The API still
+# reads from JSONL, so a Postgres outage degrades writes (caller sees the
+# exception) without breaking the read path. The reported `written` count is
+# the JSONL count — that remains the source of truth for the API.
+
+class DualLeaderboardStore:
+    def __init__(self, primary: LeaderboardStore, secondary: LeaderboardStore) -> None:
+        self._primary = primary
+        self._secondary = secondary
+
+    def write_leaderboard(self, entries: list[PolymarketLeaderboardEntry]) -> int:
+        written = self._primary.write_leaderboard(entries)
+        self._secondary.write_leaderboard(entries)
+        return written
+
+
+class DualActivityStore:
+    def __init__(self, primary: ActivityStore, secondary: ActivityStore) -> None:
+        self._primary = primary
+        self._secondary = secondary
+
+    def write_activity(self, events: list[PolymarketActivity]) -> int:
+        written = self._primary.write_activity(events)
+        self._secondary.write_activity(events)
+        return written
+
+
+class DualPositionStore:
+    def __init__(self, primary: PositionStore, secondary: PositionStore) -> None:
+        self._primary = primary
+        self._secondary = secondary
+
+    def write_positions(self, positions: list[PolymarketPosition]) -> int:
+        written = self._primary.write_positions(positions)
+        self._secondary.write_positions(positions)
+        return written
+
+
+class DualMarketStore:
+    def __init__(self, primary: MarketStore, secondary: MarketStore) -> None:
+        self._primary = primary
+        self._secondary = secondary
+
+    def write_markets(self, markets: list[PolymarketMarket]) -> int:
+        written = self._primary.write_markets(markets)
+        self._secondary.write_markets(markets)
+        return written
+
+
+class DualWalletValueStore:
+    def __init__(self, primary: WalletValueStore, secondary: WalletValueStore) -> None:
+        self._primary = primary
+        self._secondary = secondary
+
+    def write_values(self, values: list[PolymarketWalletValue]) -> int:
+        written = self._primary.write_values(values)
+        self._secondary.write_values(values)
+        return written
+
+
+class DualEnrichmentStore:
+    def __init__(self, primary: EnrichmentStore, secondary: EnrichmentStore) -> None:
+        self._primary = primary
+        self._secondary = secondary
+
+    def write_enrichment(self, enrichments: list[PolymarketWalletEnrichment]) -> int:
+        written = self._primary.write_enrichment(enrichments)
+        self._secondary.write_enrichment(enrichments)
+        return written
+
+
+class DualWalletCheckpointStore:
+    """Writes fan out to both; reads come from the primary (JSONL) since that
+    is the system-of-record while we're in dual-write mode."""
+
+    def __init__(
+        self, primary: WalletCheckpointStore, secondary: WalletCheckpointStore
+    ) -> None:
+        self._primary = primary
+        self._secondary = secondary
+
+    def get_last_timestamp(self, wallet: str) -> int | None:
+        return self._primary.get_last_timestamp(wallet)
+
+    def set_last_timestamp(self, wallet: str, timestamp: int) -> None:
+        self._primary.set_last_timestamp(wallet, timestamp)
+        self._secondary.set_last_timestamp(wallet, timestamp)
+
+
+class DualMarketLinkStore:
+    """Both stores enforce sticky-manual independently. Reads come from the
+    primary (JSONL) so downstream matcher behavior is unchanged."""
+
+    def __init__(self, primary: MarketLinkStore, secondary: MarketLinkStore) -> None:
+        self._primary = primary
+        self._secondary = secondary
+
+    def load_links(self) -> list[MarketLink]:
+        return self._primary.load_links()
+
+    def upsert_links(self, links: list[MarketLink]) -> int:
+        written = self._primary.upsert_links(links)
+        self._secondary.upsert_links(links)
+        return written

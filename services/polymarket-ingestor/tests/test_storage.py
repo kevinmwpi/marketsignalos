@@ -13,6 +13,13 @@ from marketsignalos_polymarket.models import (
     PolymarketWalletValue,
 )
 from marketsignalos_polymarket.storage import (
+    DualActivityStore,
+    DualLeaderboardStore,
+    DualMarketLinkStore,
+    DualMarketStore,
+    DualPositionStore,
+    DualWalletCheckpointStore,
+    DualWalletValueStore,
     JsonlActivityStore,
     JsonlLeaderboardStore,
     JsonlMarketLinkStore,
@@ -200,3 +207,146 @@ def test_market_link_store_separate_keys_dont_collide(tmp_path: Path) -> None:
         _link("K2", "0xp1", "pending", "auto"),
     ])
     assert len(store.load_links()) == 3
+
+
+# ── Dual-write wrappers ──────────────────────────────────────────────────────
+#
+# Use two independent JSONL stores in different tmp_path subdirs as stand-ins
+# for the JSONL+Postgres pair. The Dual wrappers are storage-backend-agnostic,
+# so this exercises the fan-out + read-from-primary contract without needing
+# a live DB.
+
+class _CountingSecondary:
+    """Records calls to write_* / set_last_timestamp / upsert_links so tests
+    can assert the secondary saw the same payload as the primary."""
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, int]] = []
+
+    def write_leaderboard(self, entries: list) -> int:  # type: ignore[type-arg]
+        self.calls.append(("leaderboard", len(entries)))
+        return len(entries)
+
+    def write_activity(self, events: list) -> int:  # type: ignore[type-arg]
+        self.calls.append(("activity", len(events)))
+        return len(events)
+
+    def write_positions(self, positions: list) -> int:  # type: ignore[type-arg]
+        self.calls.append(("positions", len(positions)))
+        return len(positions)
+
+    def write_markets(self, markets: list) -> int:  # type: ignore[type-arg]
+        self.calls.append(("markets", len(markets)))
+        return len(markets)
+
+    def write_values(self, values: list) -> int:  # type: ignore[type-arg]
+        self.calls.append(("values", len(values)))
+        return len(values)
+
+    def write_enrichment(self, enrichments: list) -> int:  # type: ignore[type-arg]
+        self.calls.append(("enrichment", len(enrichments)))
+        return len(enrichments)
+
+    def upsert_links(self, links: list) -> int:  # type: ignore[type-arg]
+        self.calls.append(("links", len(links)))
+        return len(links)
+
+    def load_links(self) -> list:  # type: ignore[type-arg]
+        # Secondary read should NOT be hit by the Dual wrapper — return a
+        # sentinel that would fail the test if it were ever surfaced.
+        raise AssertionError("DualMarketLinkStore.load_links must read from primary")
+
+    def get_last_timestamp(self, wallet: str) -> int | None:
+        raise AssertionError(
+            "DualWalletCheckpointStore.get_last_timestamp must read from primary"
+        )
+
+    def set_last_timestamp(self, wallet: str, timestamp: int) -> None:
+        self.calls.append((f"checkpoint:{wallet}", timestamp))
+
+
+def test_dual_leaderboard_fans_out_to_secondary(tmp_path: Path) -> None:
+    primary = JsonlLeaderboardStore(tmp_path / "lb.jsonl")
+    secondary = _CountingSecondary()
+    store = DualLeaderboardStore(primary, secondary)  # type: ignore[arg-type]
+    entry = PolymarketLeaderboardEntry(
+        proxy_wallet="0xabc", name="A", pseudonym="a",
+        amount_usdc=1.0, metric="profit", window="all",
+    )
+    # Returned count comes from the primary (JSONL).
+    assert store.write_leaderboard([entry]) == 1
+    assert secondary.calls == [("leaderboard", 1)]
+
+
+def test_dual_activity_fans_out(tmp_path: Path) -> None:
+    primary = JsonlActivityStore(tmp_path / "a.jsonl")
+    secondary = _CountingSecondary()
+    store = DualActivityStore(primary, secondary)  # type: ignore[arg-type]
+    a = PolymarketActivity(
+        proxy_wallet="0xabc", timestamp=1, condition_id="c", type="TRADE",
+        side="BUY", size=1.0, usdc_size=1.0, price=0.5, outcome_index=0,
+        outcome="Yes", slug="s", title="t", event_slug="e",
+        transaction_hash="0xtx",
+    )
+    store.write_activity([a])
+    assert secondary.calls == [("activity", 1)]
+
+
+def test_dual_position_fans_out(tmp_path: Path) -> None:
+    primary = JsonlPositionStore(tmp_path / "p.jsonl")
+    secondary = _CountingSecondary()
+    store = DualPositionStore(primary, secondary)  # type: ignore[arg-type]
+    pos = PolymarketPosition(
+        proxy_wallet="0xabc", condition_id="c", outcome_index=0, outcome="Yes",
+        size=1, avg_price=0.5, current_value_usdc=1.0,
+        slug="s", title="t", event_slug="e",
+    )
+    store.write_positions([pos])
+    assert secondary.calls == [("positions", 1)]
+
+
+def test_dual_market_fans_out(tmp_path: Path) -> None:
+    primary = JsonlMarketStore(tmp_path / "m.jsonl")
+    secondary = _CountingSecondary()
+    store = DualMarketStore(primary, secondary)  # type: ignore[arg-type]
+    m = PolymarketMarket(
+        gamma_id="1", condition_id="c", slug="s", question="q?", category="",
+        end_date="", outcomes=["Yes", "No"], outcome_prices=[0.5, 0.5],
+        volume_usdc=0, liquidity_usdc=0, closed=False, active=True,
+        last_trade_price=None, best_bid=None, best_ask=None,
+    )
+    store.write_markets([m])
+    assert secondary.calls == [("markets", 1)]
+
+
+def test_dual_wallet_value_fans_out(tmp_path: Path) -> None:
+    primary = JsonlWalletValueStore(tmp_path / "v.jsonl")
+    secondary = _CountingSecondary()
+    store = DualWalletValueStore(primary, secondary)  # type: ignore[arg-type]
+    store.write_values([PolymarketWalletValue(proxy_wallet="0xabc", value_usdc=10.0)])
+    assert secondary.calls == [("values", 1)]
+
+
+def test_dual_checkpoint_reads_from_primary(tmp_path: Path) -> None:
+    """Read path must NOT touch the secondary (asserts inside _CountingSecondary
+    would fire). Write path fans out to both."""
+    primary = JsonWalletCheckpointStore(tmp_path / "ckpt.json")
+    secondary = _CountingSecondary()
+    store = DualWalletCheckpointStore(primary, secondary)  # type: ignore[arg-type]
+
+    assert store.get_last_timestamp("0xabc") is None  # would raise if secondary hit
+    store.set_last_timestamp("0xabc", 1234)
+    assert secondary.calls == [("checkpoint:0xabc", 1234)]
+    assert store.get_last_timestamp("0xabc") == 1234
+
+
+def test_dual_market_link_reads_from_primary(tmp_path: Path) -> None:
+    primary = JsonlMarketLinkStore(tmp_path / "links.jsonl")
+    secondary = _CountingSecondary()
+    store = DualMarketLinkStore(primary, secondary)  # type: ignore[arg-type]
+
+    # load_links must not hit secondary.
+    assert store.load_links() == []
+    written = store.upsert_links([_link("K1", "0xp1", "pending", "auto")])
+    assert written == 1
+    assert secondary.calls == [("links", 1)]
