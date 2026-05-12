@@ -261,6 +261,56 @@ def test_run_wallets_advances_checkpoint(tmp_path: Path) -> None:
     client.close()
 
 
+def test_seed_watchlist_skips_api_when_limit_is_zero(tmp_path: Path) -> None:
+    """N<=0 means 'skip this side'. The leaderboard API treats limit=0 as
+    'no limit' and returns its default page (~50), so the guard must be
+    client-side: skip the GET entirely."""
+    watchlist = tmp_path / "wl.txt"
+    calls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        metric = request.url.path.lstrip("/")
+        calls.append(metric)
+        if metric == "profit":
+            return httpx.Response(200, json=[
+                {"proxyWallet": "0xProfit1", "amount": 1.0, "pseudonym": "p", "name": "p"},
+            ])
+        # volume must never be called for this test.
+        return httpx.Response(200, json=[
+            {"proxyWallet": "0xShouldNotAppear", "amount": 9, "pseudonym": "x", "name": "x"},
+        ])
+
+    client = _client_with_handler(handler)
+    stores = _build_stores(tmp_path)
+    merged = seed_watchlist_from_leaderboard(
+        client, stores, watchlist, top_n_profit=1, top_n_volume=0
+    )
+    assert calls == ["profit"], f"volume API should have been skipped, got: {calls}"
+    assert merged == ["0xprofit1"]
+    client.close()
+
+
+def test_seed_watchlist_skips_both_when_both_zero(tmp_path: Path) -> None:
+    """Pathological but legal: N=0 on both sides — no HTTP calls at all."""
+    watchlist = tmp_path / "wl.txt"
+    watchlist.write_text("# manual\n0xkeep\n", encoding="utf-8")
+    calls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request.url.path)
+        return httpx.Response(500)  # would fail if hit
+
+    client = _client_with_handler(handler)
+    stores = _build_stores(tmp_path)
+    merged = seed_watchlist_from_leaderboard(
+        client, stores, watchlist, top_n_profit=0, top_n_volume=0
+    )
+    assert calls == [], f"no API calls expected, got: {calls}"
+    # Existing manual wallets preserved even when both sides are skipped.
+    assert merged == ["0xkeep"]
+    client.close()
+
+
 def test_seed_watchlist_merges_with_existing(tmp_path: Path) -> None:
     """seed-watchlist preserves manually added wallets and adds top traders."""
     watchlist = tmp_path / "wl.txt"

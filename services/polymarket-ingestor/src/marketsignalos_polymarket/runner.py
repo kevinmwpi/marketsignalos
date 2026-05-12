@@ -440,13 +440,24 @@ def seed_watchlist_from_leaderboard(
 
     Returns the merged watchlist (sorted, deduped, lowercase).
     """
-    raw_profit = client.get_leaderboard(metric="profit", window="all", limit=top_n_profit)
-    profit_entries = [parse_leaderboard_row(r, metric="profit", window="all") for r in raw_profit]
-    stores.leaderboard.write_leaderboard(profit_entries)
+    # N<=0 means "skip this side entirely". The Polymarket API treats limit=0
+    # as "no limit" and returns its default page (~50), which would silently
+    # pull wallets you explicitly asked to exclude.
+    profit_entries: list[PolymarketLeaderboardEntry] = []
+    if top_n_profit > 0:
+        raw_profit = client.get_leaderboard(metric="profit", window="all", limit=top_n_profit)
+        profit_entries = [
+            parse_leaderboard_row(r, metric="profit", window="all") for r in raw_profit
+        ]
+        stores.leaderboard.write_leaderboard(profit_entries)
 
-    raw_volume = client.get_leaderboard(metric="volume", window="all", limit=top_n_volume)
-    volume_entries = [parse_leaderboard_row(r, metric="volume", window="all") for r in raw_volume]
-    stores.leaderboard.write_leaderboard(volume_entries)
+    volume_entries: list[PolymarketLeaderboardEntry] = []
+    if top_n_volume > 0:
+        raw_volume = client.get_leaderboard(metric="volume", window="all", limit=top_n_volume)
+        volume_entries = [
+            parse_leaderboard_row(r, metric="volume", window="all") for r in raw_volume
+        ]
+        stores.leaderboard.write_leaderboard(volume_entries)
 
     new_wallets = {e.proxy_wallet for e in profit_entries + volume_entries if e.proxy_wallet}
     existing = set(_load_watchlist(watchlist_path)) if watchlist_path.exists() else set()
