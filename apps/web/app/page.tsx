@@ -540,16 +540,24 @@ export default async function Home() {
       {/* Top nav */}
       <nav className="sticky top-0 z-10 border-b border-zinc-200 bg-white/95 backdrop-blur-sm">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-3">
-          <div className="flex items-center gap-2.5">
-            <svg className="h-4 w-4 text-zinc-900" fill="none" viewBox="0 0 16 16">
-              <rect fill="currentColor" height="7" rx="1" width="7" />
-              <rect fill="currentColor" height="7" opacity="0.5" rx="1" width="7" x="9" />
-              <rect fill="currentColor" height="7" opacity="0.5" rx="1" width="7" y="9" />
-              <rect fill="currentColor" height="7" rx="1" width="7" x="9" y="9" />
-            </svg>
-            <span className="text-sm font-semibold tracking-tight text-zinc-900">
-              MarketSignalOS
-            </span>
+          <div className="flex items-center gap-6">
+            <div className="flex items-center gap-2.5">
+              <svg className="h-4 w-4 text-zinc-900" fill="none" viewBox="0 0 16 16">
+                <rect fill="currentColor" height="7" rx="1" width="7" />
+                <rect fill="currentColor" height="7" opacity="0.5" rx="1" width="7" x="9" />
+                <rect fill="currentColor" height="7" opacity="0.5" rx="1" width="7" y="9" />
+                <rect fill="currentColor" height="7" rx="1" width="7" x="9" y="9" />
+              </svg>
+              <span className="text-sm font-semibold tracking-tight text-zinc-900">
+                MarketSignalOS
+              </span>
+            </div>
+            <div className="flex items-center gap-4 text-xs">
+              <span className="font-semibold text-zinc-900">Dashboard</span>
+              <a className="text-zinc-500 hover:text-zinc-900" href="/skilled-bets">
+                Skilled bets
+              </a>
+            </div>
           </div>
           <div className="flex items-center gap-4">
             <IngestButton />
