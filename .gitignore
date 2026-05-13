@@ -225,6 +225,12 @@ docker-data/
 prometheus-data/
 grafana-data/
 
+# Ingestor output — JSONL stores, checkpoints, sidecar indexes, the
+# auto-seeded watchlist, and any other generated files. All regenerable
+# by re-running the Kalshi + Polymarket ingestors; would otherwise churn
+# the repo on every ingestion pass.
+services/ingestor/data/
+
 # OS / IDE
 .DS_Store
 .vscode/
