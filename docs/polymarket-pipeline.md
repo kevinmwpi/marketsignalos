@@ -177,7 +177,7 @@ Manual decisions (`matched_by="manual"`) override auto decisions on subsequent m
 
 ## Known limitations
 
-1. **Kalshi parlay tickers have concatenated titles.** Multi-leg "MV" markets show titles like `yes A, yes B, yes C` which pollute the matcher's vector. Filter them out (skip tickers starting with `KXMVE`), or switch to `subtitle`/`yes_sub_title`. Tracked for future tuning.
+1. ~~**Kalshi parlay tickers have concatenated titles.**~~ Resolved: `_is_kalshi_parlay()` in `runner.py` filters `KXMVE*` tickers out of the matcher's input. Raw `kalshi_markets.jsonl` is preserved (still useful for orderflow); the prefix list is a one-line constant if more parlay families need to be added.
 2. **`/positions` endpoint caps at ~100 rows.** Affects whales with broad exposure. Targeted backfill via condition_id might be needed.
 3. **Activity sample depth.** Top traders generate hundreds of events per day; the default `max-pages-per-wallet=20` covers ~10k events but historical depth beyond that requires `--full-backfill`. Steady-state checkpointing means this only matters on first ingest.
 4. **Postgres backend not wired.** All stores fall through to JSONL. Postgres stubs exist in `storage.py` for the eventual migration. Tracked as Phase 7.5.

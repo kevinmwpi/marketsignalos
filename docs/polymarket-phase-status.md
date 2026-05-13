@@ -101,7 +101,7 @@ Alembic migrations needed for: `polymarket_activity`,
 
 ## Phase 8 — Tuning (pending)
 
-- **Kalshi parlay filtering.** `KXMVE*` tickers have concatenated multi-leg titles that pollute the matcher. Filter or use `subtitle`/`yes_sub_title`.
+- ~~**Kalshi parlay filtering.**~~ Done: `_is_kalshi_parlay()` in `runner.py` excludes `KXMVE*` tickers at the matcher's adapter layer (raw JSONL is preserved).
 - **`/positions` pagination.** Endpoint appears to cap at ~100 rows. Either confirm a cursor or fetch positions one condition_id at a time.
 - **Embedding-based matcher.** Swap TF-IDF for `sentence-transformers` only if a calibration set of 50 ambiguous pairs shows it materially improves precision/recall.
 - **Skill score normalization.** Wallets with very few resolved bets get noisy scores. Add a Beta-Binomial prior or just expose `resolved_trades` prominently (already done in the API + dashboard).

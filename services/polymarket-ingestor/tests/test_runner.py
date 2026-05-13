@@ -9,13 +9,20 @@ from marketsignalos_polymarket.polymarket_client import (
     PolymarketClient,
     PolymarketClientConfig,
 )
+from marketsignalos_polymarket.kalshi_markets_fetch import (
+    KalshiMarket,
+    write_kalshi_markets_jsonl,
+)
+from marketsignalos_polymarket.models import PolymarketMarket
 from marketsignalos_polymarket.runner import (
     _build_stores,
+    _is_kalshi_parlay,
     _paginate_activity,
     parse_activity_row,
     parse_leaderboard_row,
     parse_market_row,
     parse_position_row,
+    run_match_markets,
     run_wallets,
     seed_watchlist_from_leaderboard,
 )
@@ -345,6 +352,75 @@ def test_seed_watchlist_merges_with_existing(tmp_path: Path) -> None:
     assert "0xprofit1" in contents
     assert "0xmanual2" in contents  # manual entry preserved
     client.close()
+
+
+def test_is_kalshi_parlay_detects_kxmve_prefix() -> None:
+    """KXMVE* tickers are multi-game parlays whose concatenated leg titles
+    pollute the TF-IDF matcher."""
+    assert _is_kalshi_parlay("KXMVESPORTSMULTIGAMEEXTENDED-S20264AC9FA0176D-8E5864C593E")
+    assert _is_kalshi_parlay("KXMVE-ANYTHING")
+    # case-insensitive: ticker casing varies across Kalshi feeds.
+    assert _is_kalshi_parlay("kxmve-sports-foo")
+    # Normal Kalshi tickers must not be filtered.
+    assert not _is_kalshi_parlay("KXFEDDECISION-25SEP-50BP")
+    assert not _is_kalshi_parlay("KXNFLGAME-2026MAYJETS")
+    # Empty / pathological inputs.
+    assert not _is_kalshi_parlay("")
+
+
+def _kalshi_market(
+    ticker: str, title: str, *, end: str = "2026-06-01T00:00:00Z"
+) -> KalshiMarket:
+    return KalshiMarket(
+        ticker=ticker, event_ticker="EV", title=title, subtitle="", yes_sub_title="",
+        category="Sports", status="open", expiration_time=end, close_time=end,
+        yes_bid=50, yes_ask=52, last_price=51,
+    )
+
+
+def _poly_market(condition_id: str, question: str, *, end: str = "2026-06-01T00:00:00Z") -> PolymarketMarket:
+    return PolymarketMarket(
+        gamma_id="g1", condition_id=condition_id, slug="s",
+        question=question, category="Sports", end_date=end,
+        outcomes=["Yes", "No"], outcome_prices=[0.5, 0.5],
+        volume_usdc=1000, liquidity_usdc=500, closed=False, active=True,
+        last_trade_price=0.5, best_bid=0.49, best_ask=0.51,
+    )
+
+
+def test_run_match_markets_excludes_kalshi_parlays(tmp_path: Path) -> None:
+    """End-to-end through run_match_markets: a parlay ticker whose title would
+    otherwise be a strong TF-IDF match against a Polymarket question must not
+    appear in the produced market_links."""
+    stores = _build_stores(tmp_path)
+
+    # Polymarket side: one straight market about a Yankees vs Red Sox game.
+    poly_q = "Will the Yankees beat the Red Sox on June 1?"
+    poly_markets = [_poly_market("0xstraight", poly_q)]
+    # Persist via the JSONL store so run_match_markets's loader can read it back.
+    stores.markets.write_markets(poly_markets)
+
+    # Kalshi side: one parlay whose concatenated title contains the same teams
+    # (would TF-IDF-match the Polymarket question) PLUS one legitimate single-event
+    # market that should match.
+    parlay = _kalshi_market(
+        "KXMVESPORTSMULTIGAMEEXTENDED-2026JUN-LEGS",
+        "yes Yankees Red Sox, yes Mets Phillies, yes Dodgers Padres",
+    )
+    legit = _kalshi_market(
+        "KXMLBYANKEESREDSOX-2026JUN01",
+        "Will the Yankees beat the Red Sox on June 1?",
+    )
+    write_kalshi_markets_jsonl([parlay, legit], stores.kalshi_markets_path)
+
+    run_match_markets(stores)
+
+    links = stores.market_links.load_links()
+    tickers = {link.kalshi_ticker for link in links}
+    assert parlay.ticker not in tickers, \
+        f"parlay should be excluded, but appeared in: {tickers}"
+    assert legit.ticker in tickers, \
+        f"legit market should still match, links: {tickers}"
 
 
 def test_parse_position_row_falls_back_on_alt_field_names() -> None:

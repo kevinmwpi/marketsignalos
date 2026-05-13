@@ -219,10 +219,10 @@ Every layer emits:
 - **`/signals/cross-exchange`** — the marquee signal: tradeable Kalshi↔Polymarket price dislocations weighted by wallet skill
 - **Dashboard panels** — `CrossExchangePanel` (full-width marquee) and `PolymarketLeaderboardPanel` (sidebar) wired into `apps/web/app/page.tsx`
 - **`INGEST_POLYMARKET` kill switch** — `all` mode no-ops unless set, so the package can deploy without triggering load
+- **Polymarket Postgres write path** — Alembic schema (`services/polymarket-ingestor/alembic/`) covers 8 tables; `Dual*` store wrappers fan every write out to JSONL **and** Postgres when `DATABASE_URL` is set; API reads still come from JSONL
+- **Kalshi parlay-ticker filter** — `_is_kalshi_parlay()` in the runner adapter excludes `KXMVE*` multi-leg tickers from the matcher's input (raw JSONL preserved)
 
 ### Pending / in progress
-- Polymarket Postgres migrations (Phase 7.5; stubs exist in `services/polymarket-ingestor/.../storage.py`)
-- Kalshi parlay-ticker filtering for the matcher (multi-leg `KXMVE*` titles pollute TF-IDF)
 - `/positions` endpoint pagination (currently caps at ~100 per wallet)
 - Embedding-based matcher (only if TF-IDF precision/recall proves inadequate)
 - Redis + Celery async job queue

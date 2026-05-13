@@ -647,6 +647,22 @@ def _load_leaderboard_records(path: Path) -> list[PolymarketLeaderboardEntry]:
 
 # ── Cross-exchange matching ──────────────────────────────────────────────────
 
+# Kalshi "multi-game" / "multi-vendor equity" parlay tickers concatenate every
+# leg into one title (e.g. "yes A, yes B, yes C"), which produces high-recall
+# but low-precision TF-IDF matches against any Polymarket market that mentions
+# one of the legs. They're not single-event markets in the sense the matcher
+# assumes, so we exclude them entirely.
+#
+# Filtering happens here at the adapter — the raw JSONL is preserved (still
+# useful for Kalshi-side orderflow analyses) and the matcher itself stays
+# source-agnostic. Add new prefixes here if other parlay families appear.
+_KALSHI_PARLAY_PREFIXES: tuple[str, ...] = ("KXMVE",)
+
+
+def _is_kalshi_parlay(ticker: str) -> bool:
+    return ticker.upper().startswith(_KALSHI_PARLAY_PREFIXES)
+
+
 def _kalshi_to_normalized(market: KalshiMarket) -> NormalizedMarket:
     """Map a KalshiMarket to the matcher's source-agnostic adapter."""
     title = market.title or market.subtitle or market.yes_sub_title
@@ -695,7 +711,15 @@ def run_match_markets(stores: _Stores, *, config: MatchConfig | None = None) -> 
         log.error("no polymarket markets — run 'markets' first")
         return 0
 
-    kalshi_norm = [_kalshi_to_normalized(m) for m in kalshi_raw]
+    kalshi_filtered = [m for m in kalshi_raw if not _is_kalshi_parlay(m.ticker)]
+    excluded = len(kalshi_raw) - len(kalshi_filtered)
+    if excluded:
+        log.info(
+            "match_markets excluded_parlays=%d prefixes=%s",
+            excluded, _KALSHI_PARLAY_PREFIXES,
+        )
+
+    kalshi_norm = [_kalshi_to_normalized(m) for m in kalshi_filtered]
     poly_norm = [_polymarket_to_normalized(m) for m in poly_raw]
     links = match_markets(kalshi_norm, poly_norm, config=config)
     written = stores.market_links.upsert_links(links)
