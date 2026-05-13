@@ -97,6 +97,7 @@ class _Position:
     avg_price: float
     current_value_usdc: float
     slug: str
+    event_slug: str  # the canonical slug for Polymarket /event/ deep links
     title: str
     snapshot_at: str
 
@@ -131,6 +132,7 @@ class _PolymarketPrice:
 @dataclass(slots=True)
 class _KalshiPrice:
     ticker: str
+    event_ticker: str  # for /markets/<event_ticker> deep links
     yes_price: float  # 0..1
     title: str
 
@@ -146,6 +148,7 @@ class CrossExchangeSignal:
 
     polymarket_condition_id: str
     polymarket_slug: str
+    polymarket_event_slug: str  # source for polymarket_market_url
     polymarket_title: str
     polymarket_outcome_index: int
     polymarket_outcome: str
@@ -154,6 +157,7 @@ class CrossExchangeSignal:
     polymarket_position_value_usdc: float
 
     kalshi_ticker: str
+    kalshi_event_ticker: str  # source for kalshi_market_url
     kalshi_title: str
     kalshi_yes_price: float
 
@@ -219,6 +223,7 @@ def _load_latest_positions() -> list[_Position]:
             avg_price=_f(row.get("avg_price")),
             current_value_usdc=_f(row.get("current_value_usdc")),
             slug=str(row.get("slug", "")),
+            event_slug=str(row.get("event_slug", "") or ""),
             title=str(row.get("title", "")),
             snapshot_at=snap_at,
         )
@@ -299,7 +304,12 @@ def _load_kalshi_prices() -> dict[str, _KalshiPrice]:
         price = cents / 100.0
         if price <= 0 or price >= 1:
             continue
-        out[ticker] = _KalshiPrice(ticker=ticker, yes_price=price, title=str(row.get("title", "")))
+        out[ticker] = _KalshiPrice(
+            ticker=ticker,
+            event_ticker=str(row.get("event_ticker", "") or ""),
+            yes_price=price,
+            title=str(row.get("title", "")),
+        )
     return out
 
 
@@ -370,6 +380,14 @@ def compute_cross_exchange_signals(
             )
 
             resolved_slug = pos.slug or link.polymarket_slug
+            # Only the position carries event_slug — it's the only field
+            # that produces a working /event/ URL. The link's polymarket_slug
+            # is a per-market slug and would 404 there.
+            event_slug = pos.event_slug
+            # Kalshi's deep link uses the event_ticker, which only the live
+            # kalshi_markets.jsonl record carries; market_links.jsonl knows
+            # only the per-market ticker.
+            event_ticker = kalshi_rec.event_ticker
             signals.append(
                 CrossExchangeSignal(
                     proxy_wallet=pos.proxy_wallet,
@@ -378,6 +396,7 @@ def compute_cross_exchange_signals(
                     resolved_trades=skill.resolved_trades,
                     polymarket_condition_id=pos.condition_id,
                     polymarket_slug=resolved_slug,
+                    polymarket_event_slug=event_slug,
                     polymarket_title=pos.title or link.polymarket_title,
                     polymarket_outcome_index=pos.outcome_index,
                     polymarket_outcome=pos.outcome,
@@ -385,6 +404,7 @@ def compute_cross_exchange_signals(
                     polymarket_position_size=round(pos.size, 4),
                     polymarket_position_value_usdc=round(pos.current_value_usdc, 2),
                     kalshi_ticker=link.kalshi_ticker,
+                    kalshi_event_ticker=event_ticker,
                     kalshi_title=kalshi_rec.title or link.kalshi_title,
                     kalshi_yes_price=round(kalshi_rec.yes_price, 4),
                     price_dislocation=round(dislocation, 4),
@@ -396,8 +416,8 @@ def compute_cross_exchange_signals(
                     opportunity_score=round(opp_score, 4),
                     observed_at=observed_at,
                     polymarket_profile_url=polymarket_profile_url(pos.proxy_wallet),
-                    polymarket_market_url=polymarket_market_url(resolved_slug),
-                    kalshi_market_url=kalshi_market_url(link.kalshi_ticker),
+                    polymarket_market_url=polymarket_market_url(event_slug),
+                    kalshi_market_url=kalshi_market_url(event_ticker),
                 )
             )
 

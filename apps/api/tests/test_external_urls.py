@@ -18,36 +18,46 @@ def test_polymarket_profile_url_empty_returns_empty() -> None:
     assert polymarket_profile_url("") == ""
 
 
-def test_polymarket_market_url_uses_event_route() -> None:
+def test_polymarket_market_url_uses_event_slug() -> None:
+    """Polymarket /event/<slug> requires the EVENT slug (the parent), not the
+    per-market slug. Picking the right input is the responsibility of the
+    caller; this builder just routes the value into the URL."""
     assert (
-        polymarket_market_url("fed-decision-sep-2026-50bp")
-        == "https://polymarket.com/event/fed-decision-sep-2026-50bp"
+        polymarket_market_url("2026-fifa-world-cup-winner-595")
+        == "https://polymarket.com/event/2026-fifa-world-cup-winner-595"
     )
 
 
 def test_polymarket_market_url_strips_whitespace() -> None:
-    assert polymarket_market_url("  slug-with-padding  ") \
-        == "https://polymarket.com/event/slug-with-padding"
+    assert polymarket_market_url("  fed-decision  ") \
+        == "https://polymarket.com/event/fed-decision"
 
 
-def test_polymarket_market_url_empty_returns_empty() -> None:
+def test_polymarket_market_url_empty_returns_empty_no_guessing() -> None:
+    """If we don't have an event_slug we DO NOT fall back to the market slug
+    (would 404), and we don't synthesize one — just omit the link."""
     assert polymarket_market_url("") == ""
     assert polymarket_market_url("   ") == ""
 
 
-def test_kalshi_market_url_strips_to_event_ticker() -> None:
-    """A Kalshi market ticker is `<event_ticker>-<expiry>-<strike>`;
-    only the event_ticker is needed for the deep link."""
+def test_kalshi_market_url_uses_full_event_ticker_including_dashes() -> None:
+    """Kalshi event tickers themselves can contain dashes (e.g.
+    'KXFED-26SEP'); the builder must take the whole event_ticker, not split
+    it on the first dash and silently drop the suffix."""
     assert (
-        kalshi_market_url("KXFEDDECISION-25SEP-50BP")
-        == "https://kalshi.com/markets/kxfeddecision"
+        kalshi_market_url("KXFED-26SEP")
+        == "https://kalshi.com/markets/kxfed-26sep"
     )
 
 
-def test_kalshi_market_url_handles_ticker_with_no_dash() -> None:
-    # Some legacy tickers don't have the dash-separated structure.
-    assert kalshi_market_url("KXSIMPLE") == "https://kalshi.com/markets/kxsimple"
+def test_kalshi_market_url_lowercases() -> None:
+    assert kalshi_market_url("KXNFLGAME") == "https://kalshi.com/markets/kxnflgame"
+
+
+def test_kalshi_market_url_strips_whitespace() -> None:
+    assert kalshi_market_url("  KXFED-26SEP ") == "https://kalshi.com/markets/kxfed-26sep"
 
 
 def test_kalshi_market_url_empty_returns_empty() -> None:
     assert kalshi_market_url("") == ""
+    assert kalshi_market_url("   ") == ""

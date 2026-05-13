@@ -8,6 +8,7 @@ export type CrossExchangeSignal = {
 
   polymarket_condition_id: string;
   polymarket_slug: string;
+  polymarket_event_slug: string;
   polymarket_title: string;
   polymarket_outcome_index: number;
   polymarket_outcome: string;
@@ -16,6 +17,7 @@ export type CrossExchangeSignal = {
   polymarket_position_value_usdc: number;
 
   kalshi_ticker: string;
+  kalshi_event_ticker: string;
   kalshi_title: string;
   kalshi_yes_price: number;
 

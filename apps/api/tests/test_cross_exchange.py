@@ -148,6 +148,51 @@ def test_cross_exchange_surfaces_skilled_wallet_dislocation(
     assert sig["cheaper_exchange"] == "kalshi"
     assert "buy yes on kalshi" in sig["recommended_action"].lower()
 
+    # Deep links are built from event_slug / event_ticker (NOT from the
+    # market slug or the first dash-segment of the market ticker).
+    assert sig["polymarket_event_slug"] == "fed-decision"
+    assert sig["kalshi_event_ticker"] == "KXFED-26SEP"
+    assert sig["polymarket_market_url"] == "https://polymarket.com/event/fed-decision"
+    assert sig["kalshi_market_url"] == "https://kalshi.com/markets/kxfed-26sep"
+    assert sig["polymarket_profile_url"] == "https://polymarket.com/profile/0xskilled"
+
+
+def test_cross_exchange_omits_polymarket_market_url_when_event_slug_missing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """If the position record didn't carry an event_slug we must NOT fall
+    back to the per-market slug to build /event/<slug> — that URL 404s.
+    Better to ship an empty string and let the frontend skip the link."""
+    pm_dir = _seed_polymarket_dir(tmp_path)
+    # Re-seed positions WITHOUT event_slug, keeping market slug populated.
+    _write_jsonl(
+        pm_dir / "polymarket_positions.jsonl",
+        [
+            {
+                "proxy_wallet": "0xskilled", "condition_id": "0xcond1",
+                "outcome_index": 0, "outcome": "Yes",
+                "size": 1000.0, "avg_price": 0.55, "current_value_usdc": 620.0,
+                "slug": "fed-50bp-sep", "title": "Fed cuts 50bp in September",
+                # NB: event_slug intentionally absent
+                "snapshot_at": "2026-05-11T00:00:00Z",
+            },
+        ],
+    )
+    monkeypatch.setenv("POLYMARKET_DATA_DIR", str(pm_dir))
+
+    client = TestClient(app)
+    resp = client.get("/signals/cross-exchange?min_skill=0.6&min_resolved=20&min_dislocation_pct=2")
+    rows = resp.json()
+    assert len(rows) == 1
+    sig = rows[0]
+    # Market slug is still preserved on the signal (it's useful metadata),
+    # but the URL is empty so the panel can skip rendering the link.
+    assert sig["polymarket_slug"] == "fed-50bp-sep"
+    assert sig["polymarket_event_slug"] == ""
+    assert sig["polymarket_market_url"] == ""
+    # The Kalshi side is independent — its URL is still built.
+    assert sig["kalshi_market_url"] == "https://kalshi.com/markets/kxfed-26sep"
+
 
 def test_cross_exchange_filters_low_skill_wallets(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch

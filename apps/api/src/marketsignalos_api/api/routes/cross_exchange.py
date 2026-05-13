@@ -19,6 +19,7 @@ class CrossExchangeSignalOut(BaseModel):
 
     polymarket_condition_id: str
     polymarket_slug: str
+    polymarket_event_slug: str
     polymarket_title: str
     polymarket_outcome_index: int
     polymarket_outcome: str
@@ -27,6 +28,7 @@ class CrossExchangeSignalOut(BaseModel):
     polymarket_position_value_usdc: float
 
     kalshi_ticker: str
+    kalshi_event_ticker: str
     kalshi_title: str
     kalshi_yes_price: float
 
