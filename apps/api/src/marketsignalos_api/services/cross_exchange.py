@@ -39,6 +39,11 @@ from marketsignalos_api._paths import (
     polymarket_markets_path,
     polymarket_positions_path,
 )
+from marketsignalos_api.services.external_urls import (
+    kalshi_market_url,
+    polymarket_market_url,
+    polymarket_profile_url,
+)
 
 
 def _utcnow_iso() -> str:
@@ -162,6 +167,13 @@ class CrossExchangeSignal:
 
     opportunity_score: float
     observed_at: str
+
+    # Deep links for "tail the whale" — open the wallet, the Polymarket leg,
+    # and the corresponding Kalshi market in one click each. Empty string when
+    # the identifying field upstream was blank.
+    polymarket_profile_url: str
+    polymarket_market_url: str
+    kalshi_market_url: str
 
 
 # ── Loaders ───────────────────────────────────────────────────────────────────
@@ -357,6 +369,7 @@ def compute_cross_exchange_signals(
                 max(0.0, pos.current_value_usdc)
             )
 
+            resolved_slug = pos.slug or link.polymarket_slug
             signals.append(
                 CrossExchangeSignal(
                     proxy_wallet=pos.proxy_wallet,
@@ -364,7 +377,7 @@ def compute_cross_exchange_signals(
                     skill_likelihood=round(skill.skill_likelihood, 6),
                     resolved_trades=skill.resolved_trades,
                     polymarket_condition_id=pos.condition_id,
-                    polymarket_slug=pos.slug or link.polymarket_slug,
+                    polymarket_slug=resolved_slug,
                     polymarket_title=pos.title or link.polymarket_title,
                     polymarket_outcome_index=pos.outcome_index,
                     polymarket_outcome=pos.outcome,
@@ -382,6 +395,9 @@ def compute_cross_exchange_signals(
                     match_status=link.status,
                     opportunity_score=round(opp_score, 4),
                     observed_at=observed_at,
+                    polymarket_profile_url=polymarket_profile_url(pos.proxy_wallet),
+                    polymarket_market_url=polymarket_market_url(resolved_slug),
+                    kalshi_market_url=kalshi_market_url(link.kalshi_ticker),
                 )
             )
 

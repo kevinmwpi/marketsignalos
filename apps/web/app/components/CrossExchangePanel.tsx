@@ -29,6 +29,10 @@ export type CrossExchangeSignal = {
 
   opportunity_score: number;
   observed_at: string;
+
+  polymarket_profile_url: string;
+  polymarket_market_url: string;
+  kalshi_market_url: string;
 };
 
 const usdFormatter = new Intl.NumberFormat("en-US", {
@@ -138,9 +142,21 @@ export default function CrossExchangePanel({
                         match {(sig.match_confidence * 100).toFixed(0)}%
                       </span>
                     </div>
-                    <p className="mt-1.5 text-sm font-semibold leading-snug text-zinc-900">
-                      {sig.polymarket_title || sig.kalshi_title || sig.polymarket_slug}
-                    </p>
+                    {sig.polymarket_market_url ? (
+                      <a
+                        className="mt-1.5 block text-sm font-semibold leading-snug text-zinc-900 hover:underline"
+                        href={sig.polymarket_market_url}
+                        rel="noopener noreferrer"
+                        target="_blank"
+                        title="Open this market on Polymarket"
+                      >
+                        {sig.polymarket_title || sig.kalshi_title || sig.polymarket_slug}
+                      </a>
+                    ) : (
+                      <p className="mt-1.5 text-sm font-semibold leading-snug text-zinc-900">
+                        {sig.polymarket_title || sig.kalshi_title || sig.polymarket_slug}
+                      </p>
+                    )}
                     <p className="mt-1 text-xs leading-relaxed text-zinc-500">
                       {sig.recommended_action}
                     </p>
@@ -172,7 +188,19 @@ export default function CrossExchangePanel({
                   <div className="font-mono text-lg text-zinc-400">{dirArrow}</div>
                   <div className="text-right">
                     <div className="flex items-center justify-end gap-1.5">
-                      <span className="font-mono text-xs text-zinc-500">{sig.kalshi_ticker}</span>
+                      {sig.kalshi_market_url ? (
+                        <a
+                          className="font-mono text-xs text-zinc-500 hover:text-zinc-900 hover:underline"
+                          href={sig.kalshi_market_url}
+                          rel="noopener noreferrer"
+                          target="_blank"
+                          title="Open this market on Kalshi"
+                        >
+                          {sig.kalshi_ticker}
+                        </a>
+                      ) : (
+                        <span className="font-mono text-xs text-zinc-500">{sig.kalshi_ticker}</span>
+                      )}
                       <ExchangeChip label="Kalshi" isCheaper={kalshiCheaper} />
                     </div>
                     <p className="mt-1 font-mono text-sm font-semibold tabular-nums text-zinc-900">
@@ -185,9 +213,21 @@ export default function CrossExchangePanel({
                 <div className="mt-3 flex items-center justify-between gap-3 text-[11px] text-zinc-500">
                   <div className="flex items-center gap-2">
                     <span className="text-zinc-400">Signal source:</span>
-                    <span className="font-semibold text-zinc-700">
-                      {sig.wallet_name || shortWallet(sig.proxy_wallet)}
-                    </span>
+                    {sig.polymarket_profile_url ? (
+                      <a
+                        className="font-semibold text-zinc-700 hover:text-zinc-900 hover:underline"
+                        href={sig.polymarket_profile_url}
+                        rel="noopener noreferrer"
+                        target="_blank"
+                        title="Open wallet on Polymarket"
+                      >
+                        {sig.wallet_name || shortWallet(sig.proxy_wallet)}
+                      </a>
+                    ) : (
+                      <span className="font-semibold text-zinc-700">
+                        {sig.wallet_name || shortWallet(sig.proxy_wallet)}
+                      </span>
+                    )}
                     <span className="font-mono text-zinc-400">
                       ({shortWallet(sig.proxy_wallet)})
                     </span>

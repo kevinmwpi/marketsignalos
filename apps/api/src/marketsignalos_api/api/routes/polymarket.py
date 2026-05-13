@@ -8,6 +8,7 @@ from fastapi import APIRouter, Query
 from pydantic import BaseModel
 
 from marketsignalos_api._paths import polymarket_enrichment_path
+from marketsignalos_api.services.external_urls import polymarket_profile_url
 
 
 router = APIRouter(prefix="/signals", tags=["signals"])
@@ -29,6 +30,7 @@ class PolymarketWalletSkill(BaseModel):
     trade_count: int
     last_activity_at: int
     computed_at: str
+    polymarket_profile_url: str
 
 
 def _read_enrichment_rows(path: Path) -> list[dict[str, Any]]:
@@ -69,7 +71,14 @@ def polymarket_leaderboard(
         if skill < min_skill:
             continue
         try:
-            eligible.append(PolymarketWalletSkill(**row))
+            eligible.append(
+                PolymarketWalletSkill(
+                    **row,
+                    polymarket_profile_url=polymarket_profile_url(
+                        str(row.get("proxy_wallet", ""))
+                    ),
+                )
+            )
         except (TypeError, ValueError):
             continue
     eligible.sort(

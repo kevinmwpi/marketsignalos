@@ -16,6 +16,7 @@ export type PolymarketWalletSkill = {
   trade_count: number;
   last_activity_at: number;
   computed_at: string;
+  polymarket_profile_url: string;
 };
 
 const numberFormatter = new Intl.NumberFormat("en-US");
@@ -106,13 +107,34 @@ export default function PolymarketLeaderboardPanel({
               rows.map((row) => (
                 <tr className="hover:bg-zinc-50" key={row.proxy_wallet}>
                   <td className="px-4 py-2.5">
-                    <span className="block font-mono text-xs font-medium text-zinc-900">
-                      {row.name || shortWallet(row.proxy_wallet)}
-                    </span>
-                    {row.name && (
-                      <span className="block font-mono text-[10px] text-zinc-400">
-                        {shortWallet(row.proxy_wallet)}
-                      </span>
+                    {row.polymarket_profile_url ? (
+                      <a
+                        className="group block focus:outline-none focus:ring-2 focus:ring-emerald-400"
+                        href={row.polymarket_profile_url}
+                        rel="noopener noreferrer"
+                        target="_blank"
+                        title="Open on Polymarket"
+                      >
+                        <span className="block font-mono text-xs font-medium text-zinc-900 group-hover:underline">
+                          {row.name || shortWallet(row.proxy_wallet)}
+                        </span>
+                        {row.name && (
+                          <span className="block font-mono text-[10px] text-zinc-400">
+                            {shortWallet(row.proxy_wallet)}
+                          </span>
+                        )}
+                      </a>
+                    ) : (
+                      <>
+                        <span className="block font-mono text-xs font-medium text-zinc-900">
+                          {row.name || shortWallet(row.proxy_wallet)}
+                        </span>
+                        {row.name && (
+                          <span className="block font-mono text-[10px] text-zinc-400">
+                            {shortWallet(row.proxy_wallet)}
+                          </span>
+                        )}
+                      </>
                     )}
                   </td>
                   <td className="px-4 py-2.5 text-right font-mono text-xs text-zinc-700">

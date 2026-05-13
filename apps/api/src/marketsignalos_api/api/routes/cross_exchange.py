@@ -41,6 +41,10 @@ class CrossExchangeSignalOut(BaseModel):
     opportunity_score: float
     observed_at: str
 
+    polymarket_profile_url: str
+    polymarket_market_url: str
+    kalshi_market_url: str
+
 
 @router.get("/cross-exchange", response_model=list[CrossExchangeSignalOut])
 def cross_exchange(
