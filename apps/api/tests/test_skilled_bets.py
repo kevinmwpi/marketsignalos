@@ -270,6 +270,95 @@ def test_skilled_bets_min_position_value_filters_dust(
     assert rows[0]["condition_id"] == "0xcond_fed"
 
 
+def test_skilled_bets_surfaces_kalshi_mirror_when_match_exists(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Central product behavior: when the cross-exchange matcher has found
+    an equivalent Kalshi market for the Polymarket condition_id the
+    skilled wallet is holding, the bet must carry the Kalshi ticker,
+    title, deep link, and current YES price so the user can tail it."""
+    pm_dir = _seed(tmp_path)
+
+    # Two candidate matches for the same condition_id — the approved /
+    # higher-confidence one should win, and a rejected link must be
+    # ignored entirely.
+    _write_jsonl(
+        pm_dir / "market_links.jsonl",
+        [
+            {
+                "kalshi_ticker": "KXFED-26SEP-50BP",
+                "polymarket_condition_id": "0xcond_fed",
+                "polymarket_slug": "fed-50bp-sep",
+                "kalshi_title": "Fed September 50bp cut",
+                "polymarket_title": "Fed cuts 50bp in September",
+                "kalshi_end_date": "2026-09-18T00:00:00Z",
+                "polymarket_end_date": "2026-09-18T00:00:00Z",
+                "confidence": 0.92,
+                "status": "approved",
+                "matched_by": "auto",
+                "matched_at": "2026-05-12T08:00:00Z",
+            },
+            {
+                "kalshi_ticker": "KXFED-26SEP-OLD",
+                "polymarket_condition_id": "0xcond_fed",
+                "polymarket_slug": "fed-50bp-sep",
+                "kalshi_title": "Older candidate",
+                "polymarket_title": "Fed cuts 50bp in September",
+                "kalshi_end_date": "2026-09-18T00:00:00Z",
+                "polymarket_end_date": "2026-09-18T00:00:00Z",
+                "confidence": 0.99,
+                "status": "rejected",
+                "matched_by": "manual",
+                "matched_at": "2026-05-12T07:00:00Z",
+            },
+        ],
+    )
+    _write_jsonl(
+        pm_dir / "kalshi_markets.jsonl",
+        [
+            {
+                "ticker": "KXFED-26SEP-50BP",
+                "event_ticker": "KXFED-26SEP",
+                "title": "Fed cuts 50 bps at the September meeting",
+                "subtitle": "",
+                "yes_sub_title": "",
+                "category": "Economics",
+                "status": "open",
+                "expiration_time": "2026-09-18T00:00:00Z",
+                "close_time": "2026-09-18T00:00:00Z",
+                "yes_bid": 55,
+                "yes_ask": 57,
+                "last_price": 56,
+                "fetched_at": "2026-05-12T08:00:00Z",
+            },
+        ],
+    )
+
+    monkeypatch.setenv("POLYMARKET_DATA_DIR", str(pm_dir))
+    client = TestClient(app)
+    resp = client.get("/signals/skilled-bets?min_skill=0.9&min_resolved=20")
+    rows = resp.json()
+    fed = next(r for r in rows if r["condition_id"] == "0xcond_fed")
+
+    assert fed["kalshi_ticker"] == "KXFED-26SEP-50BP"
+    assert fed["kalshi_event_ticker"] == "KXFED-26SEP"
+    # Live title from kalshi_markets.jsonl (not the snapshot in market_links).
+    assert fed["kalshi_title"] == "Fed cuts 50 bps at the September meeting"
+    assert fed["kalshi_market_url"] == "https://kalshi.com/markets/kxfed-26sep"
+    # Mid of 55/57 cents -> 0.56.
+    assert fed["kalshi_yes_price"] == 0.56
+    assert fed["kalshi_match_confidence"] == 0.92
+    assert fed["kalshi_match_status"] == "approved"
+
+    # The btc condition has no link → mirror fields must be empty so the UI
+    # can hide the Kalshi CTA cleanly.
+    btc = next(r for r in rows if r["condition_id"] == "0xcond_btc")
+    assert btc["kalshi_ticker"] == ""
+    assert btc["kalshi_market_url"] == ""
+    assert btc["kalshi_yes_price"] == 0.0
+    assert btc["kalshi_match_status"] == ""
+
+
 def test_skilled_bets_empty_when_no_skilled_wallets(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -27,12 +27,15 @@ from pathlib import Path
 from typing import Any
 
 from marketsignalos_api._paths import (
+    kalshi_markets_path,
+    market_links_path,
     polymarket_activity_path,
     polymarket_enrichment_path,
     polymarket_markets_path,
     polymarket_positions_path,
 )
 from marketsignalos_api.services.external_urls import (
+    kalshi_market_url,
     polymarket_market_url,
     polymarket_profile_url,
 )
@@ -73,6 +76,18 @@ class SkilledBetSignal:
     # Deep links
     polymarket_profile_url: str
     polymarket_market_url: str
+
+    # Kalshi mirror — populated when the cross-exchange matcher found an
+    # equivalent market on Kalshi. Empty strings / 0 / None when no match
+    # exists, so the client can use truthiness to decide whether to render
+    # the "tail this on Kalshi" call-to-action.
+    kalshi_ticker: str
+    kalshi_event_ticker: str
+    kalshi_title: str
+    kalshi_market_url: str
+    kalshi_yes_price: float  # 0.0..1.0; 0.0 when unknown
+    kalshi_match_confidence: float  # 0.0..1.0
+    kalshi_match_status: str  # "approved" | "pending" | ""
 
 
 # ── Internal helpers ──────────────────────────────────────────────────────────
@@ -225,6 +240,89 @@ def _load_polymarket_markets() -> dict[str, _PolymarketMarketRec]:
     return out
 
 
+@dataclass(slots=True)
+class _KalshiMirror:
+    """Best Kalshi mirror for one Polymarket condition_id."""
+
+    ticker: str
+    event_ticker: str
+    title: str
+    yes_price: float  # 0..1, normalized from Kalshi cents
+    confidence: float
+    status: str  # "approved" | "pending"
+
+
+def _load_kalshi_price_index() -> dict[str, tuple[str, float, str]]:
+    """ticker -> (event_ticker, yes_price_decimal, title). yes_price is 0
+    when neither bid/ask mid nor last trade is available."""
+    out: dict[str, tuple[str, float, str]] = {}
+    for row in _read_jsonl(kalshi_markets_path()):
+        ticker = str(row.get("ticker", ""))
+        if not ticker:
+            continue
+        yes_bid = _f(row.get("yes_bid"))
+        yes_ask = _f(row.get("yes_ask"))
+        last = _f(row.get("last_price"))
+        cents: float = 0.0
+        if yes_bid > 0 and yes_ask > 0:
+            cents = (yes_bid + yes_ask) / 2.0
+        elif last > 0:
+            cents = last
+        price = cents / 100.0 if cents > 0 else 0.0
+        out[ticker] = (
+            str(row.get("event_ticker", "") or ""),
+            price,
+            str(row.get("title", "") or ""),
+        )
+    return out
+
+
+def _load_best_kalshi_mirror_by_cond() -> dict[str, _KalshiMirror]:
+    """For each Polymarket condition_id, pick the highest-confidence
+    non-rejected link. Manual approvals always beat auto matches at the
+    same confidence (matched_by == 'manual' tiebreak)."""
+    kalshi_index = _load_kalshi_price_index()
+    best: dict[str, _KalshiMirror] = {}
+    for row in _read_jsonl(market_links_path()):
+        status = str(row.get("status", ""))
+        if status == "rejected":
+            continue
+        cond = str(row.get("polymarket_condition_id", ""))
+        ticker = str(row.get("kalshi_ticker", ""))
+        if not cond or not ticker:
+            continue
+        confidence = _f(row.get("confidence"))
+        manual = str(row.get("matched_by", "")) == "manual"
+
+        event_ticker, yes_price, kalshi_title_live = kalshi_index.get(
+            ticker, ("", 0.0, "")
+        )
+        # Prefer the live title from kalshi_markets.jsonl over the snapshot
+        # in market_links — the former is what the user will see when they
+        # follow the link.
+        kalshi_title = kalshi_title_live or str(row.get("kalshi_title", ""))
+
+        candidate = _KalshiMirror(
+            ticker=ticker,
+            event_ticker=event_ticker,
+            title=kalshi_title,
+            yes_price=yes_price,
+            confidence=confidence,
+            status=status,
+        )
+        existing = best.get(cond)
+        if existing is None:
+            best[cond] = candidate
+            continue
+        # Strict preference: approved > pending; then confidence; then manual.
+        def _rank(m: _KalshiMirror, is_manual: bool) -> tuple[int, float, int]:
+            return (1 if m.status == "approved" else 0, m.confidence, 1 if is_manual else 0)
+
+        if _rank(candidate, manual) > _rank(existing, False):
+            best[cond] = candidate
+    return best
+
+
 def _latest_buy_per_position(
     *,
     keys: set[tuple[str, str, int]],
@@ -276,6 +374,7 @@ def compute_skilled_bets(
 
     markets = _load_polymarket_markets()
     latest_buys = _latest_buy_per_position(keys=set(held.keys()))
+    kalshi_mirrors = _load_best_kalshi_mirror_by_cond()
 
     out: list[SkilledBetSignal] = []
     for key, pos in held.items():
@@ -288,6 +387,7 @@ def compute_skilled_bets(
             # in the activity window. Skip — we can't say when they bought.
             continue
         market_rec = markets.get(pos.condition_id)
+        mirror = kalshi_mirrors.get(pos.condition_id)
         out.append(
             SkilledBetSignal(
                 proxy_wallet=pos.proxy_wallet,
@@ -314,6 +414,17 @@ def compute_skilled_bets(
                 ),
                 polymarket_profile_url=polymarket_profile_url(pos.proxy_wallet),
                 polymarket_market_url=polymarket_market_url(pos.event_slug),
+                kalshi_ticker=mirror.ticker if mirror else "",
+                kalshi_event_ticker=mirror.event_ticker if mirror else "",
+                kalshi_title=mirror.title if mirror else "",
+                kalshi_market_url=(
+                    kalshi_market_url(mirror.event_ticker) if mirror else ""
+                ),
+                kalshi_yes_price=round(mirror.yes_price, 4) if mirror else 0.0,
+                kalshi_match_confidence=(
+                    round(mirror.confidence, 4) if mirror else 0.0
+                ),
+                kalshi_match_status=mirror.status if mirror else "",
             )
         )
 

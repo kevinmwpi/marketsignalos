@@ -1,92 +1,64 @@
 # MarketSignalOS
 
-MarketSignalOS ingests prediction-market data and ranks accounts by statistical skill signals rather than raw PnL popularity.
+Identifies **skilled Polymarket wallets** by their on-chain win rate, surfaces
+the positions they're currently holding, and maps each one to the equivalent
+Kalshi market so users can tail those predictions on either exchange.
 
-## Current scope
+Kalshi's per-user history is not public, so wallet skill is computed entirely
+from Polymarket's on-chain data; Kalshi's role is the *mirror side* of the
+trade. See [`docs/0002-cross-exchange-decision.md`](docs/0002-cross-exchange-decision.md)
+for the design ADR and [`CLAUDE.md`](CLAUDE.md) for the full developer guide.
 
-- Kalshi data ingestion in `services/ingestor`
-- FastAPI backend in `apps/api`
-- Next.js leaderboard UI in `apps/web`
+## What you get
+
+- **Dashboard at `/`** — cross-exchange price-dislocation signal + sidebar of skilled wallets
+- **`/skilled-bets`** — feed of currently-held BUY positions from skilled Polymarket wallets, each row carrying a Kalshi mirror link when a match exists
+- **Run ingest button** — one click runs the entire pipeline end-to-end (Polymarket leaderboards → wallet activity → enrichment → Kalshi market fetch → cross-exchange matcher) using only public, unauthenticated APIs. No keys required.
 
 ## Repository layout
 
-- `apps/api`: API routes and scoring services
-- `apps/web`: dashboard frontend
-- `services/ingestor`: market data ingestion pipeline
-- `docs`: product and architecture notes
+- `apps/api/` — FastAPI backend (signal computation + REST endpoints)
+- `apps/web/` — Next.js 16 frontend
+- `services/polymarket-ingestor/` — Polymarket ingestion + cross-exchange matcher
+- `services/ingestor/data/` — shared JSONL data directory (gitignored)
+- `docs/` — product, architecture, ADRs
 
 ## Quick start
 
-From repo root:
-
 ```powershell
+# Python deps
 python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-pip install --upgrade pip
-pip install -e "apps/api[dev]"
-```
+.\.venv\Scripts\pip install -e "apps/api[dev]"
+.\.venv\Scripts\pip install -e "services/polymarket-ingestor[dev]"
 
-Run API:
+# Run the API
+$env:PYTHONPATH = "apps/api/src"
+.\.venv\Scripts\uvicorn marketsignalos_api.main:app --reload --port 8000
 
-```powershell
-cd apps/api
-uvicorn marketsignalos_api.main:app --reload
-```
-
-Run web:
-
-```powershell
+# Run the web app (separate terminal)
 cd apps/web
 npm ci
-$env:NEXT_PUBLIC_API_BASE_URL="http://localhost:8000"
-npm run dev
+$env:NEXT_PUBLIC_API_BASE_URL = "http://localhost:8000"
+npm run dev   # http://localhost:3000
 ```
 
-
-## Deploy API on Railway
-
-This repository is a monorepo, so Railway needs explicit root-level app metadata for the API service.
-
-Railway config in this repo:
-
-- `requirements.txt` declares direct runtime dependencies (`fastapi`, `prometheus-client`, `uvicorn`)
-- `scripts/start-api.sh` is the shared startup entrypoint for Railway/Procfile/Nixpacks; it logs the chosen port, exports `PYTHONPATH`, and starts Uvicorn
-- `Procfile` declares the web process command for the shared startup script
-- `railway.toml` selects Railpack for the root deploy and points at the shared startup script
-- `nixpacks.toml` remains in the repo as an alternative Python-first build plan if the service is switched back to Nixpacks
-- `scripts/start-api.sh` defaults to port `8080` when `PORT` is unset locally so local logs mirror Railway's common target-port display more closely
-- `railway.toml` pins Railway's healthcheck to `GET /health` and cuts the timeout to 60 seconds so misconfigurations fail faster instead of waiting for the 300-second default
-
-In Railway:
-
-1. Create a new service from this repository.
-2. Keep the root as the service source directory.
-3. Set any required runtime variables (for example, API keys) in Railway Variables.
-4. Deploy — Railway will install from root `requirements.txt` and start the API with the explicit `PYTHONPATH` + Uvicorn command.
-5. Opening the Railway service root URL now shows a lightweight leaderboard landing page served by FastAPI. Interactive API docs remain available at `/docs`.
-
-## API endpoints
-
-- `GET /` (serves the MarketSignalOS landing page and leaderboard frontend shell)
-- `GET /health`
-- `GET /metrics`
-- `GET /signals/trades?limit=50`
-- `GET /signals/leaderboard?fresh_days=30&min_resolved=20&limit=50`
-- `GET /signals/orderflow?limit=50`
-- `GET /signals/opportunities?fresh_days=30&min_resolved=20&limit=12`
+Open `http://localhost:3000` and click **Run ingest** in the top nav. No env
+vars are required; the pipeline uses public Polymarket and Kalshi endpoints.
 
 ## Tests
 
-API tests:
-
 ```powershell
-cd apps/api
-..\..\.venv\Scripts\python.exe -m pytest -q
+.\.venv\Scripts\python.exe -m pytest -q apps/api services/polymarket-ingestor
+
+cd apps/web
+npm run lint
+npm run build
 ```
 
-Full Python suite:
+## Deploy API on Railway
 
-```powershell
-.\.venv\Scripts\python.exe -m pip install -e "services/ingestor[dev]"
-.\.venv\Scripts\python.exe -m pytest -q services\ingestor apps\api
-```
+Single web process is defined in `Procfile` (`web: ./scripts/start-api.sh`).
+`railway.toml` selects Railpack and pins `/health` as the healthcheck. The
+service needs no required env vars; optional `DATABASE_URL` enables Postgres
+dual-write and `FRONTEND_URL` adds an "Open dashboard" button to the API's
+landing page. See [`CLAUDE.md`](CLAUDE.md) for the full env-var table.

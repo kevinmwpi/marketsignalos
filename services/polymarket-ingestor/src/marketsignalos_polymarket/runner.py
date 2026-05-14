@@ -8,7 +8,9 @@ Usage:
     marketsignalos-polymarket-ingestor all
 
 Env vars:
-    POLYMARKET_DATA_DIR          override the default services/ingestor/data
+    POLYMARKET_DATA_DIR          override the default data dir
+                                 (./services/ingestor/data — preserved at
+                                 that path for back-compat; gitignored)
     POLYMARKET_WATCHLIST_PATH    default wallet watchlist (one address per line)
     INGEST_POLYMARKET            kill switch for 'all' mode (set to "1" to enable);
                                  individual subcommands always run. This lets the
@@ -24,6 +26,8 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
+import httpx
 
 from .kalshi_markets_fetch import (
     KalshiMarket,
@@ -865,7 +869,221 @@ def _build_parser() -> argparse.ArgumentParser:
     rv.add_argument("--limit", type=int, default=50)
 
     sub.add_parser("all", help="Run seed + watchlist wallets + markets + enrichment in one pass")
+
+    pl = sub.add_parser(
+        "pipeline",
+        help=(
+            "End-to-end Polymarket pipeline (the same orchestrator the web "
+            "'Run ingest' button invokes). Seeds wallets across windows, "
+            "pulls activity, fetches Kalshi markets, and matches them."
+        ),
+    )
+    pl.add_argument(
+        "--window",
+        action="append",
+        default=[],
+        help=(
+            "Leaderboard time window to attempt (day/week/month/all). "
+            "Repeatable. Defaults to all four if not provided."
+        ),
+    )
+    pl.add_argument("--leaderboard-limit", type=int, default=50)
+    pl.add_argument("--skip-kalshi", action="store_true",
+                    help="Skip the Kalshi fetch + match step")
     return parser
+
+
+@dataclass(slots=True)
+class PipelineResult:
+    """Counts surfaced back to the API so the UI can summarize the run."""
+
+    windows_attempted: list[str]
+    windows_succeeded: list[str]
+    leaderboard_entries: int
+    wallets_seeded: int
+    activity_records: int
+    positions: int
+    wallet_values: int
+    markets_written: int
+    markets_backfilled: int
+    enrichment_wallets: int
+    kalshi_markets: int
+    market_links: int
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "windows_attempted": list(self.windows_attempted),
+            "windows_succeeded": list(self.windows_succeeded),
+            "leaderboard_entries": self.leaderboard_entries,
+            "wallets_seeded": self.wallets_seeded,
+            "activity_records": self.activity_records,
+            "positions": self.positions,
+            "wallet_values": self.wallet_values,
+            "markets_written": self.markets_written,
+            "markets_backfilled": self.markets_backfilled,
+            "enrichment_wallets": self.enrichment_wallets,
+            "kalshi_markets": self.kalshi_markets,
+            "market_links": self.market_links,
+        }
+
+
+# ── Public in-process orchestrator ───────────────────────────────────────────
+#
+# The API's "Run ingest" button invokes this directly (no subprocess, no CLI
+# argv parsing) so we can stream log lines back to the UI as the pipeline
+# progresses. The CLI `main()` below remains for ops who want to run a single
+# subcommand from the shell.
+
+_DEFAULT_WINDOWS: tuple[str, ...] = ("day", "week", "month", "all")
+
+
+def run_pipeline(
+    *,
+    windows: list[str] | None = None,
+    leaderboard_limit: int = 50,
+    activity_page_size: int = 500,
+    max_pages_per_wallet: int = 20,
+    market_pages: int = 5,
+    market_page_size: int = 100,
+    kalshi_status: str = "open",
+    kalshi_max_pages: int = 25,
+    skip_kalshi: bool = False,
+    client: PolymarketClient | None = None,
+) -> PipelineResult:
+    """End-to-end Polymarket pipeline:
+
+        1. Seed the wallet watchlist by hitting profit + volume leaderboards
+           across each configured time window. Unsupported windows are
+           skipped with a warning (the Polymarket public leaderboard API
+           silently rejects some window values).
+        2. Pull each wallet's recent activity, current positions, and value.
+        3. Fetch resolved-market metadata (closed=True) for skill scoring,
+           plus backfill any condition_ids referenced by activity that
+           weren't in the page set.
+        4. Recompute per-wallet enrichment (win rate, skill likelihood).
+        5. Fetch Kalshi's public /markets and run the cross-exchange title
+           matcher to populate market_links.jsonl — the join the
+           /signals/skilled-bets and /signals/cross-exchange endpoints
+           use to surface "mirror this on Kalshi" links.
+
+    All public APIs hit here are unauthenticated, so this function needs
+    zero env-var configuration to run.
+    """
+    attempts = list(windows or _DEFAULT_WINDOWS)
+    stores = _build_stores(_data_dir())
+    owns_client = client is None
+    client = client or PolymarketClient(PolymarketClientConfig.from_env())
+    try:
+        # 1. Seed watchlist across (window × metric)
+        log.info("pipeline step=seed_watchlist windows=%s", attempts)
+        existing = set(_load_watchlist(_watchlist_path()))
+        seeded: set[str] = set(existing)
+        leaderboard_entries = 0
+        succeeded: list[str] = []
+        for window in attempts:
+            window_ok = False
+            for metric in ("profit", "volume"):
+                try:
+                    raw = client.get_leaderboard(
+                        metric=metric, window=window, limit=leaderboard_limit
+                    )
+                except httpx.HTTPStatusError as exc:
+                    log.warning(
+                        "leaderboard skip window=%s metric=%s status=%d "
+                        "(API rejected this window)",
+                        window, metric, exc.response.status_code,
+                    )
+                    continue
+                entries = [
+                    parse_leaderboard_row(r, metric=metric, window=window) for r in raw
+                ]
+                stores.leaderboard.write_leaderboard(entries)
+                leaderboard_entries += len(entries)
+                for e in entries:
+                    if e.proxy_wallet:
+                        seeded.add(e.proxy_wallet)
+                window_ok = True
+            if window_ok:
+                succeeded.append(window)
+
+        # Persist the merged watchlist so subsequent runs (and the wallets
+        # step below) see the union of auto-seeded + manual additions.
+        watchlist_path = _watchlist_path()
+        merged = sorted(seeded)
+        watchlist_path.parent.mkdir(parents=True, exist_ok=True)
+        watchlist_path.write_text(
+            "\n".join(
+                ["# Polymarket wallet watchlist — auto-seeded + manual additions"]
+                + merged,
+            ) + "\n",
+            encoding="utf-8",
+        )
+        log.info(
+            "watchlist_seeded total=%d new=%d windows_ok=%s",
+            len(merged), len(seeded - existing), succeeded,
+        )
+
+        # 2. Per-wallet activity/positions/value
+        log.info("pipeline step=wallets count=%d", len(merged))
+        activity_total, positions_total, values_total = (0, 0, 0)
+        if merged:
+            activity_total, positions_total, values_total = run_wallets(
+                client,
+                stores,
+                addresses=merged,
+                activity_page_size=activity_page_size,
+                max_pages_per_wallet=max_pages_per_wallet,
+            )
+
+        # 3. Polymarket market metadata + activity-backfill
+        log.info("pipeline step=markets")
+        markets_written = run_markets(
+            client, stores,
+            closed=True, pages=market_pages, page_size=market_page_size,
+        )
+        markets_backfilled = run_markets_backfill_from_activity(client, stores)
+
+        # 4. Compute on-chain skill enrichment
+        log.info("pipeline step=enrichment")
+        enrichment_written = run_enrichment(stores)
+
+        # 5. Kalshi mirror: fetch public markets + match
+        kalshi_written = 0
+        links_written = 0
+        if not skip_kalshi:
+            log.info("pipeline step=kalshi_markets status=%s", kalshi_status)
+            try:
+                kalshi_written = run_fetch_kalshi_markets(
+                    stores, status=kalshi_status, max_pages=kalshi_max_pages,
+                )
+                log.info("pipeline step=match_markets")
+                links_written = run_match_markets(stores)
+            except Exception as exc:  # noqa: BLE001
+                log.warning(
+                    "kalshi mirror step failed (non-fatal): %s — skilled bets "
+                    "will still show but without Kalshi cross-references",
+                    exc,
+                )
+
+        result = PipelineResult(
+            windows_attempted=attempts,
+            windows_succeeded=succeeded,
+            leaderboard_entries=leaderboard_entries,
+            wallets_seeded=len(merged),
+            activity_records=activity_total,
+            positions=positions_total,
+            wallet_values=values_total,
+            markets_written=markets_written,
+            markets_backfilled=markets_backfilled,
+            enrichment_wallets=enrichment_written,
+            kalshi_markets=kalshi_written,
+            market_links=links_written,
+        )
+        log.info("pipeline complete %s", result.to_dict())
+        return result
+    finally:
+        if owns_client:
+            client.close()
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -930,6 +1148,14 @@ def main(argv: list[str] | None = None) -> int:
             run_match_markets(stores, config=cfg)
         elif args.mode == "review-matches":
             run_review_matches(stores, limit=args.limit)
+        elif args.mode == "pipeline":
+            windows = args.window or None
+            run_pipeline(
+                windows=windows,
+                leaderboard_limit=args.leaderboard_limit,
+                skip_kalshi=args.skip_kalshi,
+                client=client,
+            )
         elif args.mode == "all":
             if os.getenv("INGEST_POLYMARKET", "").strip().lower() not in {"1", "true", "yes", "on"}:
                 log.info("INGEST_POLYMARKET not set — skipping 'all' pass (set to '1' to enable)")

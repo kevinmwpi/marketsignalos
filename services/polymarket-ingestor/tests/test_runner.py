@@ -23,6 +23,7 @@ from marketsignalos_polymarket.runner import (
     parse_market_row,
     parse_position_row,
     run_match_markets,
+    run_pipeline,
     run_wallets,
     seed_watchlist_from_leaderboard,
 )
@@ -439,3 +440,48 @@ def test_parse_position_row_falls_back_on_alt_field_names() -> None:
     assert p.proxy_wallet == "0xabc"
     assert p.avg_price == 0.42
     assert p.current_value_usdc == 95.0
+
+
+def test_run_pipeline_skips_windows_the_api_rejects(
+    tmp_path: Path, monkeypatch: Any,
+) -> None:
+    """Polymarket's public leaderboard API silently 400s on some window
+    values. The orchestrator must catch those, log a warning, and still
+    complete the rest of the pipeline."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        # Leaderboard: accept 'all', reject everything else with 400.
+        if "lb-api.polymarket.com" in str(request.url):
+            window = request.url.params.get("window")
+            if window == "all":
+                return httpx.Response(200, json=[])
+            return httpx.Response(400, json={"error": "invalid request"})
+        # Gamma markets: return an empty page so run_markets exits cleanly.
+        if "gamma-api.polymarket.com" in str(request.url):
+            return httpx.Response(200, json=[])
+        # Data API (activity / positions / value) — none of these should be
+        # called since the watchlist will be empty, but cover them anyway.
+        return httpx.Response(200, json=[])
+
+    monkeypatch.setenv("POLYMARKET_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("POLYMARKET_WATCHLIST_PATH", str(tmp_path / "wl.txt"))
+
+    result = run_pipeline(
+        windows=["day", "week", "month", "all"],
+        leaderboard_limit=10,
+        skip_kalshi=True,
+        client=_client_with_handler(handler),
+    )
+
+    # Only 'all' returned successfully; the other three were skipped.
+    assert result.windows_attempted == ["day", "week", "month", "all"]
+    assert result.windows_succeeded == ["all"]
+    # Empty leaderboard => no wallets seeded, no activity pulled.
+    assert result.wallets_seeded == 0
+    assert result.leaderboard_entries == 0
+    # Markets fetch returned an empty page, but the pipeline didn't crash.
+    assert result.markets_written == 0
+    assert result.enrichment_wallets == 0
+    # Kalshi skipped per the flag.
+    assert result.kalshi_markets == 0
+    assert result.market_links == 0

@@ -2,6 +2,7 @@ export const dynamic = "force-dynamic";
 
 import Link from "next/link";
 
+import IngestButton from "../components/IngestButton";
 import SkilledBetsPanel, { type SkilledBet } from "../components/SkilledBetsPanel";
 
 async function fetchSkilledBets(apiBase: string): Promise<{
@@ -52,13 +53,16 @@ export default async function SkilledBetsPage(): Promise<React.ReactElement> {
               <span className="font-semibold text-zinc-900">Skilled bets</span>
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            <span
-              className={`h-1.5 w-1.5 rounded-full ${apiLive ? "bg-emerald-500" : "bg-amber-400"}`}
-            />
-            <span className="text-xs text-zinc-500">
-              {apiLive ? "API connected" : `API degraded${error ? ` (${error})` : ""}`}
-            </span>
+          <div className="flex items-center gap-4">
+            <IngestButton />
+            <div className="flex items-center gap-2">
+              <span
+                className={`h-1.5 w-1.5 rounded-full ${apiLive ? "bg-emerald-500" : "bg-amber-400"}`}
+              />
+              <span className="text-xs text-zinc-500">
+                {apiLive ? "API connected" : `API degraded${error ? ` (${error})` : ""}`}
+              </span>
+            </div>
           </div>
         </div>
       </nav>

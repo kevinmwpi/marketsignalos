@@ -39,6 +39,14 @@ class SkilledBetOut(BaseModel):
     polymarket_profile_url: str
     polymarket_market_url: str
 
+    kalshi_ticker: str
+    kalshi_event_ticker: str
+    kalshi_title: str
+    kalshi_market_url: str
+    kalshi_yes_price: float
+    kalshi_match_confidence: float
+    kalshi_match_status: str
+
 
 @router.get("/skilled-bets", response_model=list[SkilledBetOut])
 def skilled_bets(

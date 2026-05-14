@@ -192,7 +192,7 @@ def main() -> int:
         elif "skipped" in r:
             extra = f" SKIP({r['skipped']})"
         elif "error" in r:
-            extra = f" ERR"
+            extra = " ERR"
         print(f"  {r['label']:30s} {status!s:>5}  {ct:<20s}{extra}")
     return 0
 
