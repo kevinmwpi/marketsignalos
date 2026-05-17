@@ -136,6 +136,14 @@ class PolymarketWalletEnrichment:
     """
     On-chain skill metrics for a wallet, derived from joining its activity
     stream against resolved markets. Recomputed each enrichment pass.
+
+    The score is a hierarchical Bayesian logistic edge model:
+        y_i ~ Bernoulli(q_i),    logit(q_i) = logit(p_i) + edge_w
+        edge_w ~ Normal(mu_pop, sigma2_pop)        (empirical Bayes)
+
+    so `edge_*` fields are in log-odds units relative to the market's
+    own implied price; `skill_likelihood` is P(edge_w > 0 | data).
+    See bayesian_skill.py for the derivation.
     """
 
     proxy_wallet: str
@@ -145,11 +153,16 @@ class PolymarketWalletEnrichment:
     wins: int
     losses: int
     win_rate: float
-    skill_likelihood: float  # 1 - binomial_cdf(wins-1, n=resolved, p=0.5)
-    stddevs_above_expected: float  # z-score vs 50% null
-    total_volume_usdc: float  # sum of |usdc_size| across all TRADE events
-    total_pnl_usdc: float  # realized + unrealized-at-resolution
+    skill_likelihood: float       # P(edge > 0 | data) — kept name for API back-compat
+    stddevs_above_expected: float # edge_mean / sqrt(edge_var) — posterior z-score
+    edge_mean: float              # posterior MAP of edge_w (log-odds)
+    edge_lower_bound: float       # 5th-percentile lower bound of edge_w
+    effective_sample_size: float  # event-correlation-adjusted resolved bets
+    resolved_volume_usdc: float   # USD volume in resolved bets only (rank weight)
+    rank_score: float             # posterior_skill * max(0, edge_lower_bound) * log1p(resolved_volume_usdc)
+    total_volume_usdc: float      # sum of |usdc_size| across all TRADE events
+    total_pnl_usdc: float         # realized + unrealized-at-resolution
     avg_position_size_usdc: float
-    trade_count: int  # total TRADE events (not bets — fills can be multiple per bet)
-    last_activity_at: int  # unix timestamp of most recent activity
+    trade_count: int              # total TRADE events (not bets — fills can be multiple per bet)
+    last_activity_at: int         # unix timestamp of most recent activity
     computed_at: str = field(default_factory=_utcnow_iso)

@@ -518,9 +518,12 @@ class PostgresEnrichmentStore:
                     INSERT INTO polymarket_wallet_enrichment
                         (proxy_wallet, name, pseudonym, resolved_trades, wins, losses,
                          win_rate, skill_likelihood, stddevs_above_expected,
+                         edge_mean, edge_lower_bound, effective_sample_size,
+                         resolved_volume_usdc, rank_score,
                          total_volume_usdc, total_pnl_usdc, avg_position_size_usdc,
                          trade_count, last_activity_at, computed_at)
                     VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s,
+                            %s, %s, %s, %s, %s,
                             %s, %s, %s, %s, %s, %s::timestamptz)
                     ON CONFLICT (proxy_wallet) DO UPDATE SET
                         name                   = EXCLUDED.name,
@@ -531,6 +534,11 @@ class PostgresEnrichmentStore:
                         win_rate               = EXCLUDED.win_rate,
                         skill_likelihood       = EXCLUDED.skill_likelihood,
                         stddevs_above_expected = EXCLUDED.stddevs_above_expected,
+                        edge_mean              = EXCLUDED.edge_mean,
+                        edge_lower_bound       = EXCLUDED.edge_lower_bound,
+                        effective_sample_size  = EXCLUDED.effective_sample_size,
+                        resolved_volume_usdc   = EXCLUDED.resolved_volume_usdc,
+                        rank_score             = EXCLUDED.rank_score,
                         total_volume_usdc      = EXCLUDED.total_volume_usdc,
                         total_pnl_usdc         = EXCLUDED.total_pnl_usdc,
                         avg_position_size_usdc = EXCLUDED.avg_position_size_usdc,
@@ -541,7 +549,10 @@ class PostgresEnrichmentStore:
                     [
                         (e.proxy_wallet, e.name, e.pseudonym, e.resolved_trades,
                          e.wins, e.losses, e.win_rate, e.skill_likelihood,
-                         e.stddevs_above_expected, e.total_volume_usdc,
+                         e.stddevs_above_expected,
+                         e.edge_mean, e.edge_lower_bound, e.effective_sample_size,
+                         e.resolved_volume_usdc, e.rank_score,
+                         e.total_volume_usdc,
                          e.total_pnl_usdc, e.avg_position_size_usdc,
                          e.trade_count, e.last_activity_at, e.computed_at)
                         for e in enrichments

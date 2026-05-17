@@ -17,6 +17,8 @@ class SkilledBetOut(BaseModel):
     skill_likelihood: float
     resolved_trades: int
     win_rate: float
+    edge_mean: float
+    edge_lower_bound: float
 
     condition_id: str
     slug: str

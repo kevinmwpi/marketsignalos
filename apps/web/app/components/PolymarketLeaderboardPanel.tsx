@@ -8,8 +8,13 @@ export type PolymarketWalletSkill = {
   wins: number;
   losses: number;
   win_rate: number;
-  skill_likelihood: number;
-  stddevs_above_expected: number;
+  skill_likelihood: number;           // P(edge > 0 | data)
+  stddevs_above_expected: number;     // edge_mean / sqrt(edge_var)
+  edge_mean: number;                  // posterior edge in log-odds
+  edge_lower_bound: number;           // 5th-percentile lower bound
+  effective_sample_size: number;
+  resolved_volume_usdc: number;
+  rank_score: number;                 // canonical ranking metric
   total_volume_usdc: number;
   total_pnl_usdc: number;
   avg_position_size_usdc: number;
@@ -83,14 +88,25 @@ export default function PolymarketLeaderboardPanel({
             </span>
           )}
         </div>
-        <p className="mt-0.5 text-xs text-zinc-500">On-chain win rate vs. random</p>
+        <p className="mt-0.5 text-xs text-zinc-500">Posterior edge vs. market-implied odds</p>
       </div>
       <div className="overflow-x-auto">
         <table className="min-w-full text-left">
           <thead>
             <tr className="border-b border-zinc-100">
               <th className="px-4 py-2 text-left text-xs font-medium text-zinc-400">Wallet</th>
-              <th className="px-4 py-2 text-right text-xs font-medium text-zinc-400">Skill</th>
+              <th
+                className="px-4 py-2 text-right text-xs font-medium text-zinc-400"
+                title="P(edge > 0 | observed bets) — shrunk toward the population prior"
+              >
+                Skill
+              </th>
+              <th
+                className="px-4 py-2 text-right text-xs font-medium text-zinc-400"
+                title="Posterior edge in log-odds vs. the market's own implied price (lower bound is 5th-percentile)"
+              >
+                Edge
+              </th>
               <th className="px-4 py-2 text-right text-xs font-medium text-zinc-400">W/L</th>
               <th className="px-4 py-2 text-right text-xs font-medium text-zinc-400">PnL</th>
               <th className="px-4 py-2 text-right text-xs font-medium text-zinc-400">Active</th>
@@ -99,7 +115,7 @@ export default function PolymarketLeaderboardPanel({
           <tbody className="divide-y divide-zinc-100">
             {rows.length === 0 ? (
               <tr>
-                <td className="px-4 py-4 text-xs text-zinc-400" colSpan={5}>
+                <td className="px-4 py-4 text-xs text-zinc-400" colSpan={6}>
                   No qualifying wallets yet. Run the Polymarket ingestor to populate.
                 </td>
               </tr>
@@ -139,6 +155,22 @@ export default function PolymarketLeaderboardPanel({
                   </td>
                   <td className="px-4 py-2.5 text-right font-mono text-xs text-zinc-700">
                     {formatPct(row.skill_likelihood)}
+                  </td>
+                  <td className="px-4 py-2.5 text-right font-mono text-xs">
+                    <span
+                      className={
+                        row.edge_lower_bound > 0
+                          ? "font-semibold text-emerald-700"
+                          : "text-zinc-700"
+                      }
+                    >
+                      {row.edge_mean >= 0 ? "+" : ""}
+                      {row.edge_mean.toFixed(2)}
+                    </span>
+                    <span className="ml-1 text-[10px] text-zinc-400">
+                      [≥{row.edge_lower_bound >= 0 ? "+" : ""}
+                      {row.edge_lower_bound.toFixed(2)}]
+                    </span>
                   </td>
                   <td className="px-4 py-2.5 text-right font-mono text-xs text-zinc-700">
                     {numberFormatter.format(row.wins)}/{numberFormatter.format(row.losses)}

@@ -22,8 +22,13 @@ class PolymarketWalletSkill(BaseModel):
     wins: int
     losses: int
     win_rate: float
-    skill_likelihood: float
-    stddevs_above_expected: float
+    skill_likelihood: float        # P(edge > 0 | data)
+    stddevs_above_expected: float  # edge_mean / sqrt(edge_var)
+    edge_mean: float = 0.0
+    edge_lower_bound: float = 0.0
+    effective_sample_size: float = 0.0
+    resolved_volume_usdc: float = 0.0
+    rank_score: float = 0.0
     total_volume_usdc: float
     total_pnl_usdc: float
     avg_position_size_usdc: float
@@ -81,7 +86,9 @@ def polymarket_leaderboard(
             )
         except (TypeError, ValueError):
             continue
+    # rank_score is the new conservative ranking — falls back to
+    # skill_likelihood ordering when older enrichment rows have rank_score=0.
     eligible.sort(
-        key=lambda r: (-r.skill_likelihood, -r.resolved_trades, r.proxy_wallet)
+        key=lambda r: (-r.rank_score, -r.skill_likelihood, -r.resolved_trades, r.proxy_wallet)
     )
     return eligible[:limit]

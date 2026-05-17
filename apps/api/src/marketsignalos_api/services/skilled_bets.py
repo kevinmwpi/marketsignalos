@@ -48,9 +48,11 @@ class SkilledBetSignal:
     # Wallet provenance
     proxy_wallet: str
     wallet_name: str
-    skill_likelihood: float
+    skill_likelihood: float        # P(edge > 0 | data)
     resolved_trades: int
     win_rate: float
+    edge_mean: float               # posterior edge in log-odds
+    edge_lower_bound: float        # 5th-percentile lower bound (conservative)
 
     # Market
     condition_id: str
@@ -134,6 +136,8 @@ class _SkilledWallet:
     skill_likelihood: float
     resolved_trades: int
     win_rate: float
+    edge_mean: float
+    edge_lower_bound: float
 
 
 @dataclass(slots=True)
@@ -175,6 +179,8 @@ def _load_skilled_wallets(
             skill_likelihood=skill,
             resolved_trades=resolved,
             win_rate=_f(row.get("win_rate")),
+            edge_mean=_f(row.get("edge_mean")),
+            edge_lower_bound=_f(row.get("edge_lower_bound")),
         )
     return out
 
@@ -395,6 +401,8 @@ def compute_skilled_bets(
                 skill_likelihood=round(wallet.skill_likelihood, 6),
                 resolved_trades=wallet.resolved_trades,
                 win_rate=round(wallet.win_rate, 4),
+                edge_mean=round(wallet.edge_mean, 4),
+                edge_lower_bound=round(wallet.edge_lower_bound, 4),
                 condition_id=pos.condition_id,
                 slug=pos.slug,
                 event_slug=pos.event_slug,

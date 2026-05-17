@@ -3,9 +3,11 @@ import type { ReactElement } from "react";
 export type SkilledBet = {
   proxy_wallet: string;
   wallet_name: string;
-  skill_likelihood: number;
+  skill_likelihood: number;       // P(edge > 0 | data)
   resolved_trades: number;
   win_rate: number;
+  edge_mean: number;              // posterior edge in log-odds
+  edge_lower_bound: number;       // conservative 5th-percentile edge
 
   condition_id: string;
   slug: string;
@@ -294,6 +296,24 @@ export default function SkilledBetsPanel({
                       {bet.resolved_trades}
                     </span>{" "}
                     resolved
+                  </span>
+                  <span className="text-zinc-300">·</span>
+                  <span title="Posterior edge vs. market's own odds (log-odds; lower bound is the 5th-percentile floor)">
+                    edge{" "}
+                    <span
+                      className={`font-mono font-semibold ${
+                        bet.edge_lower_bound > 0
+                          ? "text-emerald-700"
+                          : "text-zinc-500"
+                      }`}
+                    >
+                      {bet.edge_mean >= 0 ? "+" : ""}
+                      {bet.edge_mean.toFixed(2)}
+                    </span>
+                    <span className="ml-1 font-mono text-zinc-400">
+                      [≥{bet.edge_lower_bound >= 0 ? "+" : ""}
+                      {bet.edge_lower_bound.toFixed(2)}]
+                    </span>
                   </span>
                 </div>
               </div>
