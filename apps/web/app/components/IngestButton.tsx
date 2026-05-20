@@ -2,6 +2,14 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
+type Progress = {
+  stage: string;
+  current?: number;
+  total?: number;
+  wallet?: string;
+  detail?: string;
+};
+
 type IngestorStatus = {
   running: boolean;
   last_started_at: string | null;
@@ -9,6 +17,16 @@ type IngestorStatus = {
   last_exit_code: number | null;
   last_error: string | null;
   log_tail: string[];
+  progress: Progress | null;
+};
+
+const STAGE_LABELS: Record<string, string> = {
+  seed_watchlist: "Seeding watchlist",
+  wallets: "Scanning wallet",
+  markets: "Fetching Polymarket markets",
+  enrichment: "Computing skill scores",
+  kalshi_markets: "Fetching Kalshi markets",
+  match_markets: "Matching cross-exchange markets",
 };
 
 type ButtonState = "idle" | "starting" | "running" | "done" | "error";
@@ -25,6 +43,48 @@ function formatRelative(iso: string | null): string {
   if (diff < 60) return `${diff}s ago`;
   if (diff < 3600) return `${Math.round(diff / 60)}m ago`;
   return `${Math.round(diff / 3600)}h ago`;
+}
+
+function ProgressLabel({ progress }: { progress: Progress }) {
+  const label = STAGE_LABELS[progress.stage] ?? progress.stage;
+  const hasCount =
+    typeof progress.current === "number" && typeof progress.total === "number";
+  return (
+    <span className="font-mono text-[11px] text-zinc-500">
+      {label}
+      {hasCount && (
+        <>
+          {" "}
+          <span className="text-zinc-700 font-semibold">
+            {progress.current}/{progress.total}
+          </span>
+        </>
+      )}
+      {progress.detail && !hasCount && (
+        <span className="text-zinc-400"> ({progress.detail})</span>
+      )}
+    </span>
+  );
+}
+
+function ProgressBar({ progress }: { progress: Progress }) {
+  if (
+    progress.stage !== "wallets" ||
+    typeof progress.current !== "number" ||
+    typeof progress.total !== "number" ||
+    progress.total <= 0
+  ) {
+    return null;
+  }
+  const pct = Math.min(100, Math.max(0, (progress.current / progress.total) * 100));
+  return (
+    <div className="h-1 w-full max-w-md overflow-hidden rounded-full bg-zinc-100">
+      <div
+        className="h-full bg-amber-400 transition-[width] duration-500 ease-out"
+        style={{ width: `${pct}%` }}
+      />
+    </div>
+  );
 }
 
 export default function IngestButton() {
@@ -192,6 +252,9 @@ export default function IngestButton() {
           {buttonState === "error" && "Failed"}
         </button>
 
+        {buttonState === "running" && status?.progress && (
+          <ProgressLabel progress={status.progress} />
+        )}
         {buttonState === "running" && status?.last_started_at && (
           <span className="font-mono text-[11px] text-zinc-400">
             started {formatRelative(status.last_started_at)}
@@ -212,6 +275,10 @@ export default function IngestButton() {
           </button>
         )}
       </div>
+
+      {buttonState === "running" && status?.progress && (
+        <ProgressBar progress={status.progress} />
+      )}
 
       {errorView?.kind === "config" && (
         <div className="rounded-md border border-red-200 bg-red-50 p-3 text-[11px] text-red-800 max-w-md">

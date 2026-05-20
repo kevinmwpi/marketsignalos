@@ -269,6 +269,37 @@ def test_run_wallets_advances_checkpoint(tmp_path: Path) -> None:
     client.close()
 
 
+def test_run_wallets_emits_progress_per_wallet(tmp_path: Path) -> None:
+    """The progress callback should fire once per wallet with current/total
+    so the API can surface wallet-scan progress to the UI."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/activity":
+            return httpx.Response(200, json=[])
+        if request.url.path == "/positions":
+            return httpx.Response(200, json=[])
+        if request.url.path == "/value":
+            return httpx.Response(200, json=[{"user": "0x", "value": 0.0}])
+        return httpx.Response(404)
+
+    client = _client_with_handler(handler)
+    stores = _build_stores(tmp_path)
+    events: list[dict[str, Any]] = []
+    addresses = ["0xaaa", "0xbbb", "0xccc"]
+    run_wallets(
+        client, stores, addresses=addresses,
+        activity_page_size=10, max_pages_per_wallet=1,
+        progress_cb=events.append,
+    )
+    client.close()
+
+    assert len(events) == 3
+    assert [e["current"] for e in events] == [1, 2, 3]
+    assert all(e["total"] == 3 for e in events)
+    assert [e["wallet"] for e in events] == addresses
+    assert all(e["stage"] == "wallets" for e in events)
+
+
 def test_seed_watchlist_skips_api_when_limit_is_zero(tmp_path: Path) -> None:
     """N<=0 means 'skip this side'. The leaderboard API treats limit=0 as
     'no limit' and returns its default page (~50), so the guard must be

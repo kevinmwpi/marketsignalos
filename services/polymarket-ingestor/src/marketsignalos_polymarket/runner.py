@@ -23,6 +23,7 @@ import argparse
 import json
 import logging
 import os
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -91,6 +92,8 @@ logging.basicConfig(
     datefmt="%Y-%m-%dT%H:%M:%SZ",
 )
 log = logging.getLogger("marketsignalos.polymarket")
+
+ProgressCallback = Callable[[dict[str, Any]], None]
 
 
 def _repo_root() -> Path:
@@ -380,6 +383,7 @@ def run_wallets(
     activity_page_size: int = 500,
     max_pages_per_wallet: int = 20,
     full_backfill: bool = False,
+    progress_cb: ProgressCallback | None = None,
 ) -> tuple[int, int, int]:
     """
     Returns (activity_written, positions_written, values_written).
@@ -389,7 +393,15 @@ def run_wallets(
     seen timestamp — the steady-state path.
     """
     total_activity = total_positions = total_values = 0
-    for addr in addresses:
+    total = len(addresses)
+    for i, addr in enumerate(addresses):
+        if progress_cb is not None:
+            progress_cb({
+                "stage": "wallets",
+                "current": i + 1,
+                "total": total,
+                "wallet": addr,
+            })
         try:
             since = None if full_backfill else stores.checkpoints.get_last_timestamp(addr)
 
@@ -949,6 +961,7 @@ def run_pipeline(
     kalshi_max_pages: int = 25,
     skip_kalshi: bool = False,
     client: PolymarketClient | None = None,
+    progress_cb: ProgressCallback | None = None,
 ) -> PipelineResult:
     """End-to-end Polymarket pipeline:
 
@@ -973,6 +986,11 @@ def run_pipeline(
     stores = _build_stores(_data_dir())
     owns_client = client is None
     client = client or PolymarketClient(PolymarketClientConfig.from_env())
+
+    def _emit(payload: dict[str, Any]) -> None:
+        if progress_cb is not None:
+            progress_cb(payload)
+
     try:
         # 1. Seed watchlist across (window × metric)
         log.info("pipeline step=seed_watchlist windows=%s", attempts)
@@ -980,7 +998,13 @@ def run_pipeline(
         seeded: set[str] = set(existing)
         leaderboard_entries = 0
         succeeded: list[str] = []
-        for window in attempts:
+        for i, window in enumerate(attempts):
+            _emit({
+                "stage": "seed_watchlist",
+                "current": i + 1,
+                "total": len(attempts),
+                "detail": f"window={window}",
+            })
             window_ok = False
             for metric in ("profit", "volume"):
                 try:
@@ -1027,16 +1051,19 @@ def run_pipeline(
         log.info("pipeline step=wallets count=%d", len(merged))
         activity_total, positions_total, values_total = (0, 0, 0)
         if merged:
+            _emit({"stage": "wallets", "current": 0, "total": len(merged)})
             activity_total, positions_total, values_total = run_wallets(
                 client,
                 stores,
                 addresses=merged,
                 activity_page_size=activity_page_size,
                 max_pages_per_wallet=max_pages_per_wallet,
+                progress_cb=progress_cb,
             )
 
         # 3. Polymarket market metadata + activity-backfill
         log.info("pipeline step=markets")
+        _emit({"stage": "markets"})
         markets_written = run_markets(
             client, stores,
             closed=True, pages=market_pages, page_size=market_page_size,
@@ -1045,6 +1072,7 @@ def run_pipeline(
 
         # 4. Compute on-chain skill enrichment
         log.info("pipeline step=enrichment")
+        _emit({"stage": "enrichment"})
         enrichment_written = run_enrichment(stores)
 
         # 5. Kalshi mirror: fetch public markets + match
@@ -1052,11 +1080,13 @@ def run_pipeline(
         links_written = 0
         if not skip_kalshi:
             log.info("pipeline step=kalshi_markets status=%s", kalshi_status)
+            _emit({"stage": "kalshi_markets"})
             try:
                 kalshi_written = run_fetch_kalshi_markets(
                     stores, status=kalshi_status, max_pages=kalshi_max_pages,
                 )
                 log.info("pipeline step=match_markets")
+                _emit({"stage": "match_markets"})
                 links_written = run_match_markets(stores)
             except Exception as exc:  # noqa: BLE001
                 log.warning(

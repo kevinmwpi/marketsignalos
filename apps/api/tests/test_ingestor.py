@@ -20,6 +20,7 @@ def _reset_state() -> None:
         last_error=None,
         log_tail=[],
         last_summary=None,
+        progress=None,
     )
 
 
@@ -36,6 +37,24 @@ def test_status_default_state_includes_log_tail_and_summary() -> None:
         "last_error": None,
         "log_tail": [],
         "last_summary": None,
+        "progress": None,
+    }
+
+
+def test_set_progress_snapshots_payload_and_status_returns_it() -> None:
+    """The progress callback must be safe to call from the executor thread —
+    snapshotting prevents the caller from mutating what /status reads."""
+    payload: dict[str, object] = {
+        "stage": "wallets", "current": 12, "total": 50, "wallet": "0xabc",
+    }
+    ingestor_route._set_progress(payload)
+    # Caller-side mutation must not bleed into stored state.
+    payload["current"] = 999
+
+    client = TestClient(app)
+    body = client.get("/ingestor/status").json()
+    assert body["progress"] == {
+        "stage": "wallets", "current": 12, "total": 50, "wallet": "0xabc",
     }
 
 

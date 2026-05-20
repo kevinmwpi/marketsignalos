@@ -25,6 +25,7 @@ _state: dict[str, object] = {
     "last_error": None,
     "log_tail": [],
     "last_summary": None,
+    "progress": None,
 }
 # Per-run log buffer. Reset at run start; snapshotted into _state["log_tail"] at end.
 _log_buffer: deque[str] = deque(maxlen=_LOG_TAIL_MAXLEN)
@@ -42,6 +43,7 @@ class IngestorStatus(BaseModel):
     last_error: str | None
     log_tail: list[str]
     last_summary: dict[str, Any] | None
+    progress: dict[str, Any] | None
 
 
 class _BufferHandler(logging.Handler):
@@ -102,6 +104,18 @@ def _summarize_failure(exit_code: int, run_error: str | None) -> str:
     return f"Ingestor exited with code {exit_code} (see log_tail for details)"
 
 
+def _set_progress(payload: dict[str, Any]) -> None:
+    """Thread-safe progress writer passed to the pipeline.
+
+    The pipeline runs in an executor thread; the /status endpoint reads from
+    the event loop. We snapshot the payload (shallow copy) so the caller
+    can't mutate the value the status endpoint will return.
+    """
+    snapshot = dict(payload)
+    with _lock:
+        _state["progress"] = snapshot
+
+
 def _run_ingestor_sync() -> None:
     """Runs the Polymarket pipeline in a thread-pool worker.
 
@@ -128,11 +142,12 @@ def _run_ingestor_sync() -> None:
                     last_error=f"Polymarket pipeline not importable: {exc}",
                     log_tail=list(_log_buffer),
                     last_summary=None,
+                    progress=None,
                 )
             return
 
         try:
-            result = run_pipeline()
+            result = run_pipeline(progress_cb=_set_progress)
             summary = result.to_dict()
             exit_code = 0
             log.info("ingestor run finished exit_code=0")
@@ -150,6 +165,7 @@ def _run_ingestor_sync() -> None:
                 _state["last_error"] = _summarize_failure(exit_code, run_error)
             _state["log_tail"] = list(_log_buffer)
             _state["last_summary"] = summary
+            _state["progress"] = None
     finally:
         _detach_log_capture(handler)
 
@@ -165,6 +181,7 @@ def get_ingestor_status() -> IngestorStatus:
             last_error=cast("str | None", _state["last_error"]),
             log_tail=list(cast("list[str]", _state["log_tail"])),
             last_summary=cast("dict[str, Any] | None", _state["last_summary"]),
+            progress=cast("dict[str, Any] | None", _state["progress"]),
         )
 
 
@@ -195,6 +212,7 @@ async def trigger_ingestor_run() -> JSONResponse:
         _state["last_exit_code"] = None
         _state["last_error"] = None
         _state["last_summary"] = None
+        _state["progress"] = None
         _log_buffer.clear()
         _state["log_tail"] = []
 
