@@ -667,7 +667,7 @@ def _load_leaderboard_records(path: Path) -> list[PolymarketLeaderboardEntry]:
     return out
 
 
-# ── Cross-exchange matching ──────────────────────────────────────────────────
+# ── Polymarket → Kalshi market matching ──────────────────────────────────────
 
 # Kalshi "multi-game" / "multi-vendor equity" parlay tickers concatenate every
 # leg into one title (e.g. "yes A, yes B, yes C"), which produces high-recall
@@ -1015,7 +1015,7 @@ def _build_parser() -> argparse.ArgumentParser:
     fk.add_argument("--status", default="settled", choices=["open", "closed", "settled"])
     fk.add_argument("--max-pages", type=int, default=25)
 
-    mm = sub.add_parser("match-markets", help="Run cross-exchange title matcher")
+    mm = sub.add_parser("match-markets", help="Run Polymarket → Kalshi title matcher")
     mm.add_argument("--date-window-days", type=int, default=3)
     mm.add_argument("--auto-approve-threshold", type=float, default=0.75)
     mm.add_argument("--review-threshold", type=float, default=0.35)
@@ -1170,10 +1170,10 @@ def run_pipeline(
            plus backfill any condition_ids referenced by activity that
            weren't in the page set.
         4. Recompute per-wallet enrichment (win rate, skill likelihood).
-        5. Fetch Kalshi's public /markets and run the cross-exchange title
-           matcher to populate market_links.jsonl — the join the
-           /signals/skilled-bets and /signals/cross-exchange endpoints
-           use to surface "mirror this on Kalshi" links.
+        5. Fetch Kalshi's public /markets and run the Polymarket → Kalshi
+           title matcher to populate market_links.jsonl — the join the
+           /signals/skilled-bets endpoint uses to surface "mirror this on
+           Kalshi" links per row.
 
     All public APIs hit here are unauthenticated, so this function needs
     zero env-var configuration to run.

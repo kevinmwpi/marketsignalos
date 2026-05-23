@@ -1,7 +1,11 @@
 # Polymarket Pipeline
 
-End-to-end reference for the cross-exchange signal flow. Built up across
-Phases 0-6; see `polymarket-phase-status.md` for the chronological record.
+End-to-end reference for the skilled-bets feed. Built up across Phases 0-6
+(see `polymarket-phase-status.md`). A 2026-05-23 correction reversed the
+short-lived "cross-exchange dislocation" framing: Kalshi is the tail target
+where the operator places the bet, not a price-comparison side. The matcher,
+`market_links.jsonl`, and Kalshi market fetch all remain — they back the
+per-row Kalshi mirror on the skilled-bets feed.
 
 ---
 
@@ -10,11 +14,13 @@ Phases 0-6; see `polymarket-phase-status.md` for the chronological record.
 Kalshi hides individual user bet history on social profiles, so even with
 a leaderboard scrape there's no way to compute a true on-chain win-rate.
 Polymarket settles every trade on Polygon and exposes wallet history
-publicly. We use Polymarket as the source-of-truth for skill, then
-project skilled wallets' active positions onto Kalshi via a title-similarity
-matcher to surface cross-exchange price dislocations.
+publicly. We use Polymarket as the source-of-truth for skill, then look up
+the equivalent Kalshi market for each skilled wallet's currently-held bet
+via a title-similarity matcher, so US-based operators can tail the trade
+on Kalshi.
 
-See `0002-cross-exchange-decision.md` for the strategic decision.
+See `0002-cross-exchange-decision.md` for the strategic decision and the
+2026-05-23 correction.
 
 ---
 
@@ -42,14 +48,15 @@ market_matcher.py (TF-IDF + date bucketing)
   takes:    polymarket_markets.jsonl × kalshi_markets.jsonl
   produces: market_links.jsonl  (auto-approved / pending / rejected)
 
-cross_exchange.py service joins:
+skilled_bets.py service joins:
   - polymarket_wallet_enrichment.jsonl  (filter by min_skill)
-  - polymarket_positions.jsonl          (most-recent snapshot per leg)
-  - market_links.jsonl                  (skip rejected)
-  - polymarket_markets.jsonl            (current YES price)
-  - kalshi_markets.jsonl                (current YES price)
+  - polymarket_positions.jsonl          (most-recent snapshot per leg; still-held only)
+  - polymarket_activity.jsonl           (latest BUY entry per position)
+  - polymarket_markets.jsonl            (current YES price + category)
+  - market_links.jsonl                  (best non-rejected Kalshi mirror per condition_id)
+  - kalshi_markets.jsonl                (current YES price for the mirror)
 
-GET /signals/cross-exchange → ranked dislocation signals
+GET /signals/skilled-bets → still-held skilled bets, each with a Kalshi mirror
 GET /signals/polymarket-leaderboard → ranked skilled wallets
 ```
 
@@ -65,13 +72,13 @@ All Polymarket JSONL files live in `services/ingestor/data/` by default
 | `polymarket_leaderboard.jsonl` | `seed-watchlist` mode | `seed-watchlist`, enrichment (display names) |
 | `polymarket_wallet_watchlist.txt` | `seed-watchlist` | `wallets` mode |
 | `polymarket_activity.jsonl` | `wallets` mode (dedup by tx+cond+outcome+type) | `enrichment` mode |
-| `polymarket_positions.jsonl` | `wallets` mode (appended snapshots) | `cross_exchange.py` service |
+| `polymarket_positions.jsonl` | `wallets` mode (appended snapshots) | `skilled_bets.py` service |
 | `polymarket_wallet_values.jsonl` | `wallets` mode | not yet consumed |
 | `polymarket_wallet_checkpoints.json` | `wallets` mode | `wallets` mode (steady-state) |
-| `polymarket_markets.jsonl` | `markets` mode (dedup by cond+closed status) | matcher, `cross_exchange.py` |
-| `kalshi_markets.jsonl` | `fetch-kalshi-markets` mode (overwrite) | matcher, `cross_exchange.py` |
-| `polymarket_wallet_enrichment.jsonl` | `enrichment` mode (overwrite) | `polymarket-leaderboard` API, `cross_exchange.py` |
-| `market_links.jsonl` | `match-markets` mode (upsert; manual overrides sticky) | `cross_exchange.py` |
+| `polymarket_markets.jsonl` | `markets` mode (dedup by cond+closed status) | matcher, `skilled_bets.py` |
+| `kalshi_markets.jsonl` | `fetch-kalshi-markets` mode (overwrite) | matcher, `skilled_bets.py` |
+| `polymarket_wallet_enrichment.jsonl` | `enrichment` mode (overwrite) | `polymarket-leaderboard` API, `skilled_bets.py` |
+| `market_links.jsonl` | `match-markets` mode (upsert; manual overrides sticky) | `skilled_bets.py` |
 
 ---
 
@@ -95,7 +102,7 @@ The `marketsignalos-polymarket-ingestor` entry point (from `services/polymarket-
 
 ## Steady-state run order
 
-To rebuild the cross-exchange signal from scratch:
+To rebuild the skilled-bets feed from scratch:
 
 ```powershell
 # One-time
@@ -153,15 +160,16 @@ Computed in `skill_computation.py`:
 
 Gamma's `closed` flag is **unreliable** — markets with future end dates can be marked closed. The authoritative resolution signal is `outcome_prices`. See the comment in `skill_computation.py::_market_winning_outcome`.
 
-### Cross-exchange dislocation
+### Skilled-bets feed
 
-Computed in `cross_exchange.py`:
+Computed in `skilled_bets.py` — see the "Signal semantics" section above for the join sequence. Each row carries:
 
-- `dislocation = kalshi_yes_price − polymarket_yes_price` (signed)
-- Positive ⇒ Kalshi YES more expensive ⇒ wallet's YES exposure is cheaper on Polymarket
-- Negative ⇒ Kalshi YES is cheaper ⇒ buy YES on Kalshi
-- For wallets holding NO, the "cheaper" exchange is the one with lower NO (= higher YES); the calc is symmetric and the recommended action string reflects this.
-- `opportunity_score = |dislocation_pct| × skill_likelihood × log1p(position_value_usdc)`
+- The latest BUY entry (price, size, USDC notional, tx hash, timestamp) for the still-held bet.
+- The current Polymarket YES price + drift vs the entry price.
+- The wallet's skill_likelihood, win_rate, edge_mean, and edge_lower_bound from enrichment.
+- The Kalshi mirror (ticker, event_ticker, title, live YES price, match confidence, status) when a non-rejected `market_links.jsonl` row exists for the bet's condition_id. Empty strings / 0 otherwise — the panel uses truthiness to decide whether to render the "Mirror on Kalshi" CTA.
+
+The Kalshi YES price is shown as a reference on each row, not as the second leg of a spread (see ADR 0002 correction). It lets the operator see whether they'd be tailing at a slight premium or discount.
 
 ### Match confidence
 
@@ -190,7 +198,7 @@ Manual decisions (`matched_by="manual"`) override auto decisions on subsequent m
 | Method | Path | Returns |
 |---|---|---|
 | GET | `/signals/polymarket-leaderboard?min_resolved=N&min_skill=X&limit=N` | List of skilled wallets, sorted by skill_likelihood |
-| GET | `/signals/cross-exchange?min_skill=X&min_resolved=N&min_dislocation_pct=P&min_position_value_usdc=V&only_approved_links=bool&limit=N` | Ranked tradeable dislocations |
+| GET | `/signals/skilled-bets?min_skill=X&min_resolved=N&min_position_value_usdc=V&limit=N` | Still-held skilled bets newest-first, each row carrying its Kalshi mirror when one exists |
 
 Both routes are read-only and idempotent. The data they serve is refreshed only by ingestor runs.
 
@@ -200,7 +208,7 @@ Both routes are read-only and idempotent. The data they serve is refreshed only 
 
 `apps/web/app/page.tsx` consumes both endpoints via `getDashboardData()`:
 
-- `CrossExchangePanel` (full-width, above the existing Opportunity Queue) — side-by-side price comparison with directional arrow, emerald chip on cheaper side, wallet provenance footer.
-- `PolymarketLeaderboardPanel` (sidebar, above the Kalshi leaderboard) — skill %, W/L, color-coded PnL, "active N ago" stamp.
+- `SkilledBetsPanel` (full-width, headline) — one row per still-held bet from a skilled wallet, with entry price/size/timestamp, current Polymarket YES price + drift vs entry, still-held size, and a "Mirror on Kalshi" call-to-action block (ticker, title, deep link, live YES price, cent delta vs Polymarket) when a non-rejected match exists.
+- `PolymarketLeaderboardPanel` (sidebar) — skill %, W/L, color-coded PnL, "active N ago" stamp.
 
 Both panels degrade gracefully to copy-explained empty states when the relevant JSONL files don't exist yet.

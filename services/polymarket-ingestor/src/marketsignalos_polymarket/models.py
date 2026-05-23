@@ -107,7 +107,7 @@ class PolymarketWalletValue:
 @dataclass(frozen=True, slots=True)
 class MarketLink:
     """
-    A candidate cross-exchange identifier mapping.
+    A candidate Polymarket → Kalshi market identifier mapping.
 
     status:
       - "approved":  high-confidence match, used by downstream signals

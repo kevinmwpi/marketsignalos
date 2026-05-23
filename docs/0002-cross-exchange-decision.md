@@ -1,6 +1,21 @@
-# ADR 0002 — Polymarket as primary skill source; Kalshi as comparison side
+# ADR 0002 — Polymarket as primary skill source; Kalshi as tail target
 
-## Decision
+## Correction (2026-05-23)
+
+The original framing of this ADR — "cross-exchange price dislocation as the headline signal" — was wrong for our operator. The operator is US-based and **cannot bet on Polymarket at all**, which makes a two-legged dislocation signal useless: there is no second leg to take. Polymarket is the *source of intelligence*; Kalshi is the *only venue where the operator can act*.
+
+The corrected product is what alternative #2 below described and rejected: **a Polymarket-only skilled-bets feed, with the equivalent Kalshi market shown alongside each row as the actionable tail target**. The rejection reasoning ("doesn't produce a tradeable spread by itself") was the wrong objective — we don't want a spread, we want a single defensible bet to place on Kalshi.
+
+Concretely:
+- `/signals/skilled-bets` (already implemented) is the headline endpoint and surfaces the Kalshi mirror per row.
+- `/signals/cross-exchange`, the `CrossExchangePanel`, and the `min_dislocation_pct` / `cheaper_exchange` / `recommended_action` framing have been removed.
+- The matcher (`market_matcher.py` → `market_links.jsonl`) and Kalshi market fetch remain — they back the per-row Kalshi mirror column. Only the dislocation-signal join layer was removed.
+
+The original decision and reasoning below are preserved for historical context. Read alternative #2's rejection as the load-bearing mistake.
+
+---
+
+## Decision (original — superseded by correction above)
 
 The primary signal for MarketSignalOS is **cross-exchange price dislocation**: skilled Polymarket wallets' active positions priced against equivalent Kalshi markets. Polymarket is the source of skill scoring; Kalshi is the comparison side.
 
@@ -51,5 +66,7 @@ Polymarket, in contrast, settles every trade on Polygon. The Data API (`data-api
 - We do not chase "anomalous wallets" with naming — `insider_like_score` was never extended to Polymarket and won't be. The score we publish is `skill_likelihood`, full stop.
 
 ## Status
+
+Superseded in part by the 2026-05-23 correction at the top of this file. Cross-exchange dislocation as the headline signal is dead; the Polymarket-only skilled-bets feed (with a Kalshi mirror column) is live. The matcher, Kalshi market fetch, and `market_links.jsonl` remain in active use as the join key for the Kalshi mirror.
 
 Implemented through Phase 6 (dashboard surface). Phase 7 wires CI + docs + the `INGEST_POLYMARKET` flag. Phase 7.5 (Postgres) and Phase 8 (matcher tuning, position pagination) are tracked in `polymarket-pipeline.md` under "Known limitations".

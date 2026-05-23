@@ -1,5 +1,5 @@
 """
-Cross-exchange market matcher.
+Polymarket → Kalshi market matcher.
 
 Joins Kalshi markets to Polymarket markets by:
   1. Bucketing both sides by (year, month) of end_date and an optional

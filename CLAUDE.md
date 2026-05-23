@@ -6,7 +6,9 @@ MarketSignalOS identifies skilled Polymarket wallets, surfaces their currently-h
 
 **Core value:** scan Polymarket leaderboards across time windows → score wallets by on-chain win rate → show their open BUY positions with a one-click "tail this on Kalshi" link.
 
-**Why not Kalshi-as-source.** Kalshi hides per-user bet history, so there's no way to compute a true skill score from public Kalshi data. The original Kalshi-only design was abandoned for this reason; only Kalshi's *public market list* is consumed (for the cross-exchange match). See `docs/0002-cross-exchange-decision.md`.
+**Why not Kalshi-as-source.** Kalshi hides per-user bet history, so there's no way to compute a true skill score from public Kalshi data. The original Kalshi-only design was abandoned for this reason; only Kalshi's *public market list* is consumed (to find the equivalent Kalshi market for each skilled Polymarket bet). See `docs/0002-cross-exchange-decision.md`.
+
+**Why Kalshi is the tail target, not a comparison side.** The operator is US-based and cannot bet on Polymarket. Polymarket is the *source of intelligence*; Kalshi is the *only venue where the operator can act*. An earlier framing of this project surfaced "cross-exchange price dislocations" as the headline signal; that was reversed on 2026-05-23 because a dislocation assumes you can trade both legs, which the operator cannot.
 
 **Non-goals (never build these):**
 - Automated trading or order placement
@@ -26,7 +28,7 @@ marketsignalOS/
 │   └── web/                       Next.js 16 frontend dashboard
 ├── services/
 │   ├── ingestor/data/             Shared JSONL data dir (gitignored; only artifact in this tree)
-│   └── polymarket-ingestor/       Polymarket ingestion + cross-exchange matcher
+│   └── polymarket-ingestor/       Polymarket ingestion + Polymarket→Kalshi market matcher
 ├── docs/                          Architecture, PRD, ADRs, runbooks
 ├── scripts/                       Deployment entry points + discovery probes
 ├── .github/workflows/ci.yml       Python (lint/type/test) + Node (lint/build)
@@ -132,15 +134,13 @@ Fix lint before committing; CI enforces both.
               ↓                              ↓
    skill_computation.py → polymarket_wallet_enrichment.jsonl
               ↓                              ↓
-              └────→ market_matcher.py ←──── kalshi_markets.jsonl ↘
-                         ↓                                          ↘
-                  market_links.jsonl                                  skilled_bets.py service
-                         ↓                                                 │
-                  cross_exchange.py service                                 │
-                         ↓                                                 │
+              └────→ market_matcher.py ←──── kalshi_markets.jsonl
+                         ↓
+                  market_links.jsonl ──→ skilled_bets.py service
+                                              ↓
                   FastAPI endpoints (apps/api/src/marketsignalos_api/api/routes/)
                          ↓
-                  Next.js dashboard (apps/web): `/` and `/skilled-bets`
+                  Next.js dashboard (apps/web): `/`
 ```
 
 The pipeline runs JSONL-first. Postgres is opt-in via `DATABASE_URL` (`Dual*` stores fan every write out to JSONL **and** Postgres). API reads always come from JSONL.
@@ -154,8 +154,7 @@ The pipeline runs JSONL-first. Postgres is opt-in via `DATABASE_URL` (`Dual*` st
 | `GET` | `/metrics` | Prometheus text exposition |
 | `POST` | `/ingestor/run` | Triggers one pass of `run_pipeline()`; returns 202 + started_at |
 | `GET` | `/ingestor/status` | Live state: running flag, last_exit_code, last_error, log_tail, last_summary |
-| `GET` | `/signals/skilled-bets` | Still-held BUY entries by skilled wallets, joined with the Kalshi mirror |
-| `GET` | `/signals/cross-exchange` | Price-dislocation framing of the same data |
+| `GET` | `/signals/skilled-bets` | Still-held BUY entries by skilled wallets, joined with the Kalshi mirror (headline endpoint — drives the `/` dashboard) |
 | `GET` | `/signals/polymarket-leaderboard` | Skilled wallets ranked by on-chain win rate |
 | `GET` | `/docs` | Auto-generated Swagger UI |
 
@@ -164,7 +163,7 @@ The pipeline runs JSONL-first. Postgres is opt-in via `DATABASE_URL` (`Dual*` st
 ## Signal design principles
 
 - **Deterministic first.** Every score must be reproducible from the same input data. No model weights, no stochastic components in v1.
-- **Explainable drivers.** Every top-level score (skill likelihood, win rate, dislocation %) decomposes into human-readable sub-signals.
+- **Explainable drivers.** Every top-level score (skill likelihood, win rate, match confidence) decomposes into human-readable sub-signals.
 - **Non-accusatory language.** "skill likelihood", "edge", "match confidence" — never "insider trading" or "manipulation".
 - **Freshness is a product feature.** Every surface carries the timestamp of the underlying snapshot.
 
@@ -181,11 +180,10 @@ The pipeline runs JSONL-first. Postgres is opt-in via `DATABASE_URL` (`Dual*` st
 ## What is implemented vs. planned
 
 ### Implemented
-- FastAPI app: `/` (minimal landing), `/health`, `/metrics`, `/ingestor/{run,status}`, `/signals/skilled-bets`, `/signals/cross-exchange`, `/signals/polymarket-leaderboard`
-- **`run_pipeline()`** — single in-process orchestrator the web "Run ingest" button invokes. Seeds wallets across `day/week/month/all` windows (gracefully skipping any window the API rejects), pulls activity/positions/value, fetches Polymarket markets + Kalshi public markets, and runs the cross-exchange matcher. No env vars required.
+- FastAPI app: `/` (minimal HTML landing), `/health`, `/metrics`, `/ingestor/{run,status}`, `/signals/skilled-bets`, `/signals/polymarket-leaderboard`
+- **`run_pipeline()`** — single in-process orchestrator the web "Run ingest" button invokes. Seeds wallets across `day/week/month/all` windows (gracefully skipping any window the API rejects), pulls activity/positions/value, fetches Polymarket markets + Kalshi public markets, and runs the Polymarket→Kalshi market matcher. No env vars required.
 - **`/signals/skilled-bets`** — still-held BUY entries from wallets with `skill_likelihood ≥ 0.8`, each row carrying the Kalshi mirror (ticker, title, deep link, live YES price, match confidence) when a match exists
-- **`/signals/cross-exchange`** — same data framed as a price-dislocation signal
-- **CrossExchangePanel + PolymarketLeaderboardPanel + IngestButton** mounted on `/`; **SkilledBetsPanel + IngestButton** on `/skilled-bets`
+- **SkilledBetsPanel + PolymarketLeaderboardPanel + IngestButton** mounted on `/` (the dashboard root)
 - **Ingest button** — pre-flight-free (no required env vars); log capture surfaces a `log_tail` and counts summary back to the UI
 - **Polymarket Postgres write path** — Alembic schema (`services/polymarket-ingestor/alembic/`) covers 8 tables; `Dual*` store wrappers fan every write out to JSONL and Postgres when `DATABASE_URL` is set; API reads remain JSONL-only
 - **Kalshi parlay-ticker filter** — `_is_kalshi_parlay()` excludes `KXMVE*` multi-leg tickers from the matcher
@@ -227,7 +225,7 @@ Deployed on **Railway** via Railpack builder.
 | `docs/prd.md` | Product requirements, MVP scope, success metrics |
 | `docs/architecture.md` | High-level data flow and key principles |
 | `docs/0001-tech-stack.md` | ADR explaining stack choices |
-| `docs/0002-cross-exchange-decision.md` | ADR for the Polymarket pivot + cross-exchange product direction |
+| `docs/0002-cross-exchange-decision.md` | ADR for the Polymarket pivot (with the 2026-05-23 correction reversing the cross-exchange framing) |
 | `docs/polymarket-pipeline.md` | Full Polymarket data-flow reference |
 | `docs/polymarket-api-discovery.md` | Validated public Polymarket endpoint shapes |
 | `docs/runbook.md` | Operational runbook (WIP) |

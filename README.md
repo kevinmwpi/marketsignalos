@@ -1,25 +1,27 @@
 # MarketSignalOS
 
 Identifies **skilled Polymarket wallets** by their on-chain win rate, surfaces
-the positions they're currently holding, and maps each one to the equivalent
-Kalshi market so users can tail those predictions on either exchange.
+the positions they're currently holding, and — for each one — provides a deep
+link to the equivalent Kalshi market so US-based users can tail the bet on
+Kalshi.
 
 Kalshi's per-user history is not public, so wallet skill is computed entirely
-from Polymarket's on-chain data; Kalshi's role is the *mirror side* of the
-trade. See [`docs/0002-cross-exchange-decision.md`](docs/0002-cross-exchange-decision.md)
-for the design ADR and [`CLAUDE.md`](CLAUDE.md) for the full developer guide.
+from Polymarket's on-chain data; Kalshi's role is the *tail target* where the
+operator actually places the bet. See [`docs/0002-cross-exchange-decision.md`](docs/0002-cross-exchange-decision.md)
+for the design ADR (including the 2026-05-23 correction that reversed the
+short-lived "cross-exchange dislocation" framing) and [`CLAUDE.md`](CLAUDE.md)
+for the full developer guide.
 
 ## What you get
 
-- **Dashboard at `/`** — cross-exchange price-dislocation signal + sidebar of skilled wallets
-- **`/skilled-bets`** — feed of currently-held BUY positions from skilled Polymarket wallets, each row carrying a Kalshi mirror link when a match exists
-- **Run ingest button** — one click runs the entire pipeline end-to-end (Polymarket leaderboards → wallet activity → enrichment → Kalshi market fetch → cross-exchange matcher) using only public, unauthenticated APIs. No keys required.
+- **Dashboard at `/`** — feed of currently-held BUY positions from skilled Polymarket wallets, each row carrying a Kalshi mirror link when a match exists, plus a leaderboard sidebar of skilled wallets
+- **Run ingest button** — one click runs the entire pipeline end-to-end (Polymarket leaderboards → wallet activity → enrichment → Kalshi market fetch → Polymarket→Kalshi matcher) using only public, unauthenticated APIs. No keys required.
 
 ## Repository layout
 
 - `apps/api/` — FastAPI backend (signal computation + REST endpoints)
 - `apps/web/` — Next.js 16 frontend
-- `services/polymarket-ingestor/` — Polymarket ingestion + cross-exchange matcher
+- `services/polymarket-ingestor/` — Polymarket ingestion + Polymarket→Kalshi market matcher
 - `services/ingestor/data/` — shared JSONL data directory (gitignored)
 - `docs/` — product, architecture, ADRs
 

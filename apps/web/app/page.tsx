@@ -1,10 +1,8 @@
 export const dynamic = "force-dynamic";
 
-import Link from "next/link";
-
-import CrossExchangePanel, { type CrossExchangeSignal } from "./components/CrossExchangePanel";
 import IngestButton from "./components/IngestButton";
 import PolymarketLeaderboardPanel, { type PolymarketWalletSkill } from "./components/PolymarketLeaderboardPanel";
+import SkilledBetsPanel, { type SkilledBet } from "./components/SkilledBetsPanel";
 
 type ApiResult<T> = {
   data: T | null;
@@ -29,23 +27,20 @@ async function fetchJson<T>(url: string, label: string): Promise<ApiResult<T>> {
 
 async function getDashboardData(apiBase: string): Promise<{
   polymarketLeaderboard: ApiResult<PolymarketWalletSkill[]>;
-  crossExchange: ApiResult<CrossExchangeSignal[]>;
+  skilledBets: ApiResult<SkilledBet[]>;
 }> {
-  const [polymarketLeaderboard, crossExchange] = await Promise.all([
+  const [polymarketLeaderboard, skilledBets] = await Promise.all([
     fetchJson<PolymarketWalletSkill[]>(
       apiUrl(apiBase, "/signals/polymarket-leaderboard?min_resolved=5&limit=10"),
       "polymarket leaderboard API",
     ),
-    fetchJson<CrossExchangeSignal[]>(
-      apiUrl(
-        apiBase,
-        "/signals/cross-exchange?min_skill=0.6&min_resolved=5&min_dislocation_pct=2&limit=15",
-      ),
-      "cross-exchange API",
+    fetchJson<SkilledBet[]>(
+      apiUrl(apiBase, "/signals/skilled-bets?min_skill=0.8&min_resolved=20&limit=50"),
+      "skilled-bets API",
     ),
   ]);
 
-  return { polymarketLeaderboard, crossExchange };
+  return { polymarketLeaderboard, skilledBets };
 }
 
 function ErrorBanner({ errors }: { errors: string[] }) {
@@ -58,41 +53,40 @@ function ErrorBanner({ errors }: { errors: string[] }) {
   );
 }
 
+const usdFormatter = new Intl.NumberFormat("en-US", {
+  style: "currency",
+  currency: "USD",
+  notation: "compact",
+  maximumFractionDigits: 1,
+});
+
 export default async function Home() {
   const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8080";
-  const { polymarketLeaderboard, crossExchange } = await getDashboardData(apiBase);
+  const { polymarketLeaderboard, skilledBets } = await getDashboardData(apiBase);
   const polymarketLeaderboardRows = polymarketLeaderboard.data ?? [];
-  const crossExchangeSignals = crossExchange.data ?? [];
-  const crossExchangeGeneratedAt =
-    crossExchangeSignals.length > 0 ? crossExchangeSignals[0].observed_at : null;
-  const errors = [polymarketLeaderboard.error, crossExchange.error].filter(
+  const bets = skilledBets.data ?? [];
+  const errors = [polymarketLeaderboard.error, skilledBets.error].filter(
     (error): error is string => Boolean(error),
   );
   const isLive = errors.length === 0;
+  const uniqueWallets = new Set(bets.map((b) => b.proxy_wallet)).size;
+  const capitalHeld = bets.reduce((acc, b) => acc + b.current_position_value_usdc, 0);
+  const tailableOnKalshi = bets.filter((b) => b.kalshi_ticker && b.kalshi_market_url).length;
 
   return (
     <div className="min-h-screen bg-[#fafafa]">
-      {/* Top nav */}
       <nav className="sticky top-0 z-10 border-b border-zinc-200 bg-white/95 backdrop-blur-sm">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-3">
-          <div className="flex items-center gap-6">
-            <div className="flex items-center gap-2.5">
-              <svg className="h-4 w-4 text-zinc-900" fill="none" viewBox="0 0 16 16">
-                <rect fill="currentColor" height="7" rx="1" width="7" />
-                <rect fill="currentColor" height="7" opacity="0.5" rx="1" width="7" x="9" />
-                <rect fill="currentColor" height="7" opacity="0.5" rx="1" width="7" y="9" />
-                <rect fill="currentColor" height="7" rx="1" width="7" x="9" y="9" />
-              </svg>
-              <span className="text-sm font-semibold tracking-tight text-zinc-900">
-                MarketSignalOS
-              </span>
-            </div>
-            <div className="flex items-center gap-4 text-xs">
-              <span className="font-semibold text-zinc-900">Dashboard</span>
-              <Link className="text-zinc-500 hover:text-zinc-900" href="/skilled-bets">
-                Skilled bets
-              </Link>
-            </div>
+          <div className="flex items-center gap-2.5">
+            <svg className="h-4 w-4 text-zinc-900" fill="none" viewBox="0 0 16 16">
+              <rect fill="currentColor" height="7" rx="1" width="7" />
+              <rect fill="currentColor" height="7" opacity="0.5" rx="1" width="7" x="9" />
+              <rect fill="currentColor" height="7" opacity="0.5" rx="1" width="7" y="9" />
+              <rect fill="currentColor" height="7" rx="1" width="7" x="9" y="9" />
+            </svg>
+            <span className="text-sm font-semibold tracking-tight text-zinc-900">
+              MarketSignalOS
+            </span>
           </div>
           <div className="flex items-center gap-4">
             <IngestButton />
@@ -109,58 +103,59 @@ export default async function Home() {
       <main className="mx-auto max-w-7xl px-6 pb-16 pt-8">
         <div className="mb-8">
           <h1 className="text-2xl font-semibold tracking-tight text-zinc-900">
-            Cross-exchange signal
+            Skilled wallet bets
           </h1>
           <p className="mt-1.5 max-w-2xl text-sm text-zinc-500">
-            Tradeable price dislocations between Polymarket and Kalshi, weighted
-            by the skill of the Polymarket wallets holding each position.{" "}
-            <Link className="font-medium text-zinc-700 underline" href="/skilled-bets">
-              See the skilled-bets feed →
-            </Link>
+            Recent BUY entries from Polymarket wallets whose on-chain win rate beats
+            random at <span className="font-mono">≥80%</span> confidence over{" "}
+            <span className="font-mono">≥20</span> resolved bets — and that are
+            still holding the position. Each row links to the Polymarket event and,
+            where an equivalent Kalshi market exists, a direct deep link you can
+            use to tail the bet on Kalshi.
           </p>
         </div>
 
         <ErrorBanner errors={errors} />
 
-        <div className="mb-8">
-          <CrossExchangePanel
-            generatedAt={crossExchangeGeneratedAt}
-            signals={crossExchangeSignals}
-          />
+        <div className="mb-6 grid grid-cols-2 gap-3 md:grid-cols-4">
+          <div className="rounded-lg border border-zinc-200 bg-white px-4 py-3">
+            <p className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">
+              Active bets
+            </p>
+            <p className="mt-1 font-mono text-2xl font-semibold text-zinc-900">
+              {bets.length}
+            </p>
+          </div>
+          <div className="rounded-lg border border-zinc-200 bg-white px-4 py-3">
+            <p className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">
+              Unique wallets
+            </p>
+            <p className="mt-1 font-mono text-2xl font-semibold text-zinc-900">
+              {uniqueWallets}
+            </p>
+          </div>
+          <div className="rounded-lg border border-zinc-200 bg-white px-4 py-3">
+            <p className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">
+              Capital held
+            </p>
+            <p className="mt-1 font-mono text-2xl font-semibold text-zinc-900">
+              {usdFormatter.format(capitalHeld)}
+            </p>
+          </div>
+          <div className="rounded-lg border border-zinc-200 bg-white px-4 py-3">
+            <p className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">
+              Tailable on Kalshi
+            </p>
+            <p className="mt-1 font-mono text-2xl font-semibold text-zinc-900">
+              {tailableOnKalshi}
+              <span className="ml-1 text-sm text-zinc-400">/ {bets.length}</span>
+            </p>
+          </div>
         </div>
 
         <div className="grid gap-6 xl:grid-cols-[1fr_320px]">
           <section>
-            <div className="mb-4 flex items-baseline justify-between">
-              <h2 className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">
-                How to use
-              </h2>
-            </div>
-            <div className="rounded-lg border border-zinc-200 bg-white p-5 text-sm leading-relaxed text-zinc-600">
-              <ol className="ml-5 list-decimal space-y-2">
-                <li>
-                  Click <span className="font-mono text-zinc-900">Run ingest</span> to
-                  scan Polymarket leaderboards (across day, week, month, and all-time
-                  windows), pull each top wallet&apos;s activity, score them, and
-                  match their currently-held positions against Kalshi&apos;s public
-                  market list.
-                </li>
-                <li>
-                  Browse{" "}
-                  <Link className="font-medium text-zinc-900 underline" href="/skilled-bets">
-                    /skilled-bets
-                  </Link>{" "}
-                  to see what high-skill wallets are actively holding — each row
-                  carries a direct Polymarket link and, where a match exists, a
-                  Kalshi mirror you can tail.
-                </li>
-                <li>
-                  Use the panel above for the price-dislocation view: same wallet
-                  positions, but framed as &quot;buy YES on one exchange, sell on the
-                  other&quot;.
-                </li>
-              </ol>
-            </div>
+            <SkilledBetsPanel bets={bets} />
           </section>
 
           <aside className="space-y-4">

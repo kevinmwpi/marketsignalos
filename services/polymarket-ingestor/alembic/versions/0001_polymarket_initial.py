@@ -223,7 +223,7 @@ def upgrade() -> None:
     )
 
     # ── polymarket_market_links ───────────────────────────────────────────────
-    # Cross-exchange mapping. Sticky-manual semantics are enforced by the
+    # Polymarket → Kalshi market mapping. Sticky-manual semantics are enforced by the
     # Python store at upsert time (ON CONFLICT ... WHERE matched_by <> 'manual').
     op.execute(
         """

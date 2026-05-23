@@ -1,5 +1,5 @@
 """
-Minimal Kalshi public markets fetcher used by the cross-exchange matcher.
+Minimal Kalshi public markets fetcher used by the Polymarket → Kalshi matcher.
 
 The Kalshi /markets endpoint is unauthenticated, so we don't reuse the
 keypair-aware client from services/ingestor — we just hit the public API
@@ -34,11 +34,11 @@ def _utcnow_iso() -> str:
 @dataclass(frozen=True, slots=True)
 class KalshiMarket:
     """
-    Subset of fields needed by the matcher + cross-exchange signal.
+    Subset of fields needed by the matcher + the skilled-bets Kalshi mirror.
 
     Kalshi prices are quoted in cents (0-100) for YES; we store them as the
     raw values returned by the API and convert to decimal probability at
-    the dislocation-computation step.
+    the skilled-bets join step.
     """
 
     ticker: str

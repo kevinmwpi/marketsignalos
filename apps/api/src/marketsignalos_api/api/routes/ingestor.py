@@ -171,7 +171,8 @@ def _run_ingestor_sync() -> None:
     Kalshi's public /markets endpoint), so this needs zero env-var setup.
     The legacy Kalshi user-history runner is intentionally NOT invoked
     here — Kalshi hides per-user history publicly, so that pipeline
-    cannot reach the product's goal (see docs/0002-cross-exchange-decision.md).
+    cannot reach the product's goal (identifying skilled wallets, see
+    docs/0002-cross-exchange-decision.md).
     """
     try:
         from marketsignalos_polymarket.runner import run_pipeline  # noqa: PLC0415

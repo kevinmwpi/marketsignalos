@@ -151,7 +151,7 @@ def test_different_strike_prices_low_confidence() -> None:
     links = match_markets(k, p)
     # These overlap a lot ("bitcoin above on june 30 2026") so it WILL link, but we want
     # to verify the matcher returns it as a candidate to be reviewed, not silently rejected.
-    # The downstream cross-exchange signal layer is responsible for separating strike levels.
+    # The downstream skilled-bets layer is responsible for separating strike levels.
     if links:
         # If it links, it should at least be flagged for review or have lower confidence
         # than an identical-strike pair would.

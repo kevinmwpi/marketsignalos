@@ -79,10 +79,10 @@ class SkilledBetSignal:
     polymarket_profile_url: str
     polymarket_market_url: str
 
-    # Kalshi mirror — populated when the cross-exchange matcher found an
-    # equivalent market on Kalshi. Empty strings / 0 / None when no match
-    # exists, so the client can use truthiness to decide whether to render
-    # the "tail this on Kalshi" call-to-action.
+    # Kalshi mirror — populated when the Polymarket→Kalshi market matcher
+    # found an equivalent market on Kalshi. Empty strings / 0 / None when
+    # no match exists, so the client can use truthiness to decide whether
+    # to render the "tail this on Kalshi" call-to-action.
     kalshi_ticker: str
     kalshi_event_ticker: str
     kalshi_title: str

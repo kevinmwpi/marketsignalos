@@ -7,7 +7,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, PlainTextResponse
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
-from marketsignalos_api.api.routes.cross_exchange import router as cross_exchange_router
 from marketsignalos_api.api.routes.health import router as health_router
 from marketsignalos_api.api.routes.ingestor import router as ingestor_router
 from marketsignalos_api.api.routes.polymarket import router as polymarket_router
@@ -71,7 +70,6 @@ def _landing_page_html() -> str:
       </p>
       <p>
         Primary endpoints: <code>/signals/skilled-bets</code>,
-        <code>/signals/cross-exchange</code>,
         <code>/signals/polymarket-leaderboard</code>,
         <code>/ingestor/run</code>.
       </p>
@@ -102,7 +100,6 @@ def create_app() -> FastAPI:
     app.include_router(health_router)
     app.include_router(ingestor_router)
     app.include_router(polymarket_router)
-    app.include_router(cross_exchange_router)
     app.include_router(skilled_bets_router)
 
     @app.get("/", response_class=HTMLResponse, include_in_schema=False)

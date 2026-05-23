@@ -26,7 +26,7 @@ const STAGE_LABELS: Record<string, string> = {
   markets: "Fetching Polymarket markets",
   enrichment: "Computing skill scores",
   kalshi_markets: "Fetching Kalshi markets",
-  match_markets: "Matching cross-exchange markets",
+  match_markets: "Matching Polymarket → Kalshi markets",
 };
 
 type ButtonState = "idle" | "starting" | "running" | "done" | "error";

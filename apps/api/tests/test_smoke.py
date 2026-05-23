@@ -24,15 +24,18 @@ def test_app_registers_active_routes() -> None:
         "/ingestor/run",
         "/ingestor/status",
         "/signals/skilled-bets",
-        "/signals/cross-exchange",
         "/signals/polymarket-leaderboard",
     }.issubset(route_paths)
 
 
-def test_kalshi_user_history_endpoints_removed() -> None:
-    """Regression guard: these routes used to exist but were tied to the
-    abandoned Kalshi-user-history pipeline. If a stray import resurrects
-    them, this test fails and points the reader at the ADR."""
+def test_retired_signal_endpoints_stay_removed() -> None:
+    """Regression guard for endpoints that were intentionally removed.
+
+    /signals/leaderboard etc. came from the abandoned Kalshi-user-history
+    pipeline. /signals/cross-exchange came from the dislocation framing
+    that was reversed on 2026-05-23 (see ADR 0002 — operator is US-based
+    and can't trade Polymarket, so a two-leg spread isn't actionable).
+    If a stray import resurrects any of these, this test fails."""
     app = create_app()
     route_paths = {route.path for route in app.router.routes if isinstance(route, APIRoute)}
     for retired in (
@@ -41,6 +44,7 @@ def test_kalshi_user_history_endpoints_removed() -> None:
         "/signals/opportunities",
         "/signals/trades",
         "/signals/profiles",
+        "/signals/cross-exchange",
     ):
         assert retired not in route_paths, (
             f"{retired} should no longer be mounted "

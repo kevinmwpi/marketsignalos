@@ -1,8 +1,9 @@
 # Polymarket Pipeline Phase Status
 
-Tracks completion against the cross-exchange signal plan. For the durable
+Tracks completion against the skilled-bets plan. For the durable
 architecture reference see `polymarket-pipeline.md`; for the strategic
-rationale see `0002-cross-exchange-decision.md`.
+rationale (and the 2026-05-23 correction reversing the cross-exchange
+framing) see `0002-cross-exchange-decision.md`.
 
 | Phase | Title | Status | Commit |
 |---|---|---|---|
@@ -11,9 +12,10 @@ rationale see `0002-cross-exchange-decision.md`.
 | 2 | Pagination + checkpoints + watchlist seeding | done | `c2fdfc9` |
 | 3 | On-chain skill scoring + `/signals/polymarket-leaderboard` | done | `f8a7ab9` |
 | 4 | TF-IDF market matcher + sticky manual review | done | `881853c` |
-| 5 | Cross-exchange dislocation `/signals/cross-exchange` | done | `01ba343` |
-| 6 | Dashboard panels (Cross-Exchange + Polymarket wallets) | done | `b8f448c` |
-| 7 | CI + docs + INGEST_POLYMARKET kill switch | in progress | (this commit) |
+| 5 | Cross-exchange dislocation `/signals/cross-exchange` | superseded (2026-05-23) | `01ba343` |
+| 6 | Dashboard panel (CrossExchange) | superseded (2026-05-23) | `b8f448c` |
+| 6a | Skilled-bets feed `/signals/skilled-bets` + dashboard panel (corrected headline) | done | `a170df7` |
+| 7 | CI + docs + INGEST_POLYMARKET kill switch | done | — |
 | 7.5 | Postgres migrations for the new tables | pending | — |
 | 8 | Matcher tuning + Kalshi parlay filtering + position pagination | pending | — |
 
@@ -61,29 +63,19 @@ Pure-Python TF-IDF + cosine similarity over short titles, no scikit-learn depend
 
 Live validation found 4 real cross-exchange pairs (Lorenzo Musetti French Open on both exchanges, IPL cricket match), all correctly routed to manual review.
 
-## Phase 5 — Cross-exchange signal
+## Phase 5 — Cross-exchange signal (superseded 2026-05-23)
 
-`apps/api/src/marketsignalos_api/services/cross_exchange.py` joins five sources:
+Originally `apps/api/src/marketsignalos_api/services/cross_exchange.py` joined enrichment + positions + market_links + both market files to surface ranked dislocation rows ranked by `|dislocation_pct| × skill_likelihood × log1p(position_value)`.
 
-1. enrichment (filter by `min_skill`)
-2. positions (collapse to latest snapshot per leg)
-3. market_links (skip `rejected`)
-4. polymarket_markets (current YES price)
-5. kalshi_markets (current YES price, cents → decimal)
+**Reversed on 2026-05-23** (see ADR 0002 correction). The operator is US-based and cannot trade Polymarket, so a two-leg spread isn't actionable. The service, route, panel, and tests have been removed. The matcher and `market_links.jsonl` remain — they back the per-row Kalshi mirror on the skilled-bets feed (Phase 6a).
 
-Outputs ranked `CrossExchangeSignal` rows. NO positions flip both sides
-to the YES complement so prices are quoted on the same scale. The
-`recommended_action` string spells out which exchange to buy on.
+## Phase 6 — Dashboard panel (superseded 2026-05-23)
 
-API surface: `/signals/cross-exchange?...`. 10 integration tests including the manual-rejection stickiness propagating to the API.
+`CrossExchangePanel` was the marquee section. Removed alongside the rest of the cross-exchange surface; replaced by Phase 6a below.
 
-## Phase 6 — Dashboard
+## Phase 6a — Skilled-bets feed + corrected dashboard
 
-`CrossExchangePanel` is the new marquee section. Side-by-side price
-comparison with directional arrow, emerald chip on the cheaper exchange,
-wallet provenance footer (skill %, resolved trades, USD held).
-`PolymarketLeaderboardPanel` is the new sidebar panel (W/L, color-coded
-PnL, "active N ago" freshness). Both gracefully render empty states.
+`apps/api/src/marketsignalos_api/services/skilled_bets.py` is now the headline service. It joins enrichment + positions (latest snapshot, still-held only) + activity (latest BUY) + markets (current YES + category) + market_links (best non-rejected) + kalshi_markets (live YES). API surface: `/signals/skilled-bets`. `SkilledBetsPanel` is the new headline dashboard panel — each row carries a "Mirror on Kalshi" block (ticker, title, deep link, live YES price, cent delta vs Polymarket) when a non-rejected match exists. `PolymarketLeaderboardPanel` stays as the sidebar.
 
 ## Phase 7 — Operationalization (in progress)
 

@@ -46,7 +46,7 @@ Returning 200 + JSON: 13/16
 | Per-wallet ingestion | `data-api.polymarket.com/activity?user=` | Single endpoint covers trades + redemptions |
 | Market ingestion | `gamma-api.polymarket.com/markets` | Use `closed=true` to backfill resolved-market settlements |
 | Skill scoring | Activity stream + resolved markets | Join on `conditionId`; REDEEM event marks settled trade |
-| Cross-exchange matching | Gamma `question` + `category` + `endDate` | Match against Kalshi `event_ticker` / `subtitle` / `expiration_date` |
+| Polymarket → Kalshi matching | Gamma `question` + `category` + `endDate` | Match against Kalshi `event_ticker` / `subtitle` / `expiration_date` |
 
 ## Open questions (revisit before Phase 1)
 

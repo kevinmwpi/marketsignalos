@@ -273,8 +273,8 @@ def test_skilled_bets_min_position_value_filters_dust(
 def test_skilled_bets_surfaces_kalshi_mirror_when_match_exists(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Central product behavior: when the cross-exchange matcher has found
-    an equivalent Kalshi market for the Polymarket condition_id the
+    """Central product behavior: when the Polymarket → Kalshi matcher has
+    found an equivalent Kalshi market for the Polymarket condition_id the
     skilled wallet is holding, the bet must carry the Kalshi ticker,
     title, deep link, and current YES price so the user can tail it."""
     pm_dir = _seed(tmp_path)
