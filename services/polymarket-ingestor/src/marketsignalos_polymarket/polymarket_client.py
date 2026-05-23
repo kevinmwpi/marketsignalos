@@ -86,6 +86,69 @@ class PolymarketClient:
             raise ValueError(f"Expected list from {url}, got {type(payload).__name__}")
         return cast(list[dict[str, Any]], payload)
 
+    # The categorized leaderboard endpoint surfaces per-category rankings the
+    # legacy /profit /volume endpoints don't expose. Used by the deep review
+    # sweep to discover a much wider universe of skilled-looking wallets.
+    LEADERBOARD_CATEGORIES: tuple[str, ...] = (
+        "OVERALL", "POLITICS", "SPORTS", "CRYPTO", "CULTURE",
+        "MENTIONS", "WEATHER", "ECONOMICS", "TECH", "FINANCE",
+    )
+    LEADERBOARD_TIME_PERIODS: tuple[str, ...] = ("DAY", "WEEK", "MONTH", "ALL")
+    LEADERBOARD_ORDERS: tuple[str, ...] = ("PNL", "VOL")
+
+    def get_trader_leaderboard_rankings(
+        self,
+        *,
+        category: str = "OVERALL",
+        time_period: str = "ALL",
+        order_by: str = "PNL",
+        limit: int = 50,
+        offset: int = 0,
+    ) -> list[dict[str, Any]]:
+        """One slice of the official categorized leaderboard.
+
+        The response shape isn't formally documented; some Polymarket data-api
+        endpoints return a bare list while newer ones wrap a `data` array. We
+        accept either and unwrap. Caller is responsible for slicing the matrix
+        (category x time_period x order_by x offset).
+        """
+        if category not in self.LEADERBOARD_CATEGORIES:
+            raise ValueError(f"unknown category {category!r}")
+        if time_period not in self.LEADERBOARD_TIME_PERIODS:
+            raise ValueError(f"unknown time_period {time_period!r}")
+        if order_by not in self.LEADERBOARD_ORDERS:
+            raise ValueError(f"unknown order_by {order_by!r}")
+        if not 1 <= limit <= 50:
+            raise ValueError("limit must be in [1, 50]")
+        if not 0 <= offset <= 1000:
+            raise ValueError("offset must be in [0, 1000]")
+
+        params: dict[str, Any] = {
+            "category": category,
+            "timePeriod": time_period,
+            "orderBy": order_by,
+            "limit": limit,
+        }
+        if offset:
+            params["offset"] = offset
+        payload = self._get_json(f"{DATA_API}/v1/leaderboard", params=params)
+        if isinstance(payload, list):
+            rows = payload
+        elif isinstance(payload, dict):
+            inner = payload.get("data")
+            if not isinstance(inner, list):
+                raise ValueError(
+                    "Expected list or {data: list} from /v1/leaderboard, "
+                    f"got dict with keys {sorted(payload.keys())[:5]}"
+                )
+            rows = inner
+        else:
+            raise ValueError(
+                f"Expected list or dict from /v1/leaderboard, "
+                f"got {type(payload).__name__}"
+            )
+        return cast(list[dict[str, Any]], rows)
+
     # ── Per-wallet ────────────────────────────────────────────────────────────
 
     def get_wallet_activity(

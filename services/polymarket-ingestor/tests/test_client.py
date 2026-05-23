@@ -43,6 +43,83 @@ def test_get_leaderboard_rejects_bad_metric() -> None:
     client.close()
 
 
+def test_get_trader_leaderboard_rankings_passes_matrix_params() -> None:
+    captured: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["host"] = request.url.host
+        captured["path"] = request.url.path
+        captured["params"] = dict(request.url.params)
+        return httpx.Response(200, json=[{"proxyWallet": "0xabc", "amount": 1.0,
+                                          "pseudonym": "x", "name": "x"}])
+
+    client = _client_with_mock(handler)
+    rows = client.get_trader_leaderboard_rankings(
+        category="POLITICS", time_period="WEEK", order_by="VOL", limit=25, offset=50,
+    )
+    assert captured["host"] == "data-api.polymarket.com"
+    assert captured["path"] == "/v1/leaderboard"
+    assert captured["params"] == {
+        "category": "POLITICS",
+        "timePeriod": "WEEK",
+        "orderBy": "VOL",
+        "limit": "25",
+        "offset": "50",
+    }
+    assert rows[0]["proxyWallet"] == "0xabc"
+    client.close()
+
+
+def test_get_trader_leaderboard_rankings_unwraps_data_envelope() -> None:
+    """Some Polymarket data-api endpoints wrap arrays in {data: [...]} — accept either."""
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"data": [
+            {"proxyWallet": "0xdef", "amount": 2.0, "pseudonym": "y", "name": "y"},
+        ]})
+
+    client = _client_with_mock(handler)
+    rows = client.get_trader_leaderboard_rankings(
+        category="OVERALL", time_period="ALL", order_by="PNL", limit=10,
+    )
+    assert rows[0]["proxyWallet"] == "0xdef"
+    client.close()
+
+
+def test_get_trader_leaderboard_rankings_omits_zero_offset() -> None:
+    """offset=0 should be elided from the query string (matches the activity client)."""
+    captured: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["params"] = dict(request.url.params)
+        return httpx.Response(200, json=[])
+
+    client = _client_with_mock(handler)
+    client.get_trader_leaderboard_rankings(
+        category="OVERALL", time_period="ALL", order_by="PNL", limit=10, offset=0,
+    )
+    assert "offset" not in captured["params"]
+    client.close()
+
+
+def test_get_trader_leaderboard_rankings_validates_args() -> None:
+    client = _client_with_mock(lambda r: httpx.Response(200, json=[]))
+    with pytest.raises(ValueError, match="category"):
+        client.get_trader_leaderboard_rankings(category="BOGUS")
+    with pytest.raises(ValueError, match="time_period"):
+        client.get_trader_leaderboard_rankings(time_period="QUARTER")
+    with pytest.raises(ValueError, match="order_by"):
+        client.get_trader_leaderboard_rankings(order_by="ROI")
+    with pytest.raises(ValueError, match="limit"):
+        client.get_trader_leaderboard_rankings(limit=0)
+    with pytest.raises(ValueError, match="limit"):
+        client.get_trader_leaderboard_rankings(limit=51)
+    with pytest.raises(ValueError, match="offset"):
+        client.get_trader_leaderboard_rankings(offset=-1)
+    with pytest.raises(ValueError, match="offset"):
+        client.get_trader_leaderboard_rankings(offset=1001)
+    client.close()
+
+
 def test_get_wallet_activity_passes_user_param() -> None:
     captured: dict[str, Any] = {}
 

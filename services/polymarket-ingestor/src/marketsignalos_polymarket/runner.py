@@ -24,7 +24,8 @@ import json
 import logging
 import os
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -47,6 +48,7 @@ from .models import (
     PolymarketLeaderboardEntry,
     PolymarketMarket,
     PolymarketPosition,
+    PolymarketWalletReviewState,
     PolymarketWalletValue,
 )
 from .polymarket_client import PolymarketClient, PolymarketClientConfig
@@ -113,6 +115,10 @@ def _watchlist_path() -> Path:
     if configured:
         return Path(configured)
     return _data_dir() / "polymarket_wallet_watchlist.txt"
+
+
+def _review_state_path() -> Path:
+    return _data_dir() / "polymarket_wallet_review_state.jsonl"
 
 
 # ── Parsing raw API dicts into typed dataclasses ─────────────────────────────
@@ -823,6 +829,144 @@ def run_enrichment(stores: _Stores) -> int:
     return written
 
 
+# ── Deep review state (sweep + prune) ────────────────────────────────────────
+#
+# The deep-review pipeline polls a much wider universe of wallets than the
+# shallow dashboard ingest. To keep steady-state cost bounded we maintain a
+# sidecar review-state JSONL keyed by wallet, with a `status` flag that lets
+# us archive wallets that go cold without deleting any historical data.
+
+# Default thresholds reused as the wallet protections during prune. These
+# mirror /signals/skilled-bets defaults (apps/api/.../routes/skilled_bets.py)
+# so anything currently visible in that endpoint can never be archived.
+DEEP_SKILLED_MIN_SKILL = 0.8
+DEEP_SKILLED_MIN_RESOLVED = 20
+DEEP_DEFAULT_DORMANT_DAYS = 90
+
+
+def _utcnow_iso() -> str:
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _load_review_state(path: Path) -> dict[str, PolymarketWalletReviewState]:
+    """Read the review-state JSONL into a wallet-keyed dict. Missing file → {}."""
+    if not path.exists():
+        return {}
+    out: dict[str, PolymarketWalletReviewState] = {}
+    for row in _read_jsonl(path):
+        wallet = str(row.get("proxy_wallet", "")).lower()
+        if not wallet:
+            continue
+        try:
+            out[wallet] = PolymarketWalletReviewState(
+                proxy_wallet=wallet,
+                status=str(row.get("status", "active")) or "active",
+                first_seen_at=str(row.get("first_seen_at", "")) or _utcnow_iso(),
+                last_leaderboard_seen_at=row.get("last_leaderboard_seen_at") or None,
+                last_activity_at=(
+                    int(row["last_activity_at"])
+                    if row.get("last_activity_at") not in (None, "")
+                    else None
+                ),
+                last_polled_at=row.get("last_polled_at") or None,
+                best_rank=(
+                    int(row["best_rank"])
+                    if row.get("best_rank") not in (None, "")
+                    else None
+                ),
+                appearances=int(row.get("appearances", 0) or 0),
+                categories=[str(c) for c in (row.get("categories") or []) if c],
+                time_periods=[str(t) for t in (row.get("time_periods") or []) if t],
+                orders=[str(o) for o in (row.get("orders") or []) if o],
+                archived_at=row.get("archived_at") or None,
+                archived_reason=row.get("archived_reason") or None,
+            )
+        except (TypeError, ValueError) as exc:
+            log.warning("review_state_row_parse_failed wallet=%s error=%s", wallet, exc)
+    return out
+
+
+def _write_review_state(
+    path: Path, state: dict[str, PolymarketWalletReviewState]
+) -> int:
+    """Atomic rewrite: serialize all rows to a tempfile, then rename over the
+    target path. Prevents a half-written file on Ctrl-C or disk-full."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    with tmp.open("w", encoding="utf-8") as fh:
+        for wallet in sorted(state):
+            row = {
+                "proxy_wallet": state[wallet].proxy_wallet,
+                "status": state[wallet].status,
+                "first_seen_at": state[wallet].first_seen_at,
+                "last_leaderboard_seen_at": state[wallet].last_leaderboard_seen_at,
+                "last_activity_at": state[wallet].last_activity_at,
+                "last_polled_at": state[wallet].last_polled_at,
+                "best_rank": state[wallet].best_rank,
+                "appearances": state[wallet].appearances,
+                "categories": state[wallet].categories,
+                "time_periods": state[wallet].time_periods,
+                "orders": state[wallet].orders,
+                "archived_at": state[wallet].archived_at,
+                "archived_reason": state[wallet].archived_reason,
+            }
+            fh.write(json.dumps(row, separators=(",", ":")) + "\n")
+    os.replace(tmp, path)
+    return len(state)
+
+
+def _load_skilled_wallets(enrichment_path: Path) -> set[str]:
+    """Wallets meeting the API's default skilled cutoff. Protected from prune."""
+    skilled: set[str] = set()
+    for row in _read_jsonl(enrichment_path):
+        skill = _as_float(row.get("skill_likelihood"))
+        resolved = int(row.get("resolved_trades", 0) or 0)
+        if skill >= DEEP_SKILLED_MIN_SKILL and resolved >= DEEP_SKILLED_MIN_RESOLVED:
+            wallet = str(row.get("proxy_wallet", "")).lower()
+            if wallet:
+                skilled.add(wallet)
+    return skilled
+
+
+def _load_last_activity_by_wallet(enrichment_path: Path) -> dict[str, int]:
+    """Most-recent activity timestamp per wallet, sourced from enrichment.
+    Wallets not present here are treated as `last_activity_at = None`."""
+    out: dict[str, int] = {}
+    for row in _read_jsonl(enrichment_path):
+        wallet = str(row.get("proxy_wallet", "")).lower()
+        if not wallet:
+            continue
+        ts = int(row.get("last_activity_at", 0) or 0)
+        if ts > out.get(wallet, 0):
+            out[wallet] = ts
+    return out
+
+
+def _load_wallets_with_open_positions(positions_path: Path) -> set[str]:
+    """Wallets with at least one latest-snapshot position size > 1e-9.
+
+    Mirrors the still-held logic in apps/api/.../services/skilled_bets.py.
+    JSONL is append-only so we keep the row with the most recent snapshot_at
+    for each (wallet, condition_id, outcome_index).
+    """
+    latest: dict[tuple[str, str, int], tuple[str, float]] = {}
+    for row in _read_jsonl(positions_path):
+        wallet = str(row.get("proxy_wallet", "")).lower()
+        if not wallet:
+            continue
+        key = (
+            wallet,
+            str(row.get("condition_id", "")),
+            int(row.get("outcome_index", 0) or 0),
+        )
+        snap = str(row.get("snapshot_at", "") or "")
+        size = _as_float(row.get("size"))
+        prev = latest.get(key)
+        if prev is None or snap >= prev[0]:
+            latest[key] = (snap, size)
+    return {key[0] for key, (_, size) in latest.items() if size > 1e-9}
+
+
 # ── CLI ───────────────────────────────────────────────────────────────────────
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -902,12 +1046,49 @@ def _build_parser() -> argparse.ArgumentParser:
     pl.add_argument("--leaderboard-limit", type=int, default=50)
     pl.add_argument("--skip-kalshi", action="store_true",
                     help="Skip the Kalshi fetch + match step")
+
+    dp = sub.add_parser(
+        "deep-pipeline",
+        help=(
+            "Deep review pass: sweep the full categorized leaderboard matrix, "
+            "refresh wallet review-state, prune dormant wallets, and hydrate "
+            "the oldest-polled batch of active+pinned wallets."
+        ),
+    )
+    dp.add_argument("--leaderboard-depth", type=int, default=_DEEP_DEFAULT_DEPTH,
+                    help="Top-N rows per slice (default 250, max 1000)")
+    dp.add_argument("--wallet-batch-size", type=int, default=_DEEP_DEFAULT_BATCH_SIZE,
+                    help="Wallets hydrated per invocation")
+    dp.add_argument("--activity-pages", type=int, default=_DEEP_DEFAULT_ACTIVITY_PAGES,
+                    help="Max activity pages per net-new wallet (existing wallets short-circuit on checkpoint)")
+    dp.add_argument("--dormant-days", type=int, default=DEEP_DEFAULT_DORMANT_DAYS,
+                    help="Wallets with no activity in this many days are archive candidates")
+    dp.add_argument("--skip-kalshi", action="store_true")
+
+    pw = sub.add_parser(
+        "prune-wallets",
+        help="Apply dormancy archival to review-state without running a full pipeline",
+    )
+    pw.add_argument("--dormant-days", type=int, default=DEEP_DEFAULT_DORMANT_DAYS)
+    pw.add_argument("--dry-run", action="store_true",
+                    help="Report what would be archived without mutating the file")
+
+    pin = sub.add_parser("pin-wallet", help="Mark a wallet as pinned (never archived)")
+    pin.add_argument("address")
+
+    unpin = sub.add_parser("unpin-wallet", help="Revert a pinned wallet to active")
+    unpin.add_argument("address")
+
     return parser
 
 
 @dataclass(slots=True)
 class PipelineResult:
-    """Counts surfaced back to the API so the UI can summarize the run."""
+    """Counts surfaced back to the API so the UI can summarize the run.
+
+    Deep-pipeline runs populate the trailing counters; shallow runs leave
+    them at their default 0.
+    """
 
     windows_attempted: list[str]
     windows_succeeded: list[str]
@@ -921,6 +1102,14 @@ class PipelineResult:
     enrichment_wallets: int
     kalshi_markets: int
     market_links: int
+    # Deep-pipeline-only counters (default 0 for shallow runs).
+    discovered_this_run: int = 0
+    deep_slices_attempted: int = 0
+    deep_slices_succeeded: int = 0
+    active_wallets: int = 0
+    archived_wallets: int = 0
+    pinned_wallets: int = 0
+    pruned_this_run: int = 0
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -936,6 +1125,13 @@ class PipelineResult:
             "enrichment_wallets": self.enrichment_wallets,
             "kalshi_markets": self.kalshi_markets,
             "market_links": self.market_links,
+            "discovered_this_run": self.discovered_this_run,
+            "deep_slices_attempted": self.deep_slices_attempted,
+            "deep_slices_succeeded": self.deep_slices_succeeded,
+            "active_wallets": self.active_wallets,
+            "archived_wallets": self.archived_wallets,
+            "pinned_wallets": self.pinned_wallets,
+            "pruned_this_run": self.pruned_this_run,
         }
 
 
@@ -1116,6 +1312,489 @@ def run_pipeline(
             client.close()
 
 
+# ── Deep review pipeline ─────────────────────────────────────────────────────
+#
+# Separate orchestrator from run_pipeline(): sweeps the full categorized
+# leaderboard matrix, maintains a sidecar review-state JSONL, and hydrates
+# only `active` + `pinned` wallets in batches of 500 oldest-polled-first.
+# The shallow run_pipeline() above remains the dashboard's "Run ingest" path.
+
+_DEEP_DEFAULT_DEPTH = 250            # top-N per slice
+_DEEP_DEFAULT_BATCH_SIZE = 500       # wallets hydrated per invocation
+_DEEP_DEFAULT_ACTIVITY_PAGES = 5     # cap for net-new wallets
+_DEEP_LIMIT_PER_REQUEST = 50         # API max
+
+
+@dataclass(slots=True)
+class _WalletSweepMeta:
+    appearances: int = 0
+    categories: set[str] = field(default_factory=set)
+    time_periods: set[str] = field(default_factory=set)
+    orders: set[str] = field(default_factory=set)
+    best_rank: int | None = None  # 1-indexed; lower = better
+
+
+@dataclass(slots=True)
+class _DeepSweepResult:
+    discovered: set[str]
+    leaderboard_entries: int
+    slices_attempted: int
+    slices_succeeded: int
+    per_wallet: dict[str, _WalletSweepMeta]
+
+
+def run_deep_leaderboard(
+    client: PolymarketClient,
+    stores: _Stores,
+    *,
+    depth: int = _DEEP_DEFAULT_DEPTH,
+    progress_cb: ProgressCallback | None = None,
+) -> _DeepSweepResult:
+    """Sweep the full leaderboard matrix and return the union of wallets.
+
+    Iterates 10 categories × 4 time periods × 2 orders × ceil(depth/50)
+    offsets. Per-slice 4xx/5xx errors are logged and skipped — empty slices
+    still count as 'attempted' but not 'succeeded'. Raw rows are appended to
+    polymarket_leaderboard.jsonl (dedupe is downstream's concern).
+    """
+    discovered: set[str] = set()
+    per_wallet: dict[str, _WalletSweepMeta] = {}
+    leaderboard_entries = 0
+    slices_attempted = 0
+    slices_succeeded = 0
+    total_slice_dims = (
+        len(PolymarketClient.LEADERBOARD_CATEGORIES)
+        * len(PolymarketClient.LEADERBOARD_TIME_PERIODS)
+        * len(PolymarketClient.LEADERBOARD_ORDERS)
+    )
+    dim_idx = 0
+
+    for category in PolymarketClient.LEADERBOARD_CATEGORIES:
+        for time_period in PolymarketClient.LEADERBOARD_TIME_PERIODS:
+            for order_by in PolymarketClient.LEADERBOARD_ORDERS:
+                dim_idx += 1
+                if progress_cb is not None:
+                    progress_cb({
+                        "stage": "deep_leaderboard",
+                        "current": dim_idx,
+                        "total": total_slice_dims,
+                        "detail": f"{category}/{time_period}/{order_by}",
+                    })
+                slice_ok = False
+                for offset in range(0, depth, _DEEP_LIMIT_PER_REQUEST):
+                    slices_attempted += 1
+                    page_size = min(_DEEP_LIMIT_PER_REQUEST, depth - offset)
+                    try:
+                        raw = client.get_trader_leaderboard_rankings(
+                            category=category,
+                            time_period=time_period,
+                            order_by=order_by,
+                            limit=page_size,
+                            offset=offset,
+                        )
+                    except httpx.HTTPStatusError as exc:
+                        log.warning(
+                            "deep_leaderboard skip category=%s time_period=%s order_by=%s "
+                            "offset=%d status=%d",
+                            category, time_period, order_by, offset,
+                            exc.response.status_code,
+                        )
+                        break  # bail out of offsets for this slice
+                    if not raw:
+                        # First-page empty — slice is valid but exhausted.
+                        if offset == 0:
+                            slice_ok = True
+                        break
+                    slices_succeeded += 1
+                    slice_ok = True
+
+                    # Map the new endpoint's (order_by, time_period) onto the
+                    # legacy (metric, window) JSONL schema so downstream
+                    # enrichment can keep reading the same file.
+                    metric = "profit" if order_by == "PNL" else "volume"
+                    window = time_period.lower()
+                    entries = [
+                        parse_leaderboard_row(r, metric=metric, window=window)
+                        for r in raw
+                    ]
+                    stores.leaderboard.write_leaderboard(entries)
+                    leaderboard_entries += len(entries)
+
+                    for i, entry in enumerate(entries):
+                        wallet = entry.proxy_wallet
+                        if not wallet:
+                            continue
+                        discovered.add(wallet)
+                        rank = offset + i + 1
+                        meta = per_wallet.setdefault(wallet, _WalletSweepMeta())
+                        meta.appearances += 1
+                        meta.categories.add(category)
+                        meta.time_periods.add(time_period)
+                        meta.orders.add(order_by)
+                        if meta.best_rank is None or rank < meta.best_rank:
+                            meta.best_rank = rank
+
+                    if len(raw) < page_size:
+                        break  # exhausted this slice
+                if not slice_ok:
+                    log.info(
+                        "deep_leaderboard slice_failed category=%s time_period=%s order_by=%s",
+                        category, time_period, order_by,
+                    )
+
+    log.info(
+        "deep_leaderboard complete discovered=%d entries=%d slices_attempted=%d slices_succeeded=%d",
+        len(discovered), leaderboard_entries, slices_attempted, slices_succeeded,
+    )
+    return _DeepSweepResult(
+        discovered=discovered,
+        leaderboard_entries=leaderboard_entries,
+        slices_attempted=slices_attempted,
+        slices_succeeded=slices_succeeded,
+        per_wallet=per_wallet,
+    )
+
+
+def _merge_unique(existing: list[str], incoming: set[str]) -> list[str]:
+    """Sorted, deduped union — keeps the review-state file deterministic."""
+    return sorted(set(existing) | incoming)
+
+
+def _apply_sweep_to_review_state(
+    state: dict[str, PolymarketWalletReviewState],
+    sweep: _DeepSweepResult,
+) -> int:
+    """Mutate `state` in place to record sweep observations. Returns the
+    count of wallets newly added (not previously in state)."""
+    now = _utcnow_iso()
+    added = 0
+    for wallet, meta in sweep.per_wallet.items():
+        record = state.get(wallet)
+        if record is None:
+            record = PolymarketWalletReviewState(
+                proxy_wallet=wallet,
+                status="active",
+                first_seen_at=now,
+            )
+            state[wallet] = record
+            added += 1
+        # Pinned wallets stay pinned; previously-archived wallets seen again
+        # are reactivated.
+        if record.status == "archived":
+            record.status = "active"
+            record.archived_at = None
+            record.archived_reason = None
+        record.last_leaderboard_seen_at = now
+        record.appearances += meta.appearances
+        record.categories = _merge_unique(record.categories, meta.categories)
+        record.time_periods = _merge_unique(record.time_periods, meta.time_periods)
+        record.orders = _merge_unique(record.orders, meta.orders)
+        if meta.best_rank is not None and (
+            record.best_rank is None or meta.best_rank < record.best_rank
+        ):
+            record.best_rank = meta.best_rank
+    return added
+
+
+def prune_review_state(
+    *,
+    state: dict[str, PolymarketWalletReviewState],
+    discovered: set[str],
+    enrichment_path: Path,
+    positions_path: Path,
+    dormant_days: int = DEEP_DEFAULT_DORMANT_DAYS,
+    dry_run: bool = False,
+) -> int:
+    """Archive dormant wallets that are absent from the latest sweep AND lack
+    any protection. Returns the count of wallets newly archived (or that
+    *would* be archived under dry_run).
+
+    Protection rules (any one keeps a wallet `active`):
+      - status == "pinned"
+      - skill_likelihood >= 0.8 AND resolved_trades >= 20 (matches the
+        API's default skilled-bets cutoff)
+      - any open position with size > 1e-9
+      - present in `discovered`
+    """
+    skilled = _load_skilled_wallets(enrichment_path)
+    open_positions = _load_wallets_with_open_positions(positions_path)
+    last_activity = _load_last_activity_by_wallet(enrichment_path)
+    now = datetime.now(timezone.utc)
+    cutoff_ts = int((now - timedelta(days=dormant_days)).timestamp())
+    archived = 0
+
+    for wallet, record in state.items():
+        if record.status == "pinned":
+            continue
+        if record.status == "archived":
+            continue
+        if wallet in discovered:
+            continue
+        if wallet in skilled:
+            continue
+        if wallet in open_positions:
+            continue
+        # Last-known activity timestamp: prefer the in-state value (deep
+        # pipeline writes it after hydration), fall back to enrichment.
+        last_ts = record.last_activity_at or last_activity.get(wallet)
+        if last_ts is not None and last_ts > cutoff_ts:
+            continue
+        # Dormant + undiscovered + unprotected → archive.
+        if not dry_run:
+            record.status = "archived"
+            record.archived_at = _utcnow_iso()
+            record.archived_reason = "dormant_and_undiscovered"
+        archived += 1
+
+    log.info(
+        "prune_review_state archived=%d dormant_days=%d skilled=%d open_positions=%d dry_run=%s",
+        archived, dormant_days, len(skilled), len(open_positions), dry_run,
+    )
+    return archived
+
+
+def _pick_hydration_batch(
+    state: dict[str, PolymarketWalletReviewState], *, batch_size: int
+) -> list[str]:
+    """Oldest-polled-first cursor. Wallets with no last_polled_at sort first
+    so net-new wallets are always picked up promptly."""
+    candidates = [
+        record for record in state.values()
+        if record.status in {"active", "pinned"}
+    ]
+    candidates.sort(key=lambda r: (r.last_polled_at or "", r.proxy_wallet))
+    return [r.proxy_wallet for r in candidates[:batch_size]]
+
+
+def run_deep_pipeline(
+    *,
+    leaderboard_depth: int = _DEEP_DEFAULT_DEPTH,
+    wallet_batch_size: int = _DEEP_DEFAULT_BATCH_SIZE,
+    activity_pages: int = _DEEP_DEFAULT_ACTIVITY_PAGES,
+    activity_page_size: int = 500,
+    dormant_days: int = DEEP_DEFAULT_DORMANT_DAYS,
+    market_pages: int = 5,
+    market_page_size: int = 100,
+    kalshi_status: str = "open",
+    kalshi_max_pages: int = 25,
+    skip_kalshi: bool = False,
+    client: PolymarketClient | None = None,
+    progress_cb: ProgressCallback | None = None,
+) -> PipelineResult:
+    """End-to-end deep review:
+
+      1. Sweep the categorized leaderboard matrix (top-N per slice).
+      2. Refresh review-state: add new wallets, bump observation metadata,
+         reactivate any previously-archived wallet that reappears.
+      3. Prune: archive wallets that are dormant AND absent from the latest
+         sweep AND not protected by pin/skill/open-position.
+      4. Hydrate the oldest-polled batch of active+pinned wallets.
+      5. Refresh markets, enrichment, and (optionally) the Kalshi mirror.
+    """
+    stores = _build_stores(_data_dir())
+    review_path = _review_state_path()
+    state = _load_review_state(review_path)
+    owns_client = client is None
+    client = client or PolymarketClient(PolymarketClientConfig.from_env())
+
+    def _emit(payload: dict[str, Any]) -> None:
+        if progress_cb is not None:
+            progress_cb(payload)
+
+    try:
+        # 1. Deep matrix sweep
+        log.info("deep_pipeline step=deep_leaderboard depth=%d", leaderboard_depth)
+        sweep = run_deep_leaderboard(
+            client, stores, depth=leaderboard_depth, progress_cb=progress_cb,
+        )
+
+        # 2. Apply sweep observations to review-state
+        log.info("deep_pipeline step=refresh_review_state")
+        _emit({"stage": "refresh_review_state"})
+        _apply_sweep_to_review_state(state, sweep)
+
+        # 3. Prune dormant + undiscovered + unprotected wallets
+        log.info("deep_pipeline step=prune dormant_days=%d", dormant_days)
+        _emit({"stage": "prune_review_state"})
+        data_dir = _data_dir()
+        pruned_this_run = prune_review_state(
+            state=state,
+            discovered=sweep.discovered,
+            enrichment_path=data_dir / "polymarket_wallet_enrichment.jsonl",
+            positions_path=data_dir / "polymarket_positions.jsonl",
+            dormant_days=dormant_days,
+        )
+
+        # 4. Pick + hydrate the oldest-polled batch
+        batch = _pick_hydration_batch(state, batch_size=wallet_batch_size)
+        log.info(
+            "deep_pipeline step=hydrate batch_size=%d (of %d active+pinned)",
+            len(batch),
+            sum(
+                1 for r in state.values()
+                if r.status in {"active", "pinned"}
+            ),
+        )
+        activity_total = positions_total = values_total = 0
+        if batch:
+            _emit({"stage": "wallets", "current": 0, "total": len(batch)})
+            activity_total, positions_total, values_total = run_wallets(
+                client,
+                stores,
+                addresses=batch,
+                activity_page_size=activity_page_size,
+                max_pages_per_wallet=activity_pages,
+                progress_cb=progress_cb,
+            )
+            # Stamp last_polled_at on every wallet in the batch so the cursor
+            # advances even if individual fetches errored inside run_wallets.
+            polled_at = _utcnow_iso()
+            for wallet in batch:
+                record = state.get(wallet)
+                if record is not None:
+                    record.last_polled_at = polled_at
+
+            # Pull the freshest last_activity_at from the just-written
+            # checkpoints so the next prune sees current data.
+            for wallet in batch:
+                ts = stores.checkpoints.get_last_timestamp(wallet)
+                if ts is not None:
+                    record = state.get(wallet)
+                    if record is not None and (
+                        record.last_activity_at is None
+                        or ts > record.last_activity_at
+                    ):
+                        record.last_activity_at = ts
+
+        # Persist the updated review-state (atomic rewrite).
+        _write_review_state(review_path, state)
+
+        # 5. Markets + enrichment + Kalshi mirror (same as shallow pipeline).
+        log.info("deep_pipeline step=markets")
+        _emit({"stage": "markets"})
+        markets_written = run_markets(
+            client, stores,
+            closed=True, pages=market_pages, page_size=market_page_size,
+        )
+        markets_backfilled = run_markets_backfill_from_activity(client, stores)
+
+        log.info("deep_pipeline step=enrichment")
+        _emit({"stage": "enrichment"})
+        enrichment_written = run_enrichment(stores)
+
+        kalshi_written = 0
+        links_written = 0
+        if not skip_kalshi:
+            log.info("deep_pipeline step=kalshi_markets status=%s", kalshi_status)
+            _emit({"stage": "kalshi_markets"})
+            try:
+                kalshi_written = run_fetch_kalshi_markets(
+                    stores, status=kalshi_status, max_pages=kalshi_max_pages,
+                )
+                log.info("deep_pipeline step=match_markets")
+                _emit({"stage": "match_markets"})
+                links_written = run_match_markets(stores)
+            except Exception as exc:  # noqa: BLE001
+                log.warning(
+                    "kalshi mirror step failed (non-fatal): %s — skilled bets "
+                    "will still show but without Kalshi cross-references",
+                    exc,
+                )
+
+        active = sum(1 for r in state.values() if r.status == "active")
+        archived = sum(1 for r in state.values() if r.status == "archived")
+        pinned = sum(1 for r in state.values() if r.status == "pinned")
+        result = PipelineResult(
+            windows_attempted=[],  # deep sweep uses the full matrix, not windows
+            windows_succeeded=[],
+            leaderboard_entries=sweep.leaderboard_entries,
+            wallets_seeded=len(state),
+            activity_records=activity_total,
+            positions=positions_total,
+            wallet_values=values_total,
+            markets_written=markets_written,
+            markets_backfilled=markets_backfilled,
+            enrichment_wallets=enrichment_written,
+            kalshi_markets=kalshi_written,
+            market_links=links_written,
+            discovered_this_run=len(sweep.discovered),
+            deep_slices_attempted=sweep.slices_attempted,
+            deep_slices_succeeded=sweep.slices_succeeded,
+            active_wallets=active,
+            archived_wallets=archived,
+            pinned_wallets=pinned,
+            pruned_this_run=pruned_this_run,
+        )
+        log.info("deep_pipeline complete %s", result.to_dict())
+        return result
+    finally:
+        if owns_client:
+            client.close()
+
+
+def run_prune_wallets(
+    *,
+    dormant_days: int = DEEP_DEFAULT_DORMANT_DAYS,
+    dry_run: bool = False,
+) -> dict[str, int]:
+    """Standalone prune: read existing review-state, apply protection rules,
+    write back. Used by the CLI `prune-wallets` and `POST /ingestor/prune-wallets`.
+
+    Treats the empty `discovered` set as "no fresh sweep available, only
+    archive on dormancy". Caller can run a sweep first if they want sweep-
+    backed pruning.
+    """
+    review_path = _review_state_path()
+    state = _load_review_state(review_path)
+    data_dir = _data_dir()
+    pruned = prune_review_state(
+        state=state,
+        discovered=set(),
+        enrichment_path=data_dir / "polymarket_wallet_enrichment.jsonl",
+        positions_path=data_dir / "polymarket_positions.jsonl",
+        dormant_days=dormant_days,
+        dry_run=dry_run,
+    )
+    if not dry_run:
+        _write_review_state(review_path, state)
+    active = sum(1 for r in state.values() if r.status == "active")
+    archived = sum(1 for r in state.values() if r.status == "archived")
+    pinned = sum(1 for r in state.values() if r.status == "pinned")
+    return {
+        "pruned_this_run": pruned,
+        "active_wallets": active,
+        "archived_wallets": archived,
+        "pinned_wallets": pinned,
+    }
+
+
+def run_pin_wallet(address: str, *, pin: bool) -> str:
+    """Set status=pinned (or revert to active) for a wallet. Creates the
+    review-state row if it doesn't exist. Returns the resulting status."""
+    review_path = _review_state_path()
+    state = _load_review_state(review_path)
+    wallet = address.strip().lower()
+    if not wallet:
+        raise ValueError("address must be non-empty")
+    record = state.get(wallet)
+    target_status = "pinned" if pin else "active"
+    if record is None:
+        record = PolymarketWalletReviewState(
+            proxy_wallet=wallet,
+            status=target_status,
+            first_seen_at=_utcnow_iso(),
+        )
+        state[wallet] = record
+    else:
+        record.status = target_status
+        if pin:
+            record.archived_at = None
+            record.archived_reason = None
+    _write_review_state(review_path, state)
+    log.info("pin_wallet wallet=%s status=%s", wallet, target_status)
+    return target_status
+
+
 def main(argv: list[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
     stores = _build_stores(_data_dir())
@@ -1186,6 +1865,24 @@ def main(argv: list[str] | None = None) -> int:
                 skip_kalshi=args.skip_kalshi,
                 client=client,
             )
+        elif args.mode == "deep-pipeline":
+            run_deep_pipeline(
+                leaderboard_depth=args.leaderboard_depth,
+                wallet_batch_size=args.wallet_batch_size,
+                activity_pages=args.activity_pages,
+                dormant_days=args.dormant_days,
+                skip_kalshi=args.skip_kalshi,
+                client=client,
+            )
+        elif args.mode == "prune-wallets":
+            counts = run_prune_wallets(
+                dormant_days=args.dormant_days, dry_run=args.dry_run,
+            )
+            log.info("prune_wallets %s", counts)
+        elif args.mode == "pin-wallet":
+            run_pin_wallet(args.address, pin=True)
+        elif args.mode == "unpin-wallet":
+            run_pin_wallet(args.address, pin=False)
         elif args.mode == "all":
             if os.getenv("INGEST_POLYMARKET", "").strip().lower() not in {"1", "true", "yes", "on"}:
                 log.info("INGEST_POLYMARKET not set — skipping 'all' pass (set to '1' to enable)")

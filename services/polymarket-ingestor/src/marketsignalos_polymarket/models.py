@@ -131,6 +131,38 @@ class MarketLink:
     matched_at: str = field(default_factory=_utcnow_iso)
 
 
+@dataclass(slots=True)
+class PolymarketWalletReviewState:
+    """Per-wallet bookkeeping for the deep-review hydration pass.
+
+    Mutable on purpose: a single deep-leaderboard sweep visits the same wallet
+    across many slices and accumulates appearances/categories/time_periods/
+    orders before the final atomic rewrite. The rest of the codebase uses
+    frozen records because those rows are immutable events; review-state is
+    explicitly stateful.
+
+    status:
+      - "active":   in the polling rotation
+      - "archived": dormant and absent from the latest deep sweep; skipped
+                    during hydration but kept in JSONL for re-activation
+      - "pinned":   never archived, regardless of activity or discovery
+    """
+
+    proxy_wallet: str
+    status: str
+    first_seen_at: str
+    last_leaderboard_seen_at: str | None = None
+    last_activity_at: int | None = None  # unix seconds, mirrors enrichment
+    last_polled_at: str | None = None    # ISO timestamp of last hydration
+    best_rank: int | None = None         # lowest (= best) offset+row across slices
+    appearances: int = 0
+    categories: list[str] = field(default_factory=list)
+    time_periods: list[str] = field(default_factory=list)
+    orders: list[str] = field(default_factory=list)
+    archived_at: str | None = None
+    archived_reason: str | None = None
+
+
 @dataclass(frozen=True, slots=True)
 class PolymarketWalletEnrichment:
     """

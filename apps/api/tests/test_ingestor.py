@@ -141,6 +141,125 @@ def test_run_returns_409_when_already_running() -> None:
     assert resp.json()["detail"] == "Ingestion already running"
 
 
+def test_run_deep_starts_deep_pipeline_and_records_summary(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """POST /ingestor/run/deep kicks off the deep pipeline and surfaces its
+    extended counter set in last_summary."""
+    deep_summary = {
+        "windows_attempted": [],
+        "windows_succeeded": [],
+        "leaderboard_entries": 1500,
+        "wallets_seeded": 800,
+        "activity_records": 50_000,
+        "positions": 1200,
+        "wallet_values": 800,
+        "markets_written": 500,
+        "markets_backfilled": 20,
+        "enrichment_wallets": 600,
+        "kalshi_markets": 800,
+        "market_links": 18,
+        "discovered_this_run": 7000,
+        "deep_slices_attempted": 400,
+        "deep_slices_succeeded": 396,
+        "active_wallets": 6800,
+        "archived_wallets": 150,
+        "pinned_wallets": 5,
+        "pruned_this_run": 12,
+    }
+
+    def _fake_deep_run() -> None:
+        ingestor_route.log.info("deep_pipeline complete %s", deep_summary)
+        with ingestor_route._lock:
+            ingestor_route._state["running"] = False
+            ingestor_route._state["last_finished_at"] = ingestor_route._now()
+            ingestor_route._state["last_exit_code"] = 0
+            ingestor_route._state["last_error"] = None
+            ingestor_route._state["log_tail"] = list(ingestor_route._log_buffer)
+            ingestor_route._state["last_summary"] = deep_summary
+
+    _wire_immediate_deep_executor(monkeypatch, _fake_deep_run)
+
+    client = TestClient(app)
+    resp = client.post("/ingestor/run/deep")
+    assert resp.status_code == 202
+    body = resp.json()
+    assert body["status"] == "started"
+    assert body["kind"] == "deep"
+
+    status = client.get("/ingestor/status").json()
+    assert status["last_exit_code"] == 0
+    assert status["last_summary"] == deep_summary
+    assert status["last_summary"]["discovered_this_run"] == 7000
+    assert status["last_summary"]["archived_wallets"] == 150
+
+
+def test_run_deep_returns_409_when_already_running() -> None:
+    """Shallow and deep runs share the running flag — only one at a time."""
+    ingestor_route._state["running"] = True
+    client = TestClient(app)
+    resp = client.post("/ingestor/run/deep")
+    assert resp.status_code == 409
+
+
+def test_prune_wallets_returns_counts(monkeypatch: pytest.MonkeyPatch) -> None:
+    """POST /ingestor/prune-wallets runs synchronously and returns the counts
+    from run_prune_wallets()."""
+    captured: dict[str, Any] = {}
+
+    def _fake_prune(*, dormant_days: int = 90, dry_run: bool = False) -> dict[str, int]:
+        captured["dormant_days"] = dormant_days
+        captured["dry_run"] = dry_run
+        return {
+            "pruned_this_run": 7,
+            "active_wallets": 1234,
+            "archived_wallets": 567,
+            "pinned_wallets": 3,
+        }
+
+    # Patch the symbol on the runner module — the route does a late import.
+    import marketsignalos_polymarket.runner as runner_mod
+    monkeypatch.setattr(runner_mod, "run_prune_wallets", _fake_prune)
+
+    client = TestClient(app)
+    resp = client.post("/ingestor/prune-wallets?dormant_days=120&dry_run=true")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["status"] == "ok"
+    assert body["pruned_this_run"] == 7
+    assert body["archived_wallets"] == 567
+    assert captured == {"dormant_days": 120, "dry_run": True}
+
+
+def test_prune_wallets_returns_409_when_pipeline_running() -> None:
+    """Prune mustn't race with a pipeline rewriting the same review-state file."""
+    ingestor_route._state["running"] = True
+    client = TestClient(app)
+    resp = client.post("/ingestor/prune-wallets")
+    assert resp.status_code == 409
+
+
+def _wire_immediate_deep_executor(
+    monkeypatch: pytest.MonkeyPatch, fake_run: Any,
+) -> None:
+    """Mirror of _wire_immediate_executor for the deep pipeline path."""
+    def _stub_executor(_executor: Any, fn: Any, *args: Any) -> None:
+        handler = ingestor_route._attach_log_capture()
+        try:
+            fn(*args)
+        finally:
+            ingestor_route._detach_log_capture(handler)
+
+    import asyncio
+
+    class _ImmediateLoop:
+        def run_in_executor(self, executor: Any, fn: Any, *args: Any) -> None:
+            _stub_executor(executor, fn, *args)
+
+    monkeypatch.setattr(ingestor_route, "_run_deep_ingestor_sync", fake_run)
+    monkeypatch.setattr(asyncio, "get_event_loop", lambda: _ImmediateLoop())
+
+
 def _wire_immediate_executor(
     monkeypatch: pytest.MonkeyPatch, fake_run: Any,
 ) -> None:

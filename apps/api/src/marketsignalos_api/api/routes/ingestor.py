@@ -116,38 +116,16 @@ def _set_progress(payload: dict[str, Any]) -> None:
         _state["progress"] = snapshot
 
 
-def _run_ingestor_sync() -> None:
-    """Runs the Polymarket pipeline in a thread-pool worker.
-
-    The pipeline is fully unauthenticated (both Polymarket public APIs and
-    Kalshi's public /markets endpoint), so this needs zero env-var setup.
-    The legacy Kalshi user-history runner is intentionally NOT invoked
-    here — Kalshi hides per-user history publicly, so that pipeline
-    cannot reach the product's goal (see docs/0002-cross-exchange-decision.md).
-    """
+def _execute_pipeline_sync(pipeline_callable: Any) -> None:
+    """Run any PolymarketPipeline callable in a worker thread, capturing logs
+    and persisting state. Shared harness for shallow + deep runs."""
     handler = _attach_log_capture()
     summary: dict[str, Any] | None = None
     run_error: str | None = None
     exit_code = 1
     try:
         try:
-            from marketsignalos_polymarket.runner import run_pipeline  # noqa: PLC0415
-        except ImportError as exc:
-            log.error("polymarket pipeline not importable: %s", exc)
-            with _lock:
-                _state.update(
-                    running=False,
-                    last_finished_at=_now(),
-                    last_exit_code=1,
-                    last_error=f"Polymarket pipeline not importable: {exc}",
-                    log_tail=list(_log_buffer),
-                    last_summary=None,
-                    progress=None,
-                )
-            return
-
-        try:
-            result = run_pipeline(progress_cb=_set_progress)
+            result = pipeline_callable(progress_cb=_set_progress)
             summary = result.to_dict()
             exit_code = 0
             log.info("ingestor run finished exit_code=0")
@@ -168,6 +146,49 @@ def _run_ingestor_sync() -> None:
             _state["progress"] = None
     finally:
         _detach_log_capture(handler)
+
+
+def _record_import_failure(exc: ImportError) -> None:
+    """Surface a pipeline-module import failure into the status state so the
+    UI shows what went wrong instead of just spinning."""
+    log.error("polymarket pipeline not importable: %s", exc)
+    with _lock:
+        _state.update(
+            running=False,
+            last_finished_at=_now(),
+            last_exit_code=1,
+            last_error=f"Polymarket pipeline not importable: {exc}",
+            log_tail=list(_log_buffer),
+            last_summary=None,
+            progress=None,
+        )
+
+
+def _run_ingestor_sync() -> None:
+    """Runs the shallow Polymarket pipeline (the dashboard's 'Run ingest' path).
+
+    The pipeline is fully unauthenticated (both Polymarket public APIs and
+    Kalshi's public /markets endpoint), so this needs zero env-var setup.
+    The legacy Kalshi user-history runner is intentionally NOT invoked
+    here — Kalshi hides per-user history publicly, so that pipeline
+    cannot reach the product's goal (see docs/0002-cross-exchange-decision.md).
+    """
+    try:
+        from marketsignalos_polymarket.runner import run_pipeline  # noqa: PLC0415
+    except ImportError as exc:
+        _record_import_failure(exc)
+        return
+    _execute_pipeline_sync(run_pipeline)
+
+
+def _run_deep_ingestor_sync() -> None:
+    """Runs the deep review pipeline (categorized leaderboard sweep + prune)."""
+    try:
+        from marketsignalos_polymarket.runner import run_deep_pipeline  # noqa: PLC0415
+    except ImportError as exc:
+        _record_import_failure(exc)
+        return
+    _execute_pipeline_sync(run_deep_pipeline)
 
 
 @router.get("/status", response_model=IngestorStatus)
@@ -223,3 +244,70 @@ async def trigger_ingestor_run() -> JSONResponse:
         status_code=202,
         content={"status": "started", "started_at": started_at},
     )
+
+
+@router.post("/run/deep", status_code=202)
+async def trigger_deep_ingestor_run() -> JSONResponse:
+    """Trigger a deep review pass: categorized leaderboard sweep + prune +
+    batched hydration of active+pinned wallets.
+
+    Shares the single "currently running" flag with /ingestor/run, so the two
+    can't execute concurrently — returns 409 if a run of either kind is
+    already in flight.
+    """
+    try:
+        from marketsignalos_polymarket.runner import run_deep_pipeline  # noqa: F401, PLC0415
+    except ImportError as exc:
+        log.error("polymarket pipeline not importable: %s", exc)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Polymarket pipeline not importable: {exc}",
+        ) from exc
+
+    with _lock:
+        if _state["running"]:
+            raise HTTPException(status_code=409, detail="Ingestion already running")
+        _state["running"] = True
+        started_at = _now()
+        _state["last_started_at"] = started_at
+        _state["last_finished_at"] = None
+        _state["last_exit_code"] = None
+        _state["last_error"] = None
+        _state["last_summary"] = None
+        _state["progress"] = None
+        _log_buffer.clear()
+        _state["log_tail"] = []
+
+    log.info("deep ingestor run triggered started_at=%s", started_at)
+    loop = asyncio.get_event_loop()
+    loop.run_in_executor(None, _run_deep_ingestor_sync)
+    return JSONResponse(
+        status_code=202,
+        content={"status": "started", "started_at": started_at, "kind": "deep"},
+    )
+
+
+@router.post("/prune-wallets")
+def trigger_prune_wallets(
+    dormant_days: int = 90, dry_run: bool = False,
+) -> JSONResponse:
+    """Apply dormancy archival to review-state. Synchronous (the work is
+    cheap — reads two JSONL files, mutates one). Returns 409 if a pipeline
+    is currently running to avoid clobbering its concurrent rewrite of
+    polymarket_wallet_review_state.jsonl.
+    """
+    try:
+        from marketsignalos_polymarket.runner import run_prune_wallets  # noqa: PLC0415
+    except ImportError as exc:
+        log.error("polymarket pipeline not importable: %s", exc)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Polymarket pipeline not importable: {exc}",
+        ) from exc
+
+    with _lock:
+        if _state["running"]:
+            raise HTTPException(status_code=409, detail="Ingestion already running")
+
+    counts = run_prune_wallets(dormant_days=dormant_days, dry_run=dry_run)
+    return JSONResponse(status_code=200, content={"status": "ok", **counts})
