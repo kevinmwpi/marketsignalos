@@ -21,12 +21,29 @@ type IngestorStatus = {
 };
 
 const STAGE_LABELS: Record<string, string> = {
+  // Shallow + shared
   seed_watchlist: "Seeding watchlist",
   wallets: "Scanning wallet",
   markets: "Fetching Polymarket markets",
   enrichment: "Computing skill scores",
   kalshi_markets: "Fetching Kalshi markets",
   match_markets: "Matching Polymarket → Kalshi markets",
+  // Deep-only
+  deep_leaderboard: "Sweeping leaderboard matrix",
+  refresh_review_state: "Refreshing wallet review-state",
+  prune_review_state: "Pruning dormant wallets",
+};
+
+type IngestMode = "shallow" | "deep";
+
+type ModeConfig = {
+  endpoint: string;
+  idleLabel: string;
+};
+
+const MODE_CONFIG: Record<IngestMode, ModeConfig> = {
+  shallow: { endpoint: "/api/ingestor/run", idleLabel: "Run ingest" },
+  deep: { endpoint: "/api/ingestor/run/deep", idleLabel: "Deep run" },
 };
 
 type ButtonState = "idle" | "starting" | "running" | "done" | "error";
@@ -67,9 +84,12 @@ function ProgressLabel({ progress }: { progress: Progress }) {
   );
 }
 
+// Stages that emit current/total counters worth visualizing as a bar.
+const PROGRESS_BAR_STAGES = new Set(["wallets", "deep_leaderboard"]);
+
 function ProgressBar({ progress }: { progress: Progress }) {
   if (
-    progress.stage !== "wallets" ||
+    !PROGRESS_BAR_STAGES.has(progress.stage) ||
     typeof progress.current !== "number" ||
     typeof progress.total !== "number" ||
     progress.total <= 0
@@ -87,7 +107,8 @@ function ProgressBar({ progress }: { progress: Progress }) {
   );
 }
 
-export default function IngestButton() {
+export default function IngestButton({ mode = "shallow" }: { mode?: IngestMode } = {}) {
+  const config = MODE_CONFIG[mode];
   const [buttonState, setButtonState] = useState<ButtonState>("idle");
   const [status, setStatus] = useState<IngestorStatus | null>(null);
   const [errorView, setErrorView] = useState<ErrorView>(null);
@@ -162,7 +183,7 @@ export default function IngestButton() {
 
     let res: Response;
     try {
-      res = await fetch("/api/ingestor/run", {
+      res = await fetch(config.endpoint, {
         method: "POST",
         cache: "no-store",
       });
@@ -208,7 +229,7 @@ export default function IngestButton() {
     }
 
     setButtonState("running");
-  }, [buttonState]);
+  }, [buttonState, config.endpoint]);
 
   const isDisabled = buttonState === "starting" || buttonState === "running";
 
@@ -245,7 +266,7 @@ export default function IngestButton() {
               <path d="M6 4v3M6 8.5v.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
             </svg>
           )}
-          {buttonState === "idle" && "Run ingest"}
+          {buttonState === "idle" && config.idleLabel}
           {buttonState === "starting" && "Starting…"}
           {buttonState === "running" && "Running…"}
           {buttonState === "done" && "Done"}

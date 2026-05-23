@@ -89,7 +89,8 @@ export default async function Home() {
             </span>
           </div>
           <div className="flex items-center gap-4">
-            <IngestButton />
+            <IngestButton mode="shallow" />
+            <IngestButton mode="deep" />
             <div className="flex items-center gap-2">
               <span
                 className={`h-1.5 w-1.5 rounded-full ${isLive ? "bg-emerald-500" : "bg-amber-400"}`}

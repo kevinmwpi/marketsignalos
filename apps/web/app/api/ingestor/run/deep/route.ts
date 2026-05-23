@@ -1,0 +1,18 @@
+import { NextResponse } from "next/server";
+
+export async function POST() {
+  const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8080";
+  try {
+    const res = await fetch(`${apiBase}/ingestor/run/deep`, {
+      method: "POST",
+      cache: "no-store",
+    });
+    const data = await res.json().catch(() => ({}));
+    return NextResponse.json(data, { status: res.status });
+  } catch (err) {
+    return NextResponse.json(
+      { detail: err instanceof Error ? err.message : "API unreachable" },
+      { status: 502 },
+    );
+  }
+}
