@@ -203,3 +203,102 @@ def test_host_constants_unchanged() -> None:
     assert LB_API.endswith("lb-api.polymarket.com")
     assert DATA_API.endswith("data-api.polymarket.com")
     assert GAMMA_API.endswith("gamma-api.polymarket.com")
+
+
+# ── Recent on-chain traders (subgraph) ──────────────────────────────────────
+
+
+def _ofe(maker: str, taker: str, ts: int) -> dict[str, Any]:
+    """One orderFilledEvent as the subgraph returns it (timestamp is a BigInt
+    string, maker/taker are Account objects)."""
+    return {"maker": {"id": maker}, "taker": {"id": taker}, "timestamp": str(ts)}
+
+
+def test_get_recent_trader_wallets_collects_distinct_lowercased() -> None:
+    pages = [
+        {"data": {"orderFilledEvents": [
+            _ofe("0xAAA", "0xBBB", 100),
+            _ofe("0xCCC", "0xAAA", 99),  # 0xAAA repeats older — deduped, keeps ts=100
+        ]}},
+        {"data": {"orderFilledEvents": [_ofe("0xDDD", "0xEEE", 98)]}},  # short page → stop
+    ]
+    idx = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.method == "POST"
+        assert request.url.host == "api.goldsky.com"
+        body = pages[min(idx["n"], len(pages) - 1)]
+        idx["n"] += 1
+        return httpx.Response(200, json=body)
+
+    client = _client_with_mock(handler)
+    wallets = client.get_recent_trader_wallets(max_wallets=10, page_size=2, max_pages=5)
+    client.close()
+    # Distinct + lowercased, ordered newest-first by most-recent ts, addr tiebreak.
+    assert wallets == ["0xaaa", "0xbbb", "0xccc", "0xddd", "0xeee"]
+
+
+def test_get_recent_trader_wallets_paginates_with_timestamp_cursor() -> None:
+    queries: list[str] = []
+    pages = [
+        {"data": {"orderFilledEvents": [_ofe("0xa", "0xb", 100), _ofe("0xc", "0xd", 95)]}},
+        {"data": {"orderFilledEvents": [_ofe("0xe", "0xf", 90)]}},
+    ]
+    idx = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        import json
+        queries.append(json.loads(request.content.decode())["query"])
+        body = pages[min(idx["n"], len(pages) - 1)]
+        idx["n"] += 1
+        return httpx.Response(200, json=body)
+
+    client = _client_with_mock(handler)
+    client.get_recent_trader_wallets(max_wallets=10, page_size=2, max_pages=5)
+    client.close()
+    # First page has no cursor; the second walks strictly below the oldest ts seen.
+    assert "timestamp_lt" not in queries[0]
+    assert "timestamp_lt: 95" in queries[1]
+
+
+def test_get_recent_trader_wallets_respects_max_wallets() -> None:
+    """A handler that always returns a full page must still terminate once
+    max_wallets distinct addresses are collected."""
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"data": {"orderFilledEvents": [
+            _ofe("0x01", "0x02", 100), _ofe("0x03", "0x04", 99),
+        ]}})
+
+    client = _client_with_mock(handler)
+    wallets = client.get_recent_trader_wallets(max_wallets=3, page_size=2, max_pages=100)
+    client.close()
+    assert len(wallets) == 3
+
+
+def test_get_recent_trader_wallets_empty_first_page() -> None:
+    client = _client_with_mock(
+        lambda r: httpx.Response(200, json={"data": {"orderFilledEvents": []}})
+    )
+    assert client.get_recent_trader_wallets(max_wallets=5) == []
+    client.close()
+
+
+def test_get_recent_trader_wallets_raises_on_graphql_errors() -> None:
+    client = _client_with_mock(
+        lambda r: httpx.Response(200, json={"errors": [{"message": "bad query"}]})
+    )
+    with pytest.raises(ValueError, match="subgraph returned errors"):
+        client.get_recent_trader_wallets(max_wallets=5)
+    client.close()
+
+
+def test_get_recent_trader_wallets_validates_args() -> None:
+    client = _client_with_mock(
+        lambda r: httpx.Response(200, json={"data": {"orderFilledEvents": []}})
+    )
+    assert client.get_recent_trader_wallets(max_wallets=0) == []  # no-op, no HTTP
+    with pytest.raises(ValueError, match="page_size"):
+        client.get_recent_trader_wallets(page_size=0)
+    with pytest.raises(ValueError, match="page_size"):
+        client.get_recent_trader_wallets(page_size=1001)
+    client.close()

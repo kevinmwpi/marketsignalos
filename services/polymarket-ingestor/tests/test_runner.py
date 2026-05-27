@@ -516,3 +516,57 @@ def test_run_pipeline_skips_windows_the_api_rejects(
     # Kalshi skipped per the flag.
     assert result.kalshi_markets == 0
     assert result.market_links == 0
+
+
+def test_run_pipeline_seeds_volume_only_by_default(
+    tmp_path: Path, monkeypatch: Any,
+) -> None:
+    """The shallow pipeline must drop the profit/PnL leaderboard (luck bias)
+    and must NOT touch the subgraph — recent-trader discovery lives only in the
+    deep pipeline, which can absorb an unbounded wallet set."""
+    metrics_called: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        url = str(request.url)
+        if "lb-api.polymarket.com" in url:
+            metrics_called.append(request.url.path.lstrip("/"))
+            return httpx.Response(200, json=[
+                {"proxyWallet": "0xVol", "amount": 1.0, "pseudonym": "v", "name": "v"},
+            ])
+        if "gamma-api.polymarket.com" in url:
+            return httpx.Response(200, json=[])
+        if "api.goldsky.com" in url:
+            raise AssertionError("shallow pipeline must not call the subgraph")
+        return httpx.Response(200, json=[])
+
+    monkeypatch.setenv("POLYMARKET_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("POLYMARKET_WATCHLIST_PATH", str(tmp_path / "wl.txt"))
+    result = run_pipeline(
+        windows=["all"], leaderboard_limit=5, skip_kalshi=True,
+        client=_client_with_handler(handler),
+    )
+    assert metrics_called == ["volume"]  # profit never requested
+    assert result.wallets_seeded == 1
+
+
+def test_run_pipeline_include_profit_reenables_profit(
+    tmp_path: Path, monkeypatch: Any,
+) -> None:
+    metrics_called: set[str] = set()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        url = str(request.url)
+        if "lb-api.polymarket.com" in url:
+            metrics_called.add(request.url.path.lstrip("/"))
+            return httpx.Response(200, json=[])
+        if "gamma-api.polymarket.com" in url:
+            return httpx.Response(200, json=[])
+        return httpx.Response(200, json=[])
+
+    monkeypatch.setenv("POLYMARKET_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("POLYMARKET_WATCHLIST_PATH", str(tmp_path / "wl.txt"))
+    run_pipeline(
+        windows=["all"], leaderboard_limit=5, skip_kalshi=True,
+        include_profit_leaderboard=True, client=_client_with_handler(handler),
+    )
+    assert metrics_called == {"profit", "volume"}

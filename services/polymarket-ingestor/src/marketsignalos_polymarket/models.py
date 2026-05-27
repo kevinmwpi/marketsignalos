@@ -159,6 +159,10 @@ class PolymarketWalletReviewState:
     categories: list[str] = field(default_factory=list)
     time_periods: list[str] = field(default_factory=list)
     orders: list[str] = field(default_factory=list)
+    # Discovery provenance: which sources surfaced this wallet, e.g.
+    # "leaderboard" (categorized matrix sweep) and/or "subgraph" (recent
+    # on-chain fills). Empty on rows written before this field existed.
+    sources: list[str] = field(default_factory=list)
     archived_at: str | None = None
     archived_reason: str | None = None
 

@@ -28,6 +28,15 @@ GOLDSKY_SUBGRAPH = (
     "subgraphs/polymarket-orderbook-resync/prod/gn"
 )
 
+# Addresses that show up as maker/taker on the orderbook subgraph but are not
+# tradeable user proxy wallets — operator/relayer/market-maker contracts that
+# either don't resolve on the data-api /activity endpoint or only ever flatten.
+# Empty by default; populate as concrete noise addresses are identified. The
+# downstream skill model already tolerates these (a 0-activity wallet produces
+# no enrichment, a flattener generates no resolved bets), so this is a cost
+# optimization, not a correctness requirement.
+_RECENT_TRADER_DENYLIST: frozenset[str] = frozenset()
+
 log = logging.getLogger("marketsignalos.polymarket.client")
 
 
@@ -149,6 +158,79 @@ class PolymarketClient:
             )
         return cast(list[dict[str, Any]], rows)
 
+    # ── Recent on-chain traders (Goldsky subgraph) ──────────────────────────────
+
+    def get_recent_trader_wallets(
+        self,
+        *,
+        max_wallets: int = 500,
+        page_size: int = 500,
+        max_pages: int = 20,
+    ) -> list[str]:
+        """Distinct most-recently-active wallet addresses, newest-first.
+
+        Walks the orderbook subgraph's `orderFilledEvents` in descending
+        timestamp order, collecting both the maker and taker of each fill,
+        until we have `max_wallets` distinct addresses, exhaust `max_pages`,
+        or hit an empty page.
+
+        Pagination uses a timestamp cursor (`where: { timestamp_lt: … }`)
+        rather than `skip`, both to dodge The Graph's skip-depth ceiling on
+        deep pulls and to guarantee forward progress. The trade-off is that
+        fills sharing the boundary second may be skipped — acceptable here
+        because we only need a fresh, representative *sample* of active
+        wallets, not a complete fill log.
+
+        The maker/taker `Account.id` is the proxy-wallet address the data-api
+        `/activity?user=` endpoint accepts directly (verified in discovery),
+        so no address mapping is needed. Addresses in `_RECENT_TRADER_DENYLIST`
+        are dropped.
+        """
+        if max_wallets <= 0:
+            return []
+        if not 1 <= page_size <= 1000:
+            raise ValueError("page_size must be in [1, 1000]")
+
+        seen: dict[str, int] = {}  # addr -> most-recent timestamp seen
+        cursor_ts: int | None = None
+        for _page in range(max_pages):
+            where = (
+                f", where: {{ timestamp_lt: {cursor_ts} }}"
+                if cursor_ts is not None
+                else ""
+            )
+            query = (
+                "{ orderFilledEvents(first: %d, orderBy: timestamp, "
+                "orderDirection: desc%s) { maker { id } taker { id } timestamp } }"
+                % (page_size, where)
+            )
+            events = self._post_graphql(query).get("orderFilledEvents")
+            if not isinstance(events, list) or not events:
+                break
+
+            oldest_ts: int | None = None
+            for event in events:
+                if not isinstance(event, dict):
+                    continue
+                ts = int(event.get("timestamp", 0) or 0)
+                oldest_ts = ts  # events are desc-ordered; last seen is oldest
+                for role in ("maker", "taker"):
+                    node = event.get(role)
+                    addr = str(node.get("id", "")).lower() if isinstance(node, dict) else ""
+                    if not addr or addr in _RECENT_TRADER_DENYLIST:
+                        continue
+                    if addr not in seen or ts > seen[addr]:
+                        seen[addr] = ts
+
+            if len(seen) >= max_wallets:
+                break
+            if len(events) < page_size or oldest_ts is None:
+                break
+            cursor_ts = oldest_ts  # next page: strictly older fills
+
+        ordered = sorted(seen.items(), key=lambda kv: (-kv[1], kv[0]))
+        return [addr for addr, _ in ordered[:max_wallets]]
+
     # ── Per-wallet ────────────────────────────────────────────────────────────
 
     def get_wallet_activity(
@@ -245,3 +327,33 @@ class PolymarketClient:
             else:
                 sleep(self._config.retry_backoff_seconds * (2**attempt))
         raise RuntimeError("Polymarket retry loop exited unexpectedly")
+
+    def _post_graphql(self, query: str) -> dict[str, Any]:
+        """POST a GraphQL query to the Goldsky subgraph and return its `data`
+        object. Retry semantics mirror `_get_json` (429/5xx with backoff /
+        Retry-After). GraphQL surfaces query errors as HTTP 200 bodies, so we
+        also raise on a populated `errors` array or a missing `data` object."""
+        retryable = {429, 500, 502, 503, 504}
+        for attempt in range(self._config.max_retries + 1):
+            response = self._client.post(GOLDSKY_SUBGRAPH, json={"query": query})
+            if response.status_code not in retryable:
+                response.raise_for_status()
+                payload = response.json()
+                if not isinstance(payload, dict):
+                    raise ValueError(
+                        f"Expected dict from subgraph, got {type(payload).__name__}"
+                    )
+                if payload.get("errors"):
+                    raise ValueError(f"subgraph returned errors: {payload['errors']}")
+                data = payload.get("data")
+                if not isinstance(data, dict):
+                    raise ValueError("subgraph response missing 'data' object")
+                return cast(dict[str, Any], data)
+            if attempt == self._config.max_retries:
+                response.raise_for_status()
+            retry_after = response.headers.get("Retry-After")
+            if retry_after and retry_after.isdigit():
+                sleep(float(retry_after))
+            else:
+                sleep(self._config.retry_backoff_seconds * (2**attempt))
+        raise RuntimeError("Polymarket subgraph retry loop exited unexpectedly")

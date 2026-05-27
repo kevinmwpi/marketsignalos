@@ -878,6 +878,7 @@ def _load_review_state(path: Path) -> dict[str, PolymarketWalletReviewState]:
                 categories=[str(c) for c in (row.get("categories") or []) if c],
                 time_periods=[str(t) for t in (row.get("time_periods") or []) if t],
                 orders=[str(o) for o in (row.get("orders") or []) if o],
+                sources=[str(s) for s in (row.get("sources") or []) if s],
                 archived_at=row.get("archived_at") or None,
                 archived_reason=row.get("archived_reason") or None,
             )
@@ -907,6 +908,7 @@ def _write_review_state(
                 "categories": state[wallet].categories,
                 "time_periods": state[wallet].time_periods,
                 "orders": state[wallet].orders,
+                "sources": state[wallet].sources,
                 "archived_at": state[wallet].archived_at,
                 "archived_reason": state[wallet].archived_reason,
             }
@@ -989,8 +991,10 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Ignore checkpoint and walk all pages",
     )
 
-    sd = sub.add_parser("seed-watchlist", help="Seed the watchlist from profit + volume leaderboards")
-    sd.add_argument("--top-n-profit", type=int, default=50)
+    sd = sub.add_parser("seed-watchlist", help="Seed the watchlist from the volume leaderboard")
+    # Profit defaults to 0 (skipped): the PnL leaderboard over-represents lucky
+    # single-win wallets. Pass --top-n-profit N to opt back in.
+    sd.add_argument("--top-n-profit", type=int, default=0)
     sd.add_argument("--top-n-volume", type=int, default=50)
 
     mk = sub.add_parser("markets", help="Fetch market metadata from Gamma")
@@ -1046,6 +1050,9 @@ def _build_parser() -> argparse.ArgumentParser:
     pl.add_argument("--leaderboard-limit", type=int, default=50)
     pl.add_argument("--skip-kalshi", action="store_true",
                     help="Skip the Kalshi fetch + match step")
+    pl.add_argument("--include-profit", action="store_true",
+                    help="Also seed from the profit/PnL leaderboard "
+                         "(off by default to avoid luck bias)")
 
     dp = sub.add_parser(
         "deep-pipeline",
@@ -1063,7 +1070,20 @@ def _build_parser() -> argparse.ArgumentParser:
                     help="Max activity pages per net-new wallet (existing wallets short-circuit on checkpoint)")
     dp.add_argument("--dormant-days", type=int, default=DEEP_DEFAULT_DORMANT_DAYS,
                     help="Wallets with no activity in this many days are archive candidates")
+    dp.add_argument("--recent-trader-limit", type=int, default=_DEEP_DEFAULT_RECENT_TRADERS,
+                    help="Max distinct recent on-chain wallets to fold into the sweep")
+    dp.add_argument("--no-recent-traders", action="store_true",
+                    help="Skip subgraph recent-trader discovery (leaderboard sweep only)")
     dp.add_argument("--skip-kalshi", action="store_true")
+
+    rt = sub.add_parser(
+        "recent-traders",
+        help="Seed deep-review state with the most-recent on-chain traders (subgraph)",
+    )
+    rt.add_argument("--limit", type=int, default=_DEEP_DEFAULT_RECENT_TRADERS,
+                    help="Max distinct wallets to discover")
+    rt.add_argument("--pages", type=int, default=_DEEP_DEFAULT_RECENT_MAX_PAGES,
+                    help="Max subgraph pages to walk")
 
     pw = sub.add_parser(
         "prune-wallets",
@@ -1104,6 +1124,7 @@ class PipelineResult:
     market_links: int
     # Deep-pipeline-only counters (default 0 for shallow runs).
     discovered_this_run: int = 0
+    recent_traders_discovered: int = 0
     deep_slices_attempted: int = 0
     deep_slices_succeeded: int = 0
     active_wallets: int = 0
@@ -1126,6 +1147,7 @@ class PipelineResult:
             "kalshi_markets": self.kalshi_markets,
             "market_links": self.market_links,
             "discovered_this_run": self.discovered_this_run,
+            "recent_traders_discovered": self.recent_traders_discovered,
             "deep_slices_attempted": self.deep_slices_attempted,
             "deep_slices_succeeded": self.deep_slices_succeeded,
             "active_wallets": self.active_wallets,
@@ -1156,15 +1178,21 @@ def run_pipeline(
     kalshi_status: str = "open",
     kalshi_max_pages: int = 25,
     skip_kalshi: bool = False,
+    include_profit_leaderboard: bool = False,
     client: PolymarketClient | None = None,
     progress_cb: ProgressCallback | None = None,
 ) -> PipelineResult:
     """End-to-end Polymarket pipeline:
 
-        1. Seed the wallet watchlist by hitting profit + volume leaderboards
-           across each configured time window. Unsupported windows are
-           skipped with a warning (the Polymarket public leaderboard API
-           silently rejects some window values).
+        1. Seed the wallet watchlist by hitting the **volume** leaderboard
+           across each configured time window. The profit/PnL leaderboard is
+           intentionally excluded — it over-represents wallets that ranked via
+           a single lucky win rather than a repeatable edge, biasing the review
+           pool. Pass include_profit_leaderboard=True to opt back in. Recent
+           on-chain trader discovery lives in run_deep_pipeline, not here: this
+           path re-hydrates the entire watchlist every run, so its seed must
+           stay bounded. Unsupported windows are skipped with a warning (the
+           Polymarket public leaderboard API silently rejects some windows).
         2. Pull each wallet's recent activity, current positions, and value.
         3. Fetch resolved-market metadata (closed=True) for skill scoring,
            plus backfill any condition_ids referenced by activity that
@@ -1189,7 +1217,10 @@ def run_pipeline(
 
     try:
         # 1. Seed watchlist across (window × metric)
-        log.info("pipeline step=seed_watchlist windows=%s", attempts)
+        metrics = ("profit", "volume") if include_profit_leaderboard else ("volume",)
+        log.info(
+            "pipeline step=seed_watchlist windows=%s metrics=%s", attempts, metrics
+        )
         existing = set(_load_watchlist(_watchlist_path()))
         seeded: set[str] = set(existing)
         leaderboard_entries = 0
@@ -1202,7 +1233,7 @@ def run_pipeline(
                 "detail": f"window={window}",
             })
             window_ok = False
-            for metric in ("profit", "volume"):
+            for metric in metrics:
                 try:
                     raw = client.get_leaderboard(
                         metric=metric, window=window, limit=leaderboard_limit
@@ -1323,6 +1354,10 @@ _DEEP_DEFAULT_DEPTH = 250            # top-N per slice
 _DEEP_DEFAULT_BATCH_SIZE = 500       # wallets hydrated per invocation
 _DEEP_DEFAULT_ACTIVITY_PAGES = 5     # cap for net-new wallets
 _DEEP_LIMIT_PER_REQUEST = 50         # API max
+_DEEP_DEFAULT_ORDERS: tuple[str, ...] = ("VOL",)  # PnL excluded — see run_deep_leaderboard
+_DEEP_DEFAULT_RECENT_TRADERS = 1000  # distinct recent on-chain wallets folded into the sweep
+_DEEP_DEFAULT_RECENT_PAGE_SIZE = 500
+_DEEP_DEFAULT_RECENT_MAX_PAGES = 20
 
 
 @dataclass(slots=True)
@@ -1331,6 +1366,7 @@ class _WalletSweepMeta:
     categories: set[str] = field(default_factory=set)
     time_periods: set[str] = field(default_factory=set)
     orders: set[str] = field(default_factory=set)
+    sources: set[str] = field(default_factory=set)  # "leaderboard" | "subgraph"
     best_rank: int | None = None  # 1-indexed; lower = better
 
 
@@ -1348,15 +1384,23 @@ def run_deep_leaderboard(
     stores: _Stores,
     *,
     depth: int = _DEEP_DEFAULT_DEPTH,
+    orders: tuple[str, ...] = _DEEP_DEFAULT_ORDERS,
     progress_cb: ProgressCallback | None = None,
 ) -> _DeepSweepResult:
-    """Sweep the full leaderboard matrix and return the union of wallets.
+    """Sweep the leaderboard matrix and return the union of wallets.
 
-    Iterates 10 categories × 4 time periods × 2 orders × ceil(depth/50)
-    offsets. Per-slice 4xx/5xx errors are logged and skipped — empty slices
-    still count as 'attempted' but not 'succeeded'. Raw rows are appended to
+    Iterates 10 categories × 4 time periods × len(orders) orders ×
+    ceil(depth/50) offsets. `orders` defaults to ("VOL",): the PnL/profit
+    ranking is excluded because it over-represents lucky single-win wallets,
+    biasing the review pool (pass orders=("PNL", "VOL") to include it).
+    Per-slice 4xx/5xx errors are logged and skipped — empty slices still count
+    as 'attempted' but not 'succeeded'. Raw rows are appended to
     polymarket_leaderboard.jsonl (dedupe is downstream's concern).
     """
+    bad = [o for o in orders if o not in PolymarketClient.LEADERBOARD_ORDERS]
+    if bad:
+        raise ValueError(f"unknown order(s) {bad!r}")
+
     discovered: set[str] = set()
     per_wallet: dict[str, _WalletSweepMeta] = {}
     leaderboard_entries = 0
@@ -1365,13 +1409,13 @@ def run_deep_leaderboard(
     total_slice_dims = (
         len(PolymarketClient.LEADERBOARD_CATEGORIES)
         * len(PolymarketClient.LEADERBOARD_TIME_PERIODS)
-        * len(PolymarketClient.LEADERBOARD_ORDERS)
+        * len(orders)
     )
     dim_idx = 0
 
     for category in PolymarketClient.LEADERBOARD_CATEGORIES:
         for time_period in PolymarketClient.LEADERBOARD_TIME_PERIODS:
-            for order_by in PolymarketClient.LEADERBOARD_ORDERS:
+            for order_by in orders:
                 dim_idx += 1
                 if progress_cb is not None:
                     progress_cb({
@@ -1431,6 +1475,7 @@ def run_deep_leaderboard(
                         meta.categories.add(category)
                         meta.time_periods.add(time_period)
                         meta.orders.add(order_by)
+                        meta.sources.add("leaderboard")
                         if meta.best_rank is None or rank < meta.best_rank:
                             meta.best_rank = rank
 
@@ -1453,6 +1498,41 @@ def run_deep_leaderboard(
         slices_succeeded=slices_succeeded,
         per_wallet=per_wallet,
     )
+
+
+def run_recent_traders(
+    client: PolymarketClient,
+    *,
+    limit: int = _DEEP_DEFAULT_RECENT_TRADERS,
+    page_size: int = _DEEP_DEFAULT_RECENT_PAGE_SIZE,
+    max_pages: int = _DEEP_DEFAULT_RECENT_MAX_PAGES,
+) -> list[str]:
+    """Most-recently-active wallet addresses from the orderbook subgraph.
+
+    Thin wrapper over the client method so the deep pipeline and the
+    `recent-traders` CLI share one entry point + log line. This is the
+    de-biasing source: it surfaces wallets actively trading on-chain right
+    now, independent of whether they ever ranked on a leaderboard.
+    """
+    wallets = client.get_recent_trader_wallets(
+        max_wallets=limit, page_size=page_size, max_pages=max_pages,
+    )
+    log.info("recent_traders discovered=%d limit=%d", len(wallets), limit)
+    return wallets
+
+
+def _fold_recent_traders_into_sweep(
+    sweep: _DeepSweepResult, wallets: list[str]
+) -> None:
+    """Union subgraph-discovered wallets into a leaderboard sweep result so the
+    rest of the deep pipeline (review-state refresh, prune protection,
+    hydration cursor) treats them uniformly. Wallets also seen on the
+    leaderboard simply gain an extra 'subgraph' source; net-new ones get a
+    meta carrying no leaderboard appearances."""
+    for addr in wallets:
+        sweep.discovered.add(addr)
+        meta = sweep.per_wallet.setdefault(addr, _WalletSweepMeta())
+        meta.sources.add("subgraph")
 
 
 def _merge_unique(existing: list[str], incoming: set[str]) -> list[str]:
@@ -1484,11 +1564,16 @@ def _apply_sweep_to_review_state(
             record.status = "active"
             record.archived_at = None
             record.archived_reason = None
-        record.last_leaderboard_seen_at = now
+        # Only a genuine leaderboard appearance bumps the leaderboard-seen
+        # clock; a wallet surfaced purely from recent on-chain fills hasn't
+        # been "seen on a leaderboard".
+        if "leaderboard" in meta.sources:
+            record.last_leaderboard_seen_at = now
         record.appearances += meta.appearances
         record.categories = _merge_unique(record.categories, meta.categories)
         record.time_periods = _merge_unique(record.time_periods, meta.time_periods)
         record.orders = _merge_unique(record.orders, meta.orders)
+        record.sources = _merge_unique(record.sources, meta.sources)
         if meta.best_rank is not None and (
             record.best_rank is None or meta.best_rank < record.best_rank
         ):
@@ -1569,6 +1654,11 @@ def _pick_hydration_batch(
 def run_deep_pipeline(
     *,
     leaderboard_depth: int = _DEEP_DEFAULT_DEPTH,
+    leaderboard_orders: tuple[str, ...] = _DEEP_DEFAULT_ORDERS,
+    seed_recent_traders: bool = True,
+    recent_trader_limit: int = _DEEP_DEFAULT_RECENT_TRADERS,
+    recent_trader_page_size: int = _DEEP_DEFAULT_RECENT_PAGE_SIZE,
+    recent_trader_max_pages: int = _DEEP_DEFAULT_RECENT_MAX_PAGES,
     wallet_batch_size: int = _DEEP_DEFAULT_BATCH_SIZE,
     activity_pages: int = _DEEP_DEFAULT_ACTIVITY_PAGES,
     activity_page_size: int = 500,
@@ -1583,7 +1673,12 @@ def run_deep_pipeline(
 ) -> PipelineResult:
     """End-to-end deep review:
 
-      1. Sweep the categorized leaderboard matrix (top-N per slice).
+      1. Sweep the categorized leaderboard matrix (top-N per slice). `orders`
+         defaults to VOL-only — the PnL ranking is dropped to keep lucky
+         single-win wallets out of the seed.
+      1b. Fold in the most-recent on-chain traders from the orderbook subgraph
+         (de-biased discovery: wallets trading now, regardless of any
+         leaderboard standing). Disable with seed_recent_traders=False.
       2. Refresh review-state: add new wallets, bump observation metadata,
          reactivate any previously-archived wallet that reappears.
       3. Prune: archive wallets that are dormant AND absent from the latest
@@ -1603,10 +1698,30 @@ def run_deep_pipeline(
 
     try:
         # 1. Deep matrix sweep
-        log.info("deep_pipeline step=deep_leaderboard depth=%d", leaderboard_depth)
-        sweep = run_deep_leaderboard(
-            client, stores, depth=leaderboard_depth, progress_cb=progress_cb,
+        log.info(
+            "deep_pipeline step=deep_leaderboard depth=%d orders=%s",
+            leaderboard_depth, leaderboard_orders,
         )
+        sweep = run_deep_leaderboard(
+            client, stores, depth=leaderboard_depth,
+            orders=leaderboard_orders, progress_cb=progress_cb,
+        )
+
+        # 1b. Fold in recent on-chain traders (de-biased discovery source).
+        recent_count = 0
+        if seed_recent_traders:
+            log.info(
+                "deep_pipeline step=recent_traders limit=%d", recent_trader_limit
+            )
+            _emit({"stage": "recent_traders"})
+            recent = run_recent_traders(
+                client,
+                limit=recent_trader_limit,
+                page_size=recent_trader_page_size,
+                max_pages=recent_trader_max_pages,
+            )
+            _fold_recent_traders_into_sweep(sweep, recent)
+            recent_count = len(recent)
 
         # 2. Apply sweep observations to review-state
         log.info("deep_pipeline step=refresh_review_state")
@@ -1718,6 +1833,7 @@ def run_deep_pipeline(
             kalshi_markets=kalshi_written,
             market_links=links_written,
             discovered_this_run=len(sweep.discovered),
+            recent_traders_discovered=recent_count,
             deep_slices_attempted=sweep.slices_attempted,
             deep_slices_succeeded=sweep.slices_succeeded,
             active_wallets=active,
@@ -1730,6 +1846,51 @@ def run_deep_pipeline(
     finally:
         if owns_client:
             client.close()
+
+
+def run_recent_traders_seed(
+    *,
+    limit: int = _DEEP_DEFAULT_RECENT_TRADERS,
+    page_size: int = _DEEP_DEFAULT_RECENT_PAGE_SIZE,
+    max_pages: int = _DEEP_DEFAULT_RECENT_MAX_PAGES,
+    client: PolymarketClient | None = None,
+) -> dict[str, int]:
+    """CLI entry point for `recent-traders`: pull the most-recent on-chain
+    traders and merge them into the deep-review state (so the next deep
+    hydration picks them up) without running a full sweep. Reuses
+    `_apply_sweep_to_review_state` by wrapping the addresses in a synthetic
+    subgraph-only sweep result."""
+    review_path = _review_state_path()
+    state = _load_review_state(review_path)
+    owns_client = client is None
+    client = client or PolymarketClient(PolymarketClientConfig.from_env())
+    try:
+        wallets = run_recent_traders(
+            client, limit=limit, page_size=page_size, max_pages=max_pages,
+        )
+    finally:
+        if owns_client:
+            client.close()
+
+    sweep = _DeepSweepResult(
+        discovered=set(wallets),
+        leaderboard_entries=0,
+        slices_attempted=0,
+        slices_succeeded=0,
+        per_wallet={w: _WalletSweepMeta(sources={"subgraph"}) for w in wallets},
+    )
+    added = _apply_sweep_to_review_state(state, sweep)
+    _write_review_state(review_path, state)
+    active = sum(1 for r in state.values() if r.status == "active")
+    log.info(
+        "recent_traders_seed discovered=%d added=%d active=%d",
+        len(wallets), added, active,
+    )
+    return {
+        "recent_traders_discovered": len(wallets),
+        "added": added,
+        "active_wallets": active,
+    }
 
 
 def run_prune_wallets(
@@ -1863,6 +2024,7 @@ def main(argv: list[str] | None = None) -> int:
                 windows=windows,
                 leaderboard_limit=args.leaderboard_limit,
                 skip_kalshi=args.skip_kalshi,
+                include_profit_leaderboard=args.include_profit,
                 client=client,
             )
         elif args.mode == "deep-pipeline":
@@ -1871,9 +2033,16 @@ def main(argv: list[str] | None = None) -> int:
                 wallet_batch_size=args.wallet_batch_size,
                 activity_pages=args.activity_pages,
                 dormant_days=args.dormant_days,
+                seed_recent_traders=not args.no_recent_traders,
+                recent_trader_limit=args.recent_trader_limit,
                 skip_kalshi=args.skip_kalshi,
                 client=client,
             )
+        elif args.mode == "recent-traders":
+            counts = run_recent_traders_seed(
+                limit=args.limit, max_pages=args.pages, client=client,
+            )
+            log.info("recent_traders %s", counts)
         elif args.mode == "prune-wallets":
             counts = run_prune_wallets(
                 dormant_days=args.dormant_days, dry_run=args.dry_run,
@@ -1887,8 +2056,10 @@ def main(argv: list[str] | None = None) -> int:
             if os.getenv("INGEST_POLYMARKET", "").strip().lower() not in {"1", "true", "yes", "on"}:
                 log.info("INGEST_POLYMARKET not set — skipping 'all' pass (set to '1' to enable)")
                 return 0
+            # Profit dropped (top_n_profit=0): the PnL leaderboard over-weights
+            # lucky single-win wallets. Volume only.
             addresses = seed_watchlist_from_leaderboard(
-                client, stores, _watchlist_path(), top_n_profit=50, top_n_volume=50
+                client, stores, _watchlist_path(), top_n_profit=0, top_n_volume=50
             )
             if addresses:
                 run_wallets(

@@ -22,6 +22,7 @@ from marketsignalos_polymarket.polymarket_client import (
 from marketsignalos_polymarket.runner import (
     _apply_sweep_to_review_state,
     _build_stores,
+    _fold_recent_traders_into_sweep,
     _load_review_state,
     _load_skilled_wallets,
     _load_wallets_with_open_positions,
@@ -32,6 +33,7 @@ from marketsignalos_polymarket.runner import (
     run_deep_pipeline,
     run_pin_wallet,
     run_prune_wallets,
+    run_recent_traders_seed,
 )
 
 
@@ -114,8 +116,8 @@ def test_run_deep_leaderboard_iterates_full_matrix_with_dedupe(
 
     client = _client_with_handler(handler)
     stores = _build_stores(tmp_path)
-    # depth=50 = single offset per slice, so total slice calls = 10 * 4 * 2 = 80.
-    sweep = run_deep_leaderboard(client, stores, depth=50)
+    # depth=50 = single offset per slice; both orders → 10 * 4 * 2 = 80 calls.
+    sweep = run_deep_leaderboard(client, stores, depth=50, orders=("PNL", "VOL"))
 
     assert len(seen_params) == 80, (
         f"expected 80 matrix calls (10 cats * 4 periods * 2 orders), got {len(seen_params)}"
@@ -148,7 +150,7 @@ def test_run_deep_leaderboard_skips_slice_4xx(
 
     client = _client_with_handler(handler)
     stores = _build_stores(tmp_path)
-    sweep = run_deep_leaderboard(client, stores, depth=50)
+    sweep = run_deep_leaderboard(client, stores, depth=50, orders=("PNL", "VOL"))
 
     # 80 attempted - 4 rejected (WEATHER × VOL × 4 time periods).
     assert sweep.slices_succeeded == 76
@@ -180,10 +182,42 @@ def test_run_deep_leaderboard_walks_offsets_until_short_page(
 
     client = _client_with_handler(handler)
     stores = _build_stores(tmp_path)
-    run_deep_leaderboard(client, stores, depth=250)
+    run_deep_leaderboard(client, stores, depth=250, orders=("PNL", "VOL"))
 
     # 5 offsets requested, but short page at offset=50 stops further pagination.
     assert call_count["n"] == 2
+    client.close()
+
+
+def test_run_deep_leaderboard_defaults_to_vol_only(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The PnL/profit ranking is the luck-bias vector — the default sweep must
+    request only VOL slices (10 cats × 4 periods × 1 order = 40)."""
+    monkeypatch.setenv("POLYMARKET_DATA_DIR", str(tmp_path))
+    orders_seen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path != "/v1/leaderboard":
+            return httpx.Response(404)
+        orders_seen.append(dict(request.url.params)["orderBy"])
+        return httpx.Response(200, json=[_lb_row("0xabc")])
+
+    client = _client_with_handler(handler)
+    stores = _build_stores(tmp_path)
+    sweep = run_deep_leaderboard(client, stores, depth=50)
+    client.close()
+
+    assert set(orders_seen) == {"VOL"}, "PnL must not be swept by default"
+    assert len(orders_seen) == 40
+    assert sweep.per_wallet["0xabc"].sources == {"leaderboard"}
+
+
+def test_run_deep_leaderboard_rejects_unknown_order(tmp_path: Path) -> None:
+    client = _client_with_handler(lambda r: httpx.Response(200, json=[]))
+    stores = _build_stores(tmp_path)
+    with pytest.raises(ValueError, match="unknown order"):
+        run_deep_leaderboard(client, stores, depth=50, orders=("ROI",))
     client.close()
 
 
@@ -403,6 +437,40 @@ def test_apply_sweep_does_not_unpin() -> None:
     assert state["0xpin"].status == "pinned"
 
 
+def test_fold_recent_traders_into_sweep_tags_subgraph_source() -> None:
+    from marketsignalos_polymarket.runner import _DeepSweepResult, _WalletSweepMeta
+    sweep = _DeepSweepResult(
+        discovered={"0xlb"},
+        leaderboard_entries=1,
+        slices_attempted=1,
+        slices_succeeded=1,
+        per_wallet={"0xlb": _WalletSweepMeta(appearances=1, sources={"leaderboard"})},
+    )
+    # 0xlb was already on the leaderboard; 0xnew is subgraph-only.
+    _fold_recent_traders_into_sweep(sweep, ["0xlb", "0xnew"])
+    assert sweep.discovered == {"0xlb", "0xnew"}
+    assert sweep.per_wallet["0xlb"].sources == {"leaderboard", "subgraph"}
+    assert sweep.per_wallet["0xnew"].sources == {"subgraph"}
+
+
+def test_apply_sweep_subgraph_only_wallet_has_no_leaderboard_clock() -> None:
+    """A wallet surfaced purely from recent fills records sources=['subgraph']
+    but must NOT get a last_leaderboard_seen_at stamp."""
+    from marketsignalos_polymarket.runner import _DeepSweepResult, _WalletSweepMeta
+    state: dict[str, PolymarketWalletReviewState] = {}
+    sweep = _DeepSweepResult(
+        discovered={"0xsub"},
+        leaderboard_entries=0,
+        slices_attempted=0,
+        slices_succeeded=0,
+        per_wallet={"0xsub": _WalletSweepMeta(sources={"subgraph"})},
+    )
+    _apply_sweep_to_review_state(state, sweep)
+    assert state["0xsub"].status == "active"
+    assert state["0xsub"].sources == ["subgraph"]
+    assert state["0xsub"].last_leaderboard_seen_at is None
+
+
 # ── Batch cursor ─────────────────────────────────────────────────────────────
 
 
@@ -543,6 +611,8 @@ def test_run_deep_pipeline_smoke(
             return httpx.Response(200, json=[{"user": "0xdeep", "value": 0.0}])
         if host == "gamma-api.polymarket.com":
             return httpx.Response(200, json=[])
+        if host == "api.goldsky.com":
+            return httpx.Response(200, json={"data": {"orderFilledEvents": []}})
         return httpx.Response(200, json=[])
 
     client = _client_with_handler(handler)
@@ -553,6 +623,7 @@ def test_run_deep_pipeline_smoke(
     client.close()
 
     assert result.discovered_this_run == 1
+    assert result.recent_traders_discovered == 0  # subgraph returned no fills
     assert result.active_wallets == 1
     assert result.archived_wallets == 0
     assert result.pinned_wallets == 0
@@ -561,3 +632,99 @@ def test_run_deep_pipeline_smoke(
     assert "0xdeep" in review
     # last_polled_at was stamped during hydration.
     assert review["0xdeep"].last_polled_at is not None
+
+
+def _ofe(maker: str, taker: str, ts: int) -> dict[str, Any]:
+    return {"maker": {"id": maker}, "taker": {"id": taker}, "timestamp": str(ts)}
+
+
+def test_run_deep_pipeline_folds_in_recent_traders(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Recent on-chain traders are unioned into the sweep: they enter
+    review-state tagged 'subgraph', are protected from prune (in discovered),
+    and get hydrated alongside leaderboard wallets."""
+    monkeypatch.setenv("POLYMARKET_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("POLYMARKET_WATCHLIST_PATH", str(tmp_path / "wl.txt"))
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        host = request.url.host
+        path = request.url.path
+        if host == "data-api.polymarket.com" and path == "/v1/leaderboard":
+            return httpx.Response(200, json=[_lb_row("0xlb")])
+        if host == "api.goldsky.com":
+            return httpx.Response(200, json={"data": {"orderFilledEvents": [
+                _ofe("0xRecent1", "0xRecent2", 100),
+            ]}})
+        if host == "data-api.polymarket.com" and path == "/value":
+            return httpx.Response(200, json=[{"user": "0x", "value": 0.0}])
+        if host == "data-api.polymarket.com":  # /activity, /positions
+            return httpx.Response(200, json=[])
+        if host == "gamma-api.polymarket.com":
+            return httpx.Response(200, json=[])
+        return httpx.Response(200, json=[])
+
+    client = _client_with_handler(handler)
+    result = run_deep_pipeline(
+        leaderboard_depth=50, wallet_batch_size=10, activity_pages=1,
+        recent_trader_limit=10, skip_kalshi=True, client=client,
+    )
+    client.close()
+
+    assert result.recent_traders_discovered == 2
+    assert result.discovered_this_run == 3  # 0xlb + the two subgraph wallets
+
+    review = _load_review_state(tmp_path / "polymarket_wallet_review_state.jsonl")
+    assert {"0xlb", "0xrecent1", "0xrecent2"} <= set(review)
+    assert "subgraph" in review["0xrecent1"].sources
+    assert "subgraph" in review["0xrecent2"].sources
+    assert "leaderboard" in review["0xlb"].sources
+    assert review["0xrecent1"].status == "active"
+
+
+def test_run_deep_pipeline_can_skip_recent_traders(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("POLYMARKET_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("POLYMARKET_WATCHLIST_PATH", str(tmp_path / "wl.txt"))
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.host == "api.goldsky.com":
+            raise AssertionError("subgraph must not be called when disabled")
+        if request.url.host == "data-api.polymarket.com" and request.url.path == "/v1/leaderboard":
+            return httpx.Response(200, json=[_lb_row("0xlb")])
+        if request.url.host == "data-api.polymarket.com" and request.url.path == "/value":
+            return httpx.Response(200, json=[{"user": "0x", "value": 0.0}])
+        return httpx.Response(200, json=[])
+
+    client = _client_with_handler(handler)
+    result = run_deep_pipeline(
+        leaderboard_depth=50, wallet_batch_size=10, activity_pages=1,
+        seed_recent_traders=False, skip_kalshi=True, client=client,
+    )
+    client.close()
+    assert result.recent_traders_discovered == 0
+
+
+def test_run_recent_traders_seed_writes_subgraph_wallets(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("POLYMARKET_DATA_DIR", str(tmp_path))
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.host == "api.goldsky.com":
+            return httpx.Response(200, json={"data": {"orderFilledEvents": [
+                _ofe("0xAaa", "0xBbb", 100),
+            ]}})
+        return httpx.Response(404)
+
+    client = _client_with_handler(handler)
+    counts = run_recent_traders_seed(limit=10, max_pages=2, client=client)
+    client.close()
+
+    assert counts["recent_traders_discovered"] == 2
+    assert counts["added"] == 2
+    review = _load_review_state(tmp_path / "polymarket_wallet_review_state.jsonl")
+    assert review["0xaaa"].sources == ["subgraph"]
+    assert review["0xbbb"].status == "active"
+    assert review["0xaaa"].last_leaderboard_seen_at is None
