@@ -14,6 +14,7 @@ def _reset_state() -> None:
     ingestor_route._log_buffer.clear()
     ingestor_route._state.update(
         running=False,
+        kind=None,
         last_started_at=None,
         last_finished_at=None,
         last_exit_code=None,
@@ -31,6 +32,7 @@ def test_status_default_state_includes_log_tail_and_summary() -> None:
     body = resp.json()
     assert body == {
         "running": False,
+        "kind": None,
         "last_started_at": None,
         "last_finished_at": None,
         "last_exit_code": None,
@@ -97,6 +99,7 @@ def test_run_starts_pipeline_and_records_success_with_summary(
 
     status = client.get("/ingestor/status").json()
     assert status["running"] is False
+    assert status["kind"] == "shallow"
     assert status["last_exit_code"] == 0
     assert status["last_error"] is None
     assert status["last_summary"] == fake_summary
@@ -188,6 +191,7 @@ def test_run_deep_starts_deep_pipeline_and_records_summary(
     assert body["kind"] == "deep"
 
     status = client.get("/ingestor/status").json()
+    assert status["kind"] == "deep"
     assert status["last_exit_code"] == 0
     assert status["last_summary"] == deep_summary
     assert status["last_summary"]["discovered_this_run"] == 7000

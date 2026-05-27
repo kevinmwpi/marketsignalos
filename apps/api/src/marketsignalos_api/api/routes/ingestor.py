@@ -19,6 +19,7 @@ _LOG_TAIL_MAXLEN = 120
 _lock = threading.Lock()
 _state: dict[str, object] = {
     "running": False,
+    "kind": None,  # "shallow" | "deep" — which run is/was most recently active
     "last_started_at": None,
     "last_finished_at": None,
     "last_exit_code": None,
@@ -37,6 +38,7 @@ def _now() -> str:
 
 class IngestorStatus(BaseModel):
     running: bool
+    kind: str | None
     last_started_at: str | None
     last_finished_at: str | None
     last_exit_code: int | None
@@ -144,6 +146,20 @@ def _execute_pipeline_sync(pipeline_callable: Any) -> None:
             _state["log_tail"] = list(_log_buffer)
             _state["last_summary"] = summary
             _state["progress"] = None
+
+        # The run rewrote the JSONL stores; drop the memoized skilled-bets so
+        # the next dashboard request reflects new data immediately rather than
+        # waiting for the input-file fingerprint to change. Best effort — a
+        # stale cache is recoverable and self-heals on the next fingerprint
+        # change, so a failure here must not abort the status update above.
+        try:
+            from marketsignalos_api.services.skilled_bets import (  # noqa: PLC0415
+                invalidate_cache,
+            )
+
+            invalidate_cache()
+        except Exception:  # noqa: BLE001
+            log.warning("could not invalidate skilled_bets cache", exc_info=True)
     finally:
         _detach_log_capture(handler)
 
@@ -197,6 +213,7 @@ def get_ingestor_status() -> IngestorStatus:
     with _lock:
         return IngestorStatus(
             running=bool(_state["running"]),
+            kind=cast("str | None", _state["kind"]),
             last_started_at=cast("str | None", _state["last_started_at"]),
             last_finished_at=cast("str | None", _state["last_finished_at"]),
             last_exit_code=cast("int | None", _state["last_exit_code"]),
@@ -228,6 +245,7 @@ async def trigger_ingestor_run() -> JSONResponse:
         if _state["running"]:
             raise HTTPException(status_code=409, detail="Ingestion already running")
         _state["running"] = True
+        _state["kind"] = "shallow"
         started_at = _now()
         _state["last_started_at"] = started_at
         _state["last_finished_at"] = None
@@ -269,6 +287,7 @@ async def trigger_deep_ingestor_run() -> JSONResponse:
         if _state["running"]:
             raise HTTPException(status_code=409, detail="Ingestion already running")
         _state["running"] = True
+        _state["kind"] = "deep"
         started_at = _now()
         _state["last_started_at"] = started_at
         _state["last_finished_at"] = None

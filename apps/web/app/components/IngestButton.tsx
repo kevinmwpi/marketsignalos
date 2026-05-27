@@ -12,6 +12,7 @@ type Progress = {
 
 type IngestorStatus = {
   running: boolean;
+  kind: IngestMode | null;
   last_started_at: string | null;
   last_finished_at: string | null;
   last_exit_code: number | null;
@@ -140,13 +141,16 @@ export default function IngestButton({ mode = "shallow" }: { mode?: IngestMode }
 
   useEffect(() => {
     fetchStatus().then((s) => {
-      if (s?.running) {
+      // Only resume the running display for *this* button's run kind. The
+      // server shares one running flag across shallow + deep, so without the
+      // kind check both buttons would mirror whichever run is in flight.
+      if (s?.running && s.kind === mode) {
         setStatus(s);
         setButtonState("running");
       }
     });
     return stopPolling;
-  }, [fetchStatus, stopPolling]);
+  }, [fetchStatus, stopPolling, mode]);
 
   useEffect(() => {
     if (buttonState !== "running") {
@@ -197,7 +201,25 @@ export default function IngestButton({ mode = "shallow" }: { mode?: IngestMode }
     }
 
     if (res.status === 409) {
-      setButtonState("running");
+      // A run is already in flight. If it's our own kind, resume the running
+      // display; otherwise the *other* button owns it — surface that rather
+      // than mirroring a run this button didn't start.
+      const s = await fetchStatus();
+      if (s?.running && s.kind === mode) {
+        setStatus(s);
+        setButtonState("running");
+      } else {
+        setButtonState("error");
+        setErrorView({
+          kind: "transport",
+          message:
+            s?.kind === "deep"
+              ? "A deep run is already in progress."
+              : s?.kind === "shallow"
+                ? "A shallow ingest is already in progress."
+                : "Another ingest run is already in progress.",
+        });
+      }
       return;
     }
 
@@ -229,7 +251,7 @@ export default function IngestButton({ mode = "shallow" }: { mode?: IngestMode }
     }
 
     setButtonState("running");
-  }, [buttonState, config.endpoint]);
+  }, [buttonState, config.endpoint, fetchStatus, mode]);
 
   const isDisabled = buttonState === "starting" || buttonState === "running";
 
