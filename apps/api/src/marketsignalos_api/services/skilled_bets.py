@@ -22,7 +22,10 @@ have held since show that earlier timestamp — both behaviors are useful.
 from __future__ import annotations
 
 import json
+import logging
+from collections.abc import Iterator
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -34,11 +37,14 @@ from marketsignalos_api._paths import (
     polymarket_markets_path,
     polymarket_positions_path,
 )
+
 from marketsignalos_api.services.external_urls import (
     kalshi_market_url,
     polymarket_market_url,
     polymarket_profile_url,
 )
+
+log = logging.getLogger("marketsignalos.api.skilled_bets")
 
 
 # ── Output model ──────────────────────────────────────────────────────────────
@@ -94,21 +100,31 @@ class SkilledBetSignal:
 
 # ── Internal helpers ──────────────────────────────────────────────────────────
 
-def _read_jsonl(path: Path) -> list[dict[str, Any]]:
+def _iter_jsonl(path: Path) -> Iterator[dict[str, Any]]:
+    """Stream one dict per JSONL line. Streaming (rather than read_text +
+    splitlines) keeps peak memory flat: polymarket_activity.jsonl can exceed
+    1GB / millions of rows, and slurping it whole spikes to several GB and can
+    OOM. Callers that only need a subset should filter as they consume."""
     if not path.exists():
-        return []
-    rows: list[dict[str, Any]] = []
-    for line in path.read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            obj = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        if isinstance(obj, dict):
-            rows.append(obj)
-    return rows
+        return
+    with path.open("r", encoding="utf-8") as fh:
+        for line in fh:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                obj = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(obj, dict):
+                yield obj
+
+
+def _read_jsonl(path: Path) -> list[dict[str, Any]]:
+    """Materialize all rows. Fine for the small stores (positions, markets,
+    kalshi, enrichment, links); do NOT use for the activity file — iterate
+    _iter_jsonl and filter inline instead."""
+    return list(_iter_jsonl(path))
 
 
 def _f(val: Any) -> float:
@@ -339,7 +355,10 @@ def _latest_buy_per_position(
     a still-held position — anything else is dead weight.
     """
     out: dict[tuple[str, str, int], dict[str, Any]] = {}
-    for row in _read_jsonl(polymarket_activity_path()):
+    # Stream + filter inline: the activity file can be >1GB, so we must never
+    # materialize all rows. We retain only the (small) set of rows whose key
+    # matches a still-held position — at most one row per key.
+    for row in _iter_jsonl(polymarket_activity_path()):
         if row.get("type") != "TRADE":
             continue
         if str(row.get("side", "")).upper() != "BUY":
@@ -356,6 +375,70 @@ def _latest_buy_per_position(
     return out
 
 
+# ── Caching ─────────────────────────────────────────────────────────────────
+#
+# compute_skilled_bets reads the full polymarket_activity.jsonl (can be >1GB
+# for high-volume wallets) and json-parses every row, which takes tens of
+# seconds. The dashboard renders server-side with force-dynamic, so without a
+# cache every page load pays that cost twice. We memoize on a fingerprint of
+# the input files (path, mtime_ns, size) plus the query params: any ingest —
+# via the API button or the CLI — changes a file's mtime/size and so produces
+# a fresh key, auto-invalidating stale results. invalidate_cache() is also
+# called explicitly when an API-triggered ingest finishes, so the very next
+# request recomputes even on filesystems with coarse mtime resolution.
+
+# Inputs compute_skilled_bets depends on. Order is irrelevant to correctness;
+# the fingerprint covers all of them.
+def _input_paths() -> tuple[Path, ...]:
+    return (
+        polymarket_enrichment_path(),
+        polymarket_positions_path(),
+        polymarket_markets_path(),
+        polymarket_activity_path(),
+        kalshi_markets_path(),
+        market_links_path(),
+    )
+
+
+def _inputs_fingerprint() -> tuple[tuple[str, int, int], ...]:
+    """(path, mtime_ns, size) per input file; missing files contribute zeros.
+    Cheap (a stat per file) relative to the multi-second recompute it guards."""
+    parts: list[tuple[str, int, int]] = []
+    for path in _input_paths():
+        try:
+            st = path.stat()
+            parts.append((str(path), st.st_mtime_ns, st.st_size))
+        except OSError:
+            parts.append((str(path), 0, 0))
+    return tuple(parts)
+
+
+@lru_cache(maxsize=32)
+def _compute_skilled_bets_cached(
+    _fingerprint: tuple[tuple[str, int, int], ...],
+    min_skill: float,
+    min_resolved: int,
+    min_position_value_usdc: float,
+) -> tuple[SkilledBetSignal, ...]:
+    # _fingerprint is unused inside the body — it exists only to key the cache
+    # on input-file state so changed data forces a recompute.
+    return tuple(
+        _compute_skilled_bets(
+            min_skill=min_skill,
+            min_resolved=min_resolved,
+            min_position_value_usdc=min_position_value_usdc,
+        )
+    )
+
+
+def invalidate_cache() -> None:
+    """Drop all memoized skilled-bets results. Called after an ingest run so
+    the next request recomputes immediately rather than waiting for the file
+    fingerprint to change."""
+    _compute_skilled_bets_cached.cache_clear()
+    log.info("skilled_bets cache invalidated")
+
+
 # ── Public entry point ────────────────────────────────────────────────────────
 
 def compute_skilled_bets(
@@ -366,8 +449,25 @@ def compute_skilled_bets(
 ) -> list[SkilledBetSignal]:
     """
     Returns recent BUY entries from skilled wallets that are STILL HELD,
-    sorted by entry timestamp (newest first).
+    sorted by entry timestamp (newest first). Memoized on input-file
+    fingerprint + params; see the caching note above.
     """
+    cached = _compute_skilled_bets_cached(
+        _inputs_fingerprint(),
+        min_skill,
+        min_resolved,
+        min_position_value_usdc,
+    )
+    return list(cached)
+
+
+def _compute_skilled_bets(
+    *,
+    min_skill: float = 0.8,
+    min_resolved: int = 20,
+    min_position_value_usdc: float = 0.0,
+) -> list[SkilledBetSignal]:
+    """Uncached worker — reads the JSONL stores and builds the signal list."""
     skilled = _load_skilled_wallets(
         min_skill=min_skill, min_resolved=min_resolved
     )
