@@ -1131,6 +1131,9 @@ class PipelineResult:
     archived_wallets: int = 0
     pinned_wallets: int = 0
     pruned_this_run: int = 0
+    # Set when a deep run completes as a *partial success* (circuit breaker
+    # tripped mid-sweep). Surfaced to the UI; exit code stays 0.
+    warning: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -1154,6 +1157,7 @@ class PipelineResult:
             "archived_wallets": self.archived_wallets,
             "pinned_wallets": self.pinned_wallets,
             "pruned_this_run": self.pruned_this_run,
+            "warning": self.warning,
         }
 
 
@@ -1358,6 +1362,7 @@ _DEEP_DEFAULT_ORDERS: tuple[str, ...] = ("VOL",)  # PnL excluded — see run_dee
 _DEEP_DEFAULT_RECENT_TRADERS = 1000  # distinct recent on-chain wallets folded into the sweep
 _DEEP_DEFAULT_RECENT_PAGE_SIZE = 500
 _DEEP_DEFAULT_RECENT_MAX_PAGES = 20
+_DEEP_BREAKER_THRESHOLD = 6          # consecutive degraded slices → abort sweep
 
 
 @dataclass(slots=True)
@@ -1377,6 +1382,10 @@ class _DeepSweepResult:
     slices_attempted: int
     slices_succeeded: int
     per_wallet: dict[str, _WalletSweepMeta]
+    # Set when the circuit breaker aborts the sweep before the full matrix is
+    # covered. A partial sweep MUST NOT be used to prune review-state.
+    aborted_early: bool = False
+    abort_reason: str | None = None
 
 
 def run_deep_leaderboard(
@@ -1385,6 +1394,7 @@ def run_deep_leaderboard(
     *,
     depth: int = _DEEP_DEFAULT_DEPTH,
     orders: tuple[str, ...] = _DEEP_DEFAULT_ORDERS,
+    breaker_threshold: int = _DEEP_BREAKER_THRESHOLD,
     progress_cb: ProgressCallback | None = None,
 ) -> _DeepSweepResult:
     """Sweep the leaderboard matrix and return the union of wallets.
@@ -1393,9 +1403,16 @@ def run_deep_leaderboard(
     ceil(depth/50) offsets. `orders` defaults to ("VOL",): the PnL/profit
     ranking is excluded because it over-represents lucky single-win wallets,
     biasing the review pool (pass orders=("PNL", "VOL") to include it).
-    Per-slice 4xx/5xx errors are logged and skipped — empty slices still count
-    as 'attempted' but not 'succeeded'. Raw rows are appended to
-    polymarket_leaderboard.jsonl (dedupe is downstream's concern).
+
+    Per-slice *4xx* errors mean an unsupported category×period combo: they
+    are logged and skipped, sweep continues. Per-slice *5xx/429* or
+    *transport* errors mean the upstream is unhealthy; once
+    `breaker_threshold` such slices fail consecutively the sweep aborts
+    early (circuit breaker) and returns the partial result with
+    `aborted_early=True` — callers MUST NOT prune review-state against a
+    partial sweep. Empty slices still count as 'attempted' but not
+    'succeeded'. Raw rows are appended to polymarket_leaderboard.jsonl
+    (dedupe is downstream's concern).
     """
     bad = [o for o in orders if o not in PolymarketClient.LEADERBOARD_ORDERS]
     if bad:
@@ -1406,90 +1423,136 @@ def run_deep_leaderboard(
     leaderboard_entries = 0
     slices_attempted = 0
     slices_succeeded = 0
-    total_slice_dims = (
-        len(PolymarketClient.LEADERBOARD_CATEGORIES)
-        * len(PolymarketClient.LEADERBOARD_TIME_PERIODS)
-        * len(orders)
-    )
-    dim_idx = 0
+    consecutive_degraded = 0
+    aborted_early = False
+    abort_reason: str | None = None
 
-    for category in PolymarketClient.LEADERBOARD_CATEGORIES:
-        for time_period in PolymarketClient.LEADERBOARD_TIME_PERIODS:
-            for order_by in orders:
-                dim_idx += 1
-                if progress_cb is not None:
-                    progress_cb({
-                        "stage": "deep_leaderboard",
-                        "current": dim_idx,
-                        "total": total_slice_dims,
-                        "detail": f"{category}/{time_period}/{order_by}",
-                    })
-                slice_ok = False
-                for offset in range(0, depth, _DEEP_LIMIT_PER_REQUEST):
-                    slices_attempted += 1
-                    page_size = min(_DEEP_LIMIT_PER_REQUEST, depth - offset)
-                    try:
-                        raw = client.get_trader_leaderboard_rankings(
-                            category=category,
-                            time_period=time_period,
-                            order_by=order_by,
-                            limit=page_size,
-                            offset=offset,
-                        )
-                    except httpx.HTTPStatusError as exc:
-                        log.warning(
-                            "deep_leaderboard skip category=%s time_period=%s order_by=%s "
-                            "offset=%d status=%d",
-                            category, time_period, order_by, offset,
-                            exc.response.status_code,
-                        )
-                        break  # bail out of offsets for this slice
-                    if not raw:
-                        # First-page empty — slice is valid but exhausted.
-                        if offset == 0:
-                            slice_ok = True
-                        break
-                    slices_succeeded += 1
+    # Flatten the matrix so the circuit breaker can abort the whole sweep
+    # with a single `break` (Python has no labeled break across nested
+    # loops). Iteration order — category outer, order inner — matches the
+    # original nested loops.
+    slice_dims = [
+        (category, time_period, order_by)
+        for category in PolymarketClient.LEADERBOARD_CATEGORIES
+        for time_period in PolymarketClient.LEADERBOARD_TIME_PERIODS
+        for order_by in orders
+    ]
+    total_slice_dims = len(slice_dims)
+
+    for dim_idx, (category, time_period, order_by) in enumerate(
+        slice_dims, start=1,
+    ):
+        if progress_cb is not None:
+            progress_cb({
+                "stage": "deep_leaderboard",
+                "current": dim_idx,
+                "total": total_slice_dims,
+                "detail": f"{category}/{time_period}/{order_by}",
+            })
+        slice_ok = False
+        slice_degraded = False
+        for offset in range(0, depth, _DEEP_LIMIT_PER_REQUEST):
+            slices_attempted += 1
+            page_size = min(_DEEP_LIMIT_PER_REQUEST, depth - offset)
+            try:
+                raw = client.get_trader_leaderboard_rankings(
+                    category=category,
+                    time_period=time_period,
+                    order_by=order_by,
+                    limit=page_size,
+                    offset=offset,
+                )
+            except httpx.HTTPStatusError as exc:
+                status = exc.response.status_code
+                log.warning(
+                    "deep_leaderboard skip category=%s time_period=%s order_by=%s "
+                    "offset=%d status=%d",
+                    category, time_period, order_by, offset, status,
+                )
+                # 5xx/429 = unhealthy upstream → feeds the breaker. A plain
+                # 4xx = this slice combo is unsupported → skip without
+                # penalty (matches the existing "skip 4xx" contract).
+                if status >= 500 or status == 429:
+                    slice_degraded = True
+                break  # bail out of offsets for this slice
+            except httpx.TransportError as exc:
+                # Connection refused / timeout / protocol error: upstream is
+                # unreachable, not merely rejecting one slice. Always
+                # counts as degraded. Previously these propagated uncaught
+                # and killed the whole sweep on the first blip.
+                log.warning(
+                    "deep_leaderboard transport_error category=%s time_period=%s "
+                    "order_by=%s offset=%d error=%s",
+                    category, time_period, order_by, offset, exc,
+                )
+                slice_degraded = True
+                break
+            if not raw:
+                # First-page empty — slice is valid but exhausted.
+                if offset == 0:
                     slice_ok = True
+                break
+            slices_succeeded += 1
+            slice_ok = True
 
-                    # Map the new endpoint's (order_by, time_period) onto the
-                    # legacy (metric, window) JSONL schema so downstream
-                    # enrichment can keep reading the same file.
-                    metric = "profit" if order_by == "PNL" else "volume"
-                    window = time_period.lower()
-                    entries = [
-                        parse_leaderboard_row(r, metric=metric, window=window)
-                        for r in raw
-                    ]
-                    stores.leaderboard.write_leaderboard(entries)
-                    leaderboard_entries += len(entries)
+            # Map the new endpoint's (order_by, time_period) onto the
+            # legacy (metric, window) JSONL schema so downstream
+            # enrichment can keep reading the same file.
+            metric = "profit" if order_by == "PNL" else "volume"
+            window = time_period.lower()
+            entries = [
+                parse_leaderboard_row(r, metric=metric, window=window)
+                for r in raw
+            ]
+            stores.leaderboard.write_leaderboard(entries)
+            leaderboard_entries += len(entries)
 
-                    for i, entry in enumerate(entries):
-                        wallet = entry.proxy_wallet
-                        if not wallet:
-                            continue
-                        discovered.add(wallet)
-                        rank = offset + i + 1
-                        meta = per_wallet.setdefault(wallet, _WalletSweepMeta())
-                        meta.appearances += 1
-                        meta.categories.add(category)
-                        meta.time_periods.add(time_period)
-                        meta.orders.add(order_by)
-                        meta.sources.add("leaderboard")
-                        if meta.best_rank is None or rank < meta.best_rank:
-                            meta.best_rank = rank
+            for i, entry in enumerate(entries):
+                wallet = entry.proxy_wallet
+                if not wallet:
+                    continue
+                discovered.add(wallet)
+                rank = offset + i + 1
+                meta = per_wallet.setdefault(wallet, _WalletSweepMeta())
+                meta.appearances += 1
+                meta.categories.add(category)
+                meta.time_periods.add(time_period)
+                meta.orders.add(order_by)
+                meta.sources.add("leaderboard")
+                if meta.best_rank is None or rank < meta.best_rank:
+                    meta.best_rank = rank
 
-                    if len(raw) < page_size:
-                        break  # exhausted this slice
-                if not slice_ok:
-                    log.info(
-                        "deep_leaderboard slice_failed category=%s time_period=%s order_by=%s",
-                        category, time_period, order_by,
-                    )
+            if len(raw) < page_size:
+                break  # exhausted this slice
+
+        if slice_degraded:
+            consecutive_degraded += 1
+            if consecutive_degraded >= breaker_threshold:
+                aborted_early = True
+                abort_reason = (
+                    "API degraded — stopped early after "
+                    f"{consecutive_degraded} consecutive failing leaderboard "
+                    f"slices (last: {category}/{time_period}/{order_by})"
+                )
+                log.error(
+                    "deep_leaderboard circuit_breaker_tripped: %s",
+                    abort_reason,
+                )
+                break
+        elif slice_ok:
+            consecutive_degraded = 0
+
+        if not slice_ok:
+            log.info(
+                "deep_leaderboard slice_failed category=%s time_period=%s order_by=%s",
+                category, time_period, order_by,
+            )
 
     log.info(
-        "deep_leaderboard complete discovered=%d entries=%d slices_attempted=%d slices_succeeded=%d",
+        "deep_leaderboard complete discovered=%d entries=%d slices_attempted=%d "
+        "slices_succeeded=%d aborted_early=%s",
         len(discovered), leaderboard_entries, slices_attempted, slices_succeeded,
+        aborted_early,
     )
     return _DeepSweepResult(
         discovered=discovered,
@@ -1497,6 +1560,8 @@ def run_deep_leaderboard(
         slices_attempted=slices_attempted,
         slices_succeeded=slices_succeeded,
         per_wallet=per_wallet,
+        aborted_early=aborted_early,
+        abort_reason=abort_reason,
     )
 
 
@@ -1708,18 +1773,29 @@ def run_deep_pipeline(
         )
 
         # 1b. Fold in recent on-chain traders (de-biased discovery source).
+        # Non-fatal: a subgraph blip should not kill an otherwise-good run,
+        # and a sweep that just tripped the breaker shouldn't get killed
+        # here by the same outage.
         recent_count = 0
         if seed_recent_traders:
             log.info(
                 "deep_pipeline step=recent_traders limit=%d", recent_trader_limit
             )
             _emit({"stage": "recent_traders"})
-            recent = run_recent_traders(
-                client,
-                limit=recent_trader_limit,
-                page_size=recent_trader_page_size,
-                max_pages=recent_trader_max_pages,
-            )
+            try:
+                recent = run_recent_traders(
+                    client,
+                    limit=recent_trader_limit,
+                    page_size=recent_trader_page_size,
+                    max_pages=recent_trader_max_pages,
+                )
+            except (httpx.HTTPStatusError, httpx.TransportError) as exc:
+                log.warning(
+                    "recent_traders failed (non-fatal): %s — sweep proceeds "
+                    "without subgraph wallets",
+                    exc,
+                )
+                recent = []
             _fold_recent_traders_into_sweep(sweep, recent)
             recent_count = len(recent)
 
@@ -1728,17 +1804,29 @@ def run_deep_pipeline(
         _emit({"stage": "refresh_review_state"})
         _apply_sweep_to_review_state(state, sweep)
 
-        # 3. Prune dormant + undiscovered + unprotected wallets
-        log.info("deep_pipeline step=prune dormant_days=%d", dormant_days)
-        _emit({"stage": "prune_review_state"})
-        data_dir = _data_dir()
-        pruned_this_run = prune_review_state(
-            state=state,
-            discovered=sweep.discovered,
-            enrichment_path=data_dir / "polymarket_wallet_enrichment.jsonl",
-            positions_path=data_dir / "polymarket_positions.jsonl",
-            dormant_days=dormant_days,
-        )
+        # 3. Prune dormant + undiscovered + unprotected wallets — but ONLY
+        # if the sweep actually covered the matrix. A circuit-breaker abort
+        # (or a zero-discovery sweep) leaves `sweep.discovered` partial;
+        # pruning against it would wrongly archive every wallet that was
+        # simply never reached before the upstream went unhealthy.
+        if sweep.aborted_early or not sweep.discovered:
+            log.warning(
+                "deep_pipeline skip_prune aborted_early=%s discovered=%d — "
+                "partial sweep, pruning would over-archive",
+                sweep.aborted_early, len(sweep.discovered),
+            )
+            pruned_this_run = 0
+        else:
+            log.info("deep_pipeline step=prune dormant_days=%d", dormant_days)
+            _emit({"stage": "prune_review_state"})
+            data_dir = _data_dir()
+            pruned_this_run = prune_review_state(
+                state=state,
+                discovered=sweep.discovered,
+                enrichment_path=data_dir / "polymarket_wallet_enrichment.jsonl",
+                positions_path=data_dir / "polymarket_positions.jsonl",
+                dormant_days=dormant_days,
+            )
 
         # 4. Pick + hydrate the oldest-polled batch
         batch = _pick_hydration_batch(state, batch_size=wallet_batch_size)
@@ -1840,6 +1928,7 @@ def run_deep_pipeline(
             archived_wallets=archived,
             pinned_wallets=pinned,
             pruned_this_run=pruned_this_run,
+            warning=sweep.abort_reason,
         )
         log.info("deep_pipeline complete %s", result.to_dict())
         return result

@@ -221,6 +221,103 @@ def test_run_deep_leaderboard_rejects_unknown_order(tmp_path: Path) -> None:
     client.close()
 
 
+def test_run_deep_leaderboard_circuit_breaker_trips_on_consecutive_5xx(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A sustained 5xx upstream should trip the breaker and abort the sweep
+    early instead of hammering every slice in the matrix."""
+    monkeypatch.setenv("POLYMARKET_DATA_DIR", str(tmp_path))
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(503, json={"error": "upstream down"})
+
+    client = _client_with_handler(handler)
+    stores = _build_stores(tmp_path)
+    sweep = run_deep_leaderboard(client, stores, depth=50, breaker_threshold=3)
+
+    assert sweep.aborted_early is True
+    assert sweep.abort_reason is not None
+    assert "degraded" in sweep.abort_reason
+    # Stopped after exactly `breaker_threshold` failing slices — NOT the
+    # whole 40-slice default-VOL matrix.
+    assert sweep.slices_attempted == 3
+    assert sweep.slices_succeeded == 0
+    assert sweep.discovered == set()
+    client.close()
+
+
+def test_run_deep_leaderboard_circuit_breaker_trips_on_transport_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Connection-level failures (not just HTTP status) must trip the breaker.
+    Previously such errors propagated uncaught and killed the run on the
+    first blip."""
+    monkeypatch.setenv("POLYMARKET_DATA_DIR", str(tmp_path))
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("connection refused", request=request)
+
+    client = _client_with_handler(handler)
+    stores = _build_stores(tmp_path)
+    sweep = run_deep_leaderboard(client, stores, depth=50, breaker_threshold=2)
+
+    assert sweep.aborted_early is True
+    assert sweep.slices_attempted == 2
+    assert sweep.discovered == set()
+    client.close()
+
+
+def test_run_deep_leaderboard_breaker_ignores_4xx_skipped_slices(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A plain 4xx signals an unsupported slice combo, not a degraded API.
+    Even if EVERY slice 400s, the breaker must NOT trip — this preserves
+    the existing per-slice-skip contract."""
+    monkeypatch.setenv("POLYMARKET_DATA_DIR", str(tmp_path))
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(400, json={"error": "bad slice"})
+
+    client = _client_with_handler(handler)
+    stores = _build_stores(tmp_path)
+    sweep = run_deep_leaderboard(client, stores, depth=50, breaker_threshold=3)
+
+    assert sweep.aborted_early is False
+    # All 40 default-VOL slices attempted; none short-circuited by the breaker.
+    assert sweep.slices_attempted == 40
+    assert sweep.slices_succeeded == 0
+    client.close()
+
+
+def test_run_deep_leaderboard_breaker_resets_on_intervening_success(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A successful slice between failures resets the consecutive counter,
+    so a flaky-but-not-down API never trips a sane threshold."""
+    monkeypatch.setenv("POLYMARKET_DATA_DIR", str(tmp_path))
+    seen_slices: set[tuple[str, str, str]] = set()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        params = dict(request.url.params)
+        key = (params["category"], params["timePeriod"], params["orderBy"])
+        seen_slices.add(key)
+        # Every 4th unique slice succeeds → max consecutive failures = 3.
+        if len(seen_slices) % 4 == 0:
+            return httpx.Response(
+                200, json=[_lb_row(f"0xS{len(seen_slices):02x}")],
+            )
+        return httpx.Response(502, json={"error": "blip"})
+
+    client = _client_with_handler(handler)
+    stores = _build_stores(tmp_path)
+    sweep = run_deep_leaderboard(client, stores, depth=50, breaker_threshold=5)
+
+    assert sweep.aborted_early is False
+    # Every default-VOL slice was attempted (40 total) since reset works.
+    assert sweep.slices_attempted == 40
+    client.close()
+
+
 # ── Pruning ──────────────────────────────────────────────────────────────────
 
 
@@ -728,3 +825,83 @@ def test_run_recent_traders_seed_writes_subgraph_wallets(
     assert review["0xaaa"].sources == ["subgraph"]
     assert review["0xbbb"].status == "active"
     assert review["0xaaa"].last_leaderboard_seen_at is None
+
+
+def test_run_deep_pipeline_partial_success_on_degraded_api(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A breaker abort mid-sweep must NOT raise: the deep pipeline completes
+    as a partial success, skips pruning (so unreached wallets aren't wrongly
+    archived), and surfaces a warning in the result."""
+    monkeypatch.setenv("POLYMARKET_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("POLYMARKET_WATCHLIST_PATH", str(tmp_path / "wl.txt"))
+
+    # Pre-seed a dormant, unprotected wallet that prune WOULD archive.
+    review_path = tmp_path / "polymarket_wallet_review_state.jsonl"
+    _write_review_state(review_path, {
+        "0xdormant": PolymarketWalletReviewState(
+            proxy_wallet="0xdormant", status="active",
+            first_seen_at="2024-01-01T00:00:00Z",
+        ),
+    })
+    (tmp_path / "polymarket_wallet_enrichment.jsonl").write_text("", encoding="utf-8")
+    (tmp_path / "polymarket_positions.jsonl").write_text("", encoding="utf-8")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        # Leaderboard slices → 502 (will trip the breaker after threshold).
+        if request.url.path == "/v1/leaderboard":
+            return httpx.Response(502, json={"error": "down"})
+        # Everything else returns empty so the rest of the pipeline can
+        # complete cleanly on the partial sweep.
+        return httpx.Response(200, json=[])
+
+    client = _client_with_handler(handler)
+    result = run_deep_pipeline(
+        leaderboard_depth=50, wallet_batch_size=10,
+        activity_pages=1, seed_recent_traders=False, skip_kalshi=True,
+        client=client,
+    )
+    client.close()
+
+    # Partial-success contract: warning surfaces, but no exception raised.
+    assert result.warning is not None
+    assert "degraded" in result.warning
+    # Prune was skipped → dormant wallet survives (the critical bug we
+    # avoid by gating prune on aborted_early).
+    assert result.pruned_this_run == 0
+    assert result.discovered_this_run == 0
+    reloaded = _load_review_state(review_path)
+    assert reloaded["0xdormant"].status == "active"
+    # The warning flows through to_dict() so the API surfaces it as
+    # last_summary.warning.
+    assert result.to_dict()["warning"] == result.warning
+
+
+def test_run_deep_pipeline_subgraph_failure_is_non_fatal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A subgraph blip must not kill an otherwise-healthy run. Without the
+    try/except wrap, a degraded subgraph during the recent-traders step
+    would raise and the breaker's partial-success path could never surface
+    its warning to the UI."""
+    monkeypatch.setenv("POLYMARKET_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("POLYMARKET_WATCHLIST_PATH", str(tmp_path / "wl.txt"))
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        # Subgraph refuses to connect — the rest of the API is healthy.
+        if request.url.host == "api.goldsky.com":
+            raise httpx.ConnectError("subgraph unreachable", request=request)
+        if request.url.path == "/v1/leaderboard":
+            return httpx.Response(200, json=[_lb_row("0xfromlb")])
+        return httpx.Response(200, json=[])
+
+    client = _client_with_handler(handler)
+    result = run_deep_pipeline(
+        leaderboard_depth=50, wallet_batch_size=10,
+        activity_pages=1, skip_kalshi=True, client=client,
+    )
+    client.close()
+
+    # Subgraph failure absorbed; leaderboard wallet still flowed through.
+    assert result.recent_traders_discovered == 0
+    assert result.discovered_this_run >= 1
