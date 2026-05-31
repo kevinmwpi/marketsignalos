@@ -25,7 +25,14 @@ jobs:
       - name: Typecheck
         run: mypy .
       - name: Tests
+        # The ingestor route imports marketsignalos_polymarket at call time, so
+        # the API test suite needs that package importable. It isn't a declared
+        # dependency (separate monorepo package), so put its src on PYTHONPATH —
+        # mirrors scripts/start-api.sh. Only the Tests step needs it; mypy uses
+        # MYPYPATH and already passes via ignore_missing_imports.
         run: pytest -q
+        env:
+          PYTHONPATH: ${{ github.workspace }}/services/polymarket-ingestor/src
 
   polymarket:
     runs-on: ubuntu-latest

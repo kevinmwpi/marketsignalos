@@ -40,6 +40,22 @@ _RECENT_TRADER_DENYLIST: frozenset[str] = frozenset()
 log = logging.getLogger("marketsignalos.polymarket.client")
 
 
+def _graphql_errors_are_transient(errors: Any) -> bool:
+    """True when a GraphQL `errors` payload looks like a transient subgraph
+    failure worth retrying — chiefly a server-side Postgres `statement_timeout`
+    on an expensive query, which the subgraph returns inside an HTTP 200 body.
+    A structural error (bad field, schema mismatch) is not transient and is
+    surfaced immediately."""
+    if not isinstance(errors, list):
+        return False
+    for err in errors:
+        message = err.get("message", "") if isinstance(err, dict) else ""
+        lowered = message.lower()
+        if "statement timeout" in lowered or "canceling statement" in lowered:
+            return True
+    return False
+
+
 @dataclass(frozen=True, slots=True)
 class PolymarketClientConfig:
     timeout_seconds: float = 15.0
@@ -343,8 +359,27 @@ class PolymarketClient:
                     raise ValueError(
                         f"Expected dict from subgraph, got {type(payload).__name__}"
                     )
-                if payload.get("errors"):
-                    raise ValueError(f"subgraph returned errors: {payload['errors']}")
+                errors = payload.get("errors")
+                if errors:
+                    # GraphQL surfaces query errors (notably a server-side
+                    # statement-timeout on an expensive query) as an HTTP 200
+                    # body, so they never tripped the status-based retry above.
+                    # Treat a transient timeout like a 5xx: back off and retry,
+                    # raising only once retries are exhausted or for a
+                    # non-transient error.
+                    if (
+                        _graphql_errors_are_transient(errors)
+                        and attempt < self._config.max_retries
+                    ):
+                        log.warning(
+                            "subgraph transient error (attempt %d/%d), retrying: %s",
+                            attempt + 1,
+                            self._config.max_retries,
+                            errors,
+                        )
+                        sleep(self._config.retry_backoff_seconds * (2**attempt))
+                        continue
+                    raise ValueError(f"subgraph returned errors: {errors}")
                 data = payload.get("data")
                 if not isinstance(data, dict):
                     raise ValueError("subgraph response missing 'data' object")

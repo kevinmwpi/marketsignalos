@@ -38,5 +38,11 @@ target-version = "py312"
 python_version = "3.12"
 strict = true
 
+# psycopg2-binary ships no type stubs and the Postgres write path is opt-in,
+# so exempt just that import instead of relaxing strictness package-wide.
+[[tool.mypy.overrides]]
+module = ["psycopg2", "psycopg2.*"]
+ignore_missing_imports = true
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
