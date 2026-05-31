@@ -1789,7 +1789,10 @@ def run_deep_pipeline(
                     page_size=recent_trader_page_size,
                     max_pages=recent_trader_max_pages,
                 )
-            except (httpx.HTTPStatusError, httpx.TransportError) as exc:
+            except (httpx.HTTPStatusError, httpx.TransportError, ValueError) as exc:
+                # ValueError covers GraphQL query errors (e.g. a server-side
+                # subgraph statement-timeout), which arrive as an HTTP 200 body
+                # and so never tripped the client's status-based retry.
                 log.warning(
                     "recent_traders failed (non-fatal): %s — sweep proceeds "
                     "without subgraph wallets",

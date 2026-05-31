@@ -292,6 +292,46 @@ def test_get_recent_trader_wallets_raises_on_graphql_errors() -> None:
     client.close()
 
 
+def test_get_recent_trader_wallets_retries_transient_statement_timeout() -> None:
+    """A server-side statement-timeout arrives as an HTTP 200 GraphQL error, so
+    it never tripped the status-based retry. It should be retried like a 5xx and
+    succeed on the next attempt rather than failing the call."""
+    timeout_body = {"errors": [{"message": (
+        "Failed to get entities from store: canceling statement due to "
+        "statement timeout, query = ..."
+    )}]}
+    success_body = {"data": {"orderFilledEvents": [_ofe("0xAAA", "0xBBB", 100)]}}
+    calls = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        return httpx.Response(200, json=timeout_body if calls["n"] == 1 else success_body)
+
+    client = _client_with_mock(handler)  # config: max_retries=2
+    wallets = client.get_recent_trader_wallets(max_wallets=5, page_size=2, max_pages=1)
+    client.close()
+    assert calls["n"] == 2  # first timed out, retry succeeded
+    assert wallets == ["0xaaa", "0xbbb"]
+
+
+def test_get_recent_trader_wallets_raises_when_timeout_persists() -> None:
+    """If the statement-timeout never clears, the retry budget is exhausted and
+    the error still surfaces — so the deep pipeline's non-fatal guard can catch
+    it and proceed without subgraph wallets."""
+    calls = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        return httpx.Response(200, json={"errors": [{"message":
+            "canceling statement due to statement timeout"}]})
+
+    client = _client_with_mock(handler)  # config: max_retries=2
+    with pytest.raises(ValueError, match="subgraph returned errors"):
+        client.get_recent_trader_wallets(max_wallets=5)
+    client.close()
+    assert calls["n"] == 3  # initial attempt + 2 retries
+
+
 def test_get_recent_trader_wallets_validates_args() -> None:
     client = _client_with_mock(
         lambda r: httpx.Response(200, json={"data": {"orderFilledEvents": []}})
