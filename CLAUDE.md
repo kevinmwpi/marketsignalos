@@ -72,7 +72,7 @@ npm ci
 
 ```powershell
 # API (from repo root)
-$env:PYTHONPATH = "apps/api/src"
+$env:PYTHONPATH = "apps/api/src;services/polymarket-ingestor/src"
 .\.venv\Scripts\uvicorn marketsignalos_api.main:app --reload --port 8000
 
 # Web dev server

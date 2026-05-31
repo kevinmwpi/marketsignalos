@@ -9,4 +9,4 @@ strict = true
 mypy_path = ["apps/api/src"]
 
 [tool.pytest.ini_options]
-pythonpath = ["apps/api/src"]
+pythonpath = ["apps/api/src", "services/polymarket-ingestor/src"]

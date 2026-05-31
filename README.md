@@ -28,13 +28,15 @@ for the full developer guide.
 ## Quick start
 
 ```powershell
+# Python 3.12+ is required.
+
 # Python deps
 python -m venv .venv
 .\.venv\Scripts\pip install -e "apps/api[dev]"
 .\.venv\Scripts\pip install -e "services/polymarket-ingestor[dev]"
 
 # Run the API
-$env:PYTHONPATH = "apps/api/src"
+$env:PYTHONPATH = "apps/api/src;services/polymarket-ingestor/src"
 .\.venv\Scripts\uvicorn marketsignalos_api.main:app --reload --port 8000
 
 # Run the web app (separate terminal)

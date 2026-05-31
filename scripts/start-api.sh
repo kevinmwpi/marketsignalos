@@ -3,7 +3,7 @@
 set -euo pipefail
 
 PORT="${PORT:-8080}"
-export PYTHONPATH="apps/api/src${PYTHONPATH:+:${PYTHONPATH}}"
+export PYTHONPATH="apps/api/src:services/polymarket-ingestor/src${PYTHONPATH:+:${PYTHONPATH}}"
 
 echo "Starting MarketSignalOS API on 0.0.0.0:${PORT}"
 
