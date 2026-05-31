@@ -1048,8 +1048,9 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
     )
     pl.add_argument("--leaderboard-limit", type=int, default=50)
-    pl.add_argument("--skip-kalshi", action="store_true",
-                    help="Skip the Kalshi fetch + match step")
+    pl.add_argument("--include-kalshi", action="store_true",
+                    help="Also run the Kalshi fetch + match step "
+                         "(off by default — Polymarket-only otherwise)")
     pl.add_argument("--include-profit", action="store_true",
                     help="Also seed from the profit/PnL leaderboard "
                          "(off by default to avoid luck bias)")
@@ -1074,7 +1075,9 @@ def _build_parser() -> argparse.ArgumentParser:
                     help="Max distinct recent on-chain wallets to fold into the sweep")
     dp.add_argument("--no-recent-traders", action="store_true",
                     help="Skip subgraph recent-trader discovery (leaderboard sweep only)")
-    dp.add_argument("--skip-kalshi", action="store_true")
+    dp.add_argument("--include-kalshi", action="store_true",
+                    help="Also run the Kalshi fetch + match step "
+                         "(off by default — Polymarket-only otherwise)")
 
     rt = sub.add_parser(
         "recent-traders",
@@ -1181,7 +1184,7 @@ def run_pipeline(
     market_page_size: int = 100,
     kalshi_status: str = "open",
     kalshi_max_pages: int = 25,
-    skip_kalshi: bool = False,
+    skip_kalshi: bool = True,
     include_profit_leaderboard: bool = False,
     client: PolymarketClient | None = None,
     progress_cb: ProgressCallback | None = None,
@@ -1202,10 +1205,13 @@ def run_pipeline(
            plus backfill any condition_ids referenced by activity that
            weren't in the page set.
         4. Recompute per-wallet enrichment (win rate, skill likelihood).
-        5. Fetch Kalshi's public /markets and run the Polymarket → Kalshi
-           title matcher to populate market_links.jsonl — the join the
-           /signals/skilled-bets endpoint uses to surface "mirror this on
-           Kalshi" links per row.
+        5. (Opt-in, off by default) Fetch Kalshi's public /markets and run
+           the Polymarket → Kalshi title matcher to populate
+           market_links.jsonl. This step is skipped by default
+           (skip_kalshi=True) so a normal run only pulls Polymarket data;
+           the matcher and its CLI subcommands (fetch-kalshi-markets,
+           match-markets) remain available to run on demand. Pass
+           skip_kalshi=False to re-enable it inline.
 
     All public APIs hit here are unauthenticated, so this function needs
     zero env-var configuration to run.
@@ -1732,7 +1738,7 @@ def run_deep_pipeline(
     market_page_size: int = 100,
     kalshi_status: str = "open",
     kalshi_max_pages: int = 25,
-    skip_kalshi: bool = False,
+    skip_kalshi: bool = True,
     client: PolymarketClient | None = None,
     progress_cb: ProgressCallback | None = None,
 ) -> PipelineResult:
@@ -2115,7 +2121,7 @@ def main(argv: list[str] | None = None) -> int:
             run_pipeline(
                 windows=windows,
                 leaderboard_limit=args.leaderboard_limit,
-                skip_kalshi=args.skip_kalshi,
+                skip_kalshi=not args.include_kalshi,
                 include_profit_leaderboard=args.include_profit,
                 client=client,
             )
@@ -2127,7 +2133,7 @@ def main(argv: list[str] | None = None) -> int:
                 dormant_days=args.dormant_days,
                 seed_recent_traders=not args.no_recent_traders,
                 recent_trader_limit=args.recent_trader_limit,
-                skip_kalshi=args.skip_kalshi,
+                skip_kalshi=not args.include_kalshi,
                 client=client,
             )
         elif args.mode == "recent-traders":

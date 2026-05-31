@@ -71,7 +71,6 @@ export default async function Home() {
   const isLive = errors.length === 0;
   const uniqueWallets = new Set(bets.map((b) => b.proxy_wallet)).size;
   const capitalHeld = bets.reduce((acc, b) => acc + b.current_position_value_usdc, 0);
-  const tailableOnKalshi = bets.filter((b) => b.kalshi_ticker && b.kalshi_market_url).length;
 
   return (
     <div className="min-h-screen bg-[#fafafa]">
@@ -110,15 +109,14 @@ export default async function Home() {
             Recent BUY entries from Polymarket wallets whose on-chain win rate beats
             random at <span className="font-mono">≥80%</span> confidence over{" "}
             <span className="font-mono">≥20</span> resolved bets — and that are
-            still holding the position. Each row links to the Polymarket event and,
-            where an equivalent Kalshi market exists, a direct deep link you can
-            use to tail the bet on Kalshi.
+            still holding the position. Each row links to the Polymarket event and
+            the wallet&apos;s on-chain history.
           </p>
         </div>
 
         <ErrorBanner errors={errors} />
 
-        <div className="mb-6 grid grid-cols-2 gap-3 md:grid-cols-4">
+        <div className="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-3">
           <div className="rounded-lg border border-zinc-200 bg-white px-4 py-3">
             <p className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">
               Active bets
@@ -141,15 +139,6 @@ export default async function Home() {
             </p>
             <p className="mt-1 font-mono text-2xl font-semibold text-zinc-900">
               {usdFormatter.format(capitalHeld)}
-            </p>
-          </div>
-          <div className="rounded-lg border border-zinc-200 bg-white px-4 py-3">
-            <p className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">
-              Tailable on Kalshi
-            </p>
-            <p className="mt-1 font-mono text-2xl font-semibold text-zinc-900">
-              {tailableOnKalshi}
-              <span className="ml-1 text-sm text-zinc-400">/ {bets.length}</span>
             </p>
           </div>
         </div>

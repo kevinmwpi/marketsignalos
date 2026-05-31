@@ -88,8 +88,8 @@ export default function SkilledBetsPanel({
         <p className="mt-1.5 text-xs leading-relaxed text-zinc-500">
           No skilled wallets are holding traceable open positions yet. Click{" "}
           <span className="font-mono">Run ingest</span> above to scan Polymarket
-          leaderboards and match wallet positions against live Kalshi markets,
-          or lower the skill threshold.
+          leaderboards for skilled wallets and their open positions, or lower
+          the skill threshold.
         </p>
       </div>
     );
@@ -200,62 +200,6 @@ export default function SkilledBetsPanel({
                   </p>
                 </div>
               </div>
-
-              {/* Kalshi mirror — the central "tail this on Kalshi" CTA. */}
-              {bet.kalshi_ticker && bet.kalshi_market_url && (
-                <div className="mt-3 flex items-start justify-between gap-3 rounded-md border border-blue-200 bg-blue-50 px-3 py-2">
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-[10px] font-semibold uppercase tracking-widest text-blue-700">
-                        Mirror on Kalshi
-                      </span>
-                      <span
-                        className={[
-                          "rounded px-1 py-px text-[9px] font-semibold uppercase tracking-wide",
-                          bet.kalshi_match_status === "approved"
-                            ? "bg-blue-200 text-blue-900"
-                            : "bg-amber-100 text-amber-800",
-                        ].join(" ")}
-                      >
-                        {bet.kalshi_match_status || "match"}
-                      </span>
-                      <span className="font-mono text-[10px] text-blue-700/70">
-                        {(bet.kalshi_match_confidence * 100).toFixed(0)}% conf
-                      </span>
-                    </div>
-                    <a
-                      className="mt-1 block truncate text-xs font-semibold text-blue-900 hover:underline"
-                      href={bet.kalshi_market_url}
-                      rel="noopener noreferrer"
-                      target="_blank"
-                      title="Open the matching Kalshi event"
-                    >
-                      {bet.kalshi_title || bet.kalshi_ticker}
-                    </a>
-                    <p className="mt-0.5 font-mono text-[10px] text-blue-700/70">
-                      {bet.kalshi_ticker}
-                    </p>
-                  </div>
-                  <div className="shrink-0 text-right">
-                    <p className="text-[10px] font-semibold uppercase tracking-widest text-blue-700/70">
-                      Kalshi YES
-                    </p>
-                    <p className="mt-0.5 font-mono text-sm font-semibold tabular-nums text-blue-900">
-                      {bet.kalshi_yes_price > 0
-                        ? `$${bet.kalshi_yes_price.toFixed(3)}`
-                        : "—"}
-                    </p>
-                    {bet.kalshi_yes_price > 0 && bet.current_market_yes_price > 0 && (
-                      <p className="font-mono text-[10px] text-blue-700/70">
-                        {bet.kalshi_yes_price > bet.current_market_yes_price
-                          ? `+${((bet.kalshi_yes_price - bet.current_market_yes_price) * 100).toFixed(1)}¢`
-                          : `${((bet.kalshi_yes_price - bet.current_market_yes_price) * 100).toFixed(1)}¢`}{" "}
-                        vs Poly
-                      </p>
-                    )}
-                  </div>
-                </div>
-              )}
 
               {/* Wallet provenance */}
               <div className="mt-3 flex items-center justify-between gap-3 text-[11px] text-zinc-500">
