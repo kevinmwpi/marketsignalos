@@ -15,6 +15,22 @@ export type PolymarketWalletSkill = {
   effective_sample_size: number;
   resolved_volume_usdc: number;
   rank_score: number;                 // canonical ranking metric
+  forecast_skill_likelihood: number;
+  forecast_edge_mean: number;
+  forecast_edge_lower_bound: number;
+  independent_settled_events: number;
+  all_time_pnl_usdc: number;
+  all_time_volume_usdc: number;
+  all_time_roi: number;
+  pnl_30d_usdc: number;
+  active_pnl_usdc: number;
+  max_drawdown_usdc: number;
+  data_quality_status: string;
+  data_quality_reasons: string[];
+  economic_qualified: boolean;
+  tailability_status: string;
+  tailability_reasons: string[];
+  score_version: string;
   total_volume_usdc: number;
   total_pnl_usdc: number;
   avg_position_size_usdc: number;
@@ -80,7 +96,7 @@ export default function PolymarketLeaderboardPanel({
       <div className="border-b border-zinc-200 px-4 py-3">
         <div className="flex items-baseline justify-between gap-2">
           <h2 className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">
-            Polymarket Skilled Wallets
+            Polymarket Wallet Research
           </h2>
           {computedAt && (
             <span className="font-mono text-[10px] text-zinc-400">
@@ -99,7 +115,7 @@ export default function PolymarketLeaderboardPanel({
                 className="px-4 py-2 text-right text-xs font-medium text-zinc-400"
                 title="P(edge > 0 | observed bets) — shrunk toward the population prior"
               >
-                Skill
+                Forecast
               </th>
               <th
                 className="px-4 py-2 text-right text-xs font-medium text-zinc-400"
@@ -108,14 +124,17 @@ export default function PolymarketLeaderboardPanel({
                 Edge
               </th>
               <th className="px-4 py-2 text-right text-xs font-medium text-zinc-400">W/L</th>
+              <th className="px-4 py-2 text-right text-xs font-medium text-zinc-400">Independent</th>
               <th className="px-4 py-2 text-right text-xs font-medium text-zinc-400">PnL</th>
+              <th className="px-4 py-2 text-right text-xs font-medium text-zinc-400">ROI</th>
+              <th className="px-4 py-2 text-right text-xs font-medium text-zinc-400">30d PnL</th>
               <th className="px-4 py-2 text-right text-xs font-medium text-zinc-400">Active</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-zinc-100">
             {rows.length === 0 ? (
               <tr>
-                <td className="px-4 py-4 text-xs text-zinc-400" colSpan={6}>
+                <td className="px-4 py-4 text-xs text-zinc-400" colSpan={9}>
                   No qualifying wallets yet. Run the Polymarket ingestor to populate.
                 </td>
               </tr>
@@ -139,6 +158,16 @@ export default function PolymarketLeaderboardPanel({
                             {shortWallet(row.proxy_wallet)}
                           </span>
                         )}
+                        <span
+                          className={`mt-1 inline-block rounded px-1 py-0.5 text-[9px] font-semibold uppercase tracking-wide ${
+                            row.tailability_status === "tailable"
+                              ? "bg-emerald-50 text-emerald-700"
+                              : "bg-amber-50 text-amber-700"
+                          }`}
+                          title={row.tailability_reasons.join(", ")}
+                        >
+                          {row.tailability_status}
+                        </span>
                       </a>
                     ) : (
                       <>
@@ -154,7 +183,7 @@ export default function PolymarketLeaderboardPanel({
                     )}
                   </td>
                   <td className="px-4 py-2.5 text-right font-mono text-xs text-zinc-700">
-                    {formatPct(row.skill_likelihood)}
+                    {formatPct(row.forecast_skill_likelihood || row.skill_likelihood)}
                   </td>
                   <td className="px-4 py-2.5 text-right font-mono text-xs">
                     <span
@@ -175,11 +204,23 @@ export default function PolymarketLeaderboardPanel({
                   <td className="px-4 py-2.5 text-right font-mono text-xs text-zinc-700">
                     {numberFormatter.format(row.wins)}/{numberFormatter.format(row.losses)}
                   </td>
+                  <td className="px-4 py-2.5 text-right font-mono text-xs text-zinc-700">
+                    {row.independent_settled_events.toFixed(1)}
+                  </td>
                   <td
                     className={`px-4 py-2.5 text-right font-mono text-xs font-semibold ${pnlClass(row.total_pnl_usdc)}`}
                   >
-                    {row.total_pnl_usdc >= 0 ? "+" : ""}
-                    {compactUsd.format(row.total_pnl_usdc)}
+                    {row.all_time_pnl_usdc >= 0 ? "+" : ""}
+                    {compactUsd.format(row.all_time_pnl_usdc)}
+                  </td>
+                  <td className="px-4 py-2.5 text-right font-mono text-xs text-zinc-700">
+                    {formatPct(row.all_time_roi)}
+                  </td>
+                  <td
+                    className={`px-4 py-2.5 text-right font-mono text-xs font-semibold ${pnlClass(row.pnl_30d_usdc)}`}
+                  >
+                    {row.pnl_30d_usdc >= 0 ? "+" : ""}
+                    {compactUsd.format(row.pnl_30d_usdc)}
                   </td>
                   <td className="px-4 py-2.5 text-right font-mono text-xs text-zinc-400">
                     {formatRelativeSeconds(row.last_activity_at)}

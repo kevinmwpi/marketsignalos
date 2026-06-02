@@ -59,6 +59,14 @@ def polymarket_positions_path() -> Path:
     return _polymarket_dir() / "polymarket_positions.jsonl"
 
 
+def polymarket_position_snapshots_path() -> Path:
+    return _polymarket_dir() / "polymarket_position_snapshots.jsonl"
+
+
+def polymarket_hydration_path() -> Path:
+    return _polymarket_dir() / "polymarket_wallet_hydration.jsonl"
+
+
 def polymarket_activity_path() -> Path:
     return _polymarket_dir() / "polymarket_activity.jsonl"
 

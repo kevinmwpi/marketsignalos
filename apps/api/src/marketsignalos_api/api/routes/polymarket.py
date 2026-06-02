@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from marketsignalos_api._paths import polymarket_enrichment_path
 from marketsignalos_api.services.external_urls import polymarket_profile_url
@@ -29,6 +29,22 @@ class PolymarketWalletSkill(BaseModel):
     effective_sample_size: float = 0.0
     resolved_volume_usdc: float = 0.0
     rank_score: float = 0.0
+    forecast_skill_likelihood: float = 0.0
+    forecast_edge_mean: float = 0.0
+    forecast_edge_lower_bound: float = 0.0
+    independent_settled_events: float = 0.0
+    all_time_pnl_usdc: float = 0.0
+    all_time_volume_usdc: float = 0.0
+    all_time_roi: float = 0.0
+    pnl_30d_usdc: float = 0.0
+    active_pnl_usdc: float = 0.0
+    max_drawdown_usdc: float = 0.0
+    data_quality_status: str = "untrusted"
+    data_quality_reasons: list[str] = Field(default_factory=list)
+    economic_qualified: bool = False
+    tailability_status: str = "blocked"
+    tailability_reasons: list[str] = Field(default_factory=list)
+    score_version: str = "legacy"
     total_volume_usdc: float
     total_pnl_usdc: float
     avg_position_size_usdc: float
@@ -60,6 +76,7 @@ def polymarket_leaderboard(
     min_resolved: int = Query(default=20, ge=1, le=10_000),
     limit: int = Query(default=50, ge=1, le=500),
     min_skill: float = Query(default=0.0, ge=0.0, le=1.0),
+    tailability: Literal["all", "tailable", "blocked"] = Query(default="all"),
 ) -> list[PolymarketWalletSkill]:
     """
     Skill-ranked Polymarket wallets, computed from on-chain activity vs.
@@ -75,6 +92,9 @@ def polymarket_leaderboard(
         skill = float(row.get("skill_likelihood", 0) or 0)
         if skill < min_skill:
             continue
+        status = str(row.get("tailability_status", "blocked"))
+        if tailability != "all" and status != tailability:
+            continue
         try:
             eligible.append(
                 PolymarketWalletSkill(
@@ -89,6 +109,12 @@ def polymarket_leaderboard(
     # rank_score is the new conservative ranking — falls back to
     # skill_likelihood ordering when older enrichment rows have rank_score=0.
     eligible.sort(
-        key=lambda r: (-r.rank_score, -r.skill_likelihood, -r.resolved_trades, r.proxy_wallet)
+        key=lambda r: (
+            0 if r.tailability_status == "tailable" else 1,
+            -r.rank_score,
+            -r.skill_likelihood,
+            -r.resolved_trades,
+            r.proxy_wallet,
+        )
     )
     return eligible[:limit]

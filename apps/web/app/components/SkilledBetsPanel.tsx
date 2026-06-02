@@ -8,6 +8,22 @@ export type SkilledBet = {
   win_rate: number;
   edge_mean: number;              // posterior edge in log-odds
   edge_lower_bound: number;       // conservative 5th-percentile edge
+  forecast_skill_likelihood: number;
+  forecast_edge_mean: number;
+  forecast_edge_lower_bound: number;
+  independent_settled_events: number;
+  all_time_pnl_usdc: number;
+  all_time_volume_usdc: number;
+  all_time_roi: number;
+  pnl_30d_usdc: number;
+  active_pnl_usdc: number;
+  max_drawdown_usdc: number;
+  data_quality_status: string;
+  data_quality_reasons: string[];
+  economic_qualified: boolean;
+  tailability_status: string;
+  tailability_reasons: string[];
+  score_version: string;
 
   condition_id: string;
   slug: string;
@@ -26,6 +42,7 @@ export type SkilledBet = {
   current_position_size: number;
   current_position_value_usdc: number;
   current_market_yes_price: number;
+  current_outcome_price: number;
 
   polymarket_profile_url: string;
   polymarket_market_url: string;
@@ -98,7 +115,7 @@ export default function SkilledBetsPanel({
   return (
     <ul className="space-y-3">
       {bets.map((bet, index) => {
-        const drift = driftPct(bet.entry_price, bet.current_market_yes_price);
+        const drift = driftPct(bet.entry_price, bet.current_outcome_price);
         const outcomeLabel =
           bet.outcome || (bet.outcome_index === 0 ? "YES" : "NO");
 
@@ -178,8 +195,8 @@ export default function SkilledBetsPanel({
                     Now
                   </p>
                   <p className="mt-1 font-mono text-sm font-semibold tabular-nums text-zinc-900">
-                    {bet.current_market_yes_price > 0
-                      ? `$${bet.current_market_yes_price.toFixed(3)}`
+                    {bet.current_outcome_price > 0
+                      ? `$${bet.current_outcome_price.toFixed(3)}`
                       : "—"}
                   </p>
                   <p className={`font-mono text-[10px] ${driftColor(drift)}`}>
@@ -225,7 +242,7 @@ export default function SkilledBetsPanel({
                   </span>
                   <span className="text-zinc-300">·</span>
                   <span>
-                    skill{" "}
+                    Forecast confidence{" "}
                     <span className="font-mono font-semibold text-zinc-700">
                       {(bet.skill_likelihood * 100).toFixed(1)}%
                     </span>
@@ -237,12 +254,12 @@ export default function SkilledBetsPanel({
                     </span>{" "}
                     on{" "}
                     <span className="font-mono font-semibold text-zinc-700">
-                      {bet.resolved_trades}
+                      {bet.independent_settled_events.toFixed(1)}
                     </span>{" "}
-                    resolved
+                    independent settled events
                   </span>
                   <span className="text-zinc-300">·</span>
-                  <span title="Posterior edge vs. market's own odds (log-odds; lower bound is the 5th-percentile floor)">
+                  <span title="Market-relative posterior edge in log-odds. The bracketed value is the conservative 5th-percentile floor.">
                     edge{" "}
                     <span
                       className={`font-mono font-semibold ${
@@ -257,6 +274,27 @@ export default function SkilledBetsPanel({
                     <span className="ml-1 font-mono text-zinc-400">
                       [≥{bet.edge_lower_bound >= 0 ? "+" : ""}
                       {bet.edge_lower_bound.toFixed(2)}]
+                    </span>
+                  </span>
+                  <span className="text-zinc-300">Â·</span>
+                  <span>
+                    all-time PnL{" "}
+                    <span className="font-mono font-semibold text-zinc-700">
+                      {usdFormatter.format(bet.all_time_pnl_usdc)}
+                    </span>
+                  </span>
+                  <span className="text-zinc-300">Â·</span>
+                  <span>
+                    ROI{" "}
+                    <span className="font-mono font-semibold text-zinc-700">
+                      {(bet.all_time_roi * 100).toFixed(1)}%
+                    </span>
+                  </span>
+                  <span className="text-zinc-300">Â·</span>
+                  <span>
+                    30d PnL{" "}
+                    <span className="font-mono font-semibold text-zinc-700">
+                      {usdFormatter.format(bet.pnl_30d_usdc)}
                     </span>
                   </span>
                 </div>

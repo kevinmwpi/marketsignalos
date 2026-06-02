@@ -37,6 +37,11 @@ def _seed(tmp_path: Path) -> Path:
                 "proxy_wallet": "0xalpha", "name": "AlphaWhale", "pseudonym": "AlphaWhale",
                 "resolved_trades": 50, "wins": 38, "losses": 12,
                 "win_rate": 0.76, "skill_likelihood": 0.99, "stddevs_above_expected": 3.7,
+                "forecast_skill_likelihood": 0.99, "forecast_edge_mean": 0.5,
+                "forecast_edge_lower_bound": 0.2, "independent_settled_events": 50.0,
+                "all_time_pnl_usdc": 250_000, "all_time_roi": 0.25, "pnl_30d_usdc": 1_000,
+                "data_quality_status": "trusted", "tailability_status": "tailable",
+                "score_version": "forecast-v2",
                 "total_volume_usdc": 1_000_000, "total_pnl_usdc": 250_000,
                 "avg_position_size_usdc": 20_000, "trade_count": 200,
                 "last_activity_at": 1731000000, "computed_at": "2026-05-12T00:00:00Z",
@@ -46,6 +51,8 @@ def _seed(tmp_path: Path) -> Path:
                 "proxy_wallet": "0xnoob", "name": "Newbie", "pseudonym": "Newbie",
                 "resolved_trades": 50, "wins": 20, "losses": 30,
                 "win_rate": 0.4, "skill_likelihood": 0.05, "stddevs_above_expected": -2.8,
+                "data_quality_status": "trusted", "tailability_status": "blocked",
+                "score_version": "forecast-v2",
                 "total_volume_usdc": 1000, "total_pnl_usdc": -500,
                 "avg_position_size_usdc": 30, "trade_count": 60,
                 "last_activity_at": 1731000000, "computed_at": "2026-05-12T00:00:00Z",
@@ -55,6 +62,11 @@ def _seed(tmp_path: Path) -> Path:
                 "proxy_wallet": "0xghost", "name": "GhostHolder", "pseudonym": "GhostHolder",
                 "resolved_trades": 40, "wins": 30, "losses": 10,
                 "win_rate": 0.75, "skill_likelihood": 0.95, "stddevs_above_expected": 3.0,
+                "forecast_skill_likelihood": 0.95, "forecast_edge_mean": 0.4,
+                "forecast_edge_lower_bound": 0.1, "independent_settled_events": 40.0,
+                "all_time_pnl_usdc": 100_000, "all_time_roi": 0.2, "pnl_30d_usdc": 1_000,
+                "data_quality_status": "trusted", "tailability_status": "tailable",
+                "score_version": "forecast-v2",
                 "total_volume_usdc": 500_000, "total_pnl_usdc": 100_000,
                 "avg_position_size_usdc": 10_000, "trade_count": 100,
                 "last_activity_at": 1731000000, "computed_at": "2026-05-12T00:00:00Z",
@@ -72,6 +84,7 @@ def _seed(tmp_path: Path) -> Path:
                 "size": 5000.0, "avg_price": 0.45, "current_value_usdc": 2900.0,
                 "slug": "fed-50bp-sep", "title": "Fed cuts 50bp in September",
                 "event_slug": "fed-decision",
+                "current_outcome_price": 0.58, "snapshot_id": "snapshot-alpha",
                 "snapshot_at": "2026-05-12T08:00:00Z",
             },
             # alpha older buy — still held but bought longer ago.
@@ -81,6 +94,7 @@ def _seed(tmp_path: Path) -> Path:
                 "size": 2000.0, "avg_price": 0.30, "current_value_usdc": 800.0,
                 "slug": "btc-100k-eoy", "title": "Bitcoin closes 2026 above $100k",
                 "event_slug": "btc-eoy-2026",
+                "current_outcome_price": 0.40, "snapshot_id": "snapshot-alpha",
                 "snapshot_at": "2026-05-12T08:00:00Z",
             },
             # alpha fully exited — must NOT appear in the feed.
@@ -90,6 +104,7 @@ def _seed(tmp_path: Path) -> Path:
                 "size": 0.0, "avg_price": 0.55, "current_value_usdc": 0.0,
                 "slug": "exited", "title": "Already exited",
                 "event_slug": "exited-event",
+                "current_outcome_price": 0.50, "snapshot_id": "snapshot-alpha",
                 "snapshot_at": "2026-05-12T08:00:00Z",
             },
             # noob's held position — must NOT appear (low skill).
@@ -99,6 +114,7 @@ def _seed(tmp_path: Path) -> Path:
                 "size": 10.0, "avg_price": 0.45, "current_value_usdc": 5.8,
                 "slug": "fed-50bp-sep", "title": "Fed cuts 50bp in September",
                 "event_slug": "fed-decision",
+                "current_outcome_price": 0.58, "snapshot_id": "snapshot-noob",
                 "snapshot_at": "2026-05-12T08:00:00Z",
             },
             # ghost holds a position but we have NO matching buy event for it.
@@ -108,8 +124,17 @@ def _seed(tmp_path: Path) -> Path:
                 "size": 100.0, "avg_price": 0.32, "current_value_usdc": 40.0,
                 "slug": "btc-100k-eoy", "title": "Bitcoin closes 2026 above $100k",
                 "event_slug": "btc-eoy-2026",
+                "current_outcome_price": 0.40, "snapshot_id": "snapshot-ghost",
                 "snapshot_at": "2026-05-12T08:00:00Z",
             },
+        ],
+    )
+    _write_jsonl(
+        d / "polymarket_position_snapshots.jsonl",
+        [
+            {"proxy_wallet": "0xalpha", "snapshot_id": "snapshot-alpha", "complete": True},
+            {"proxy_wallet": "0xnoob", "snapshot_id": "snapshot-noob", "complete": True},
+            {"proxy_wallet": "0xghost", "snapshot_id": "snapshot-ghost", "complete": True},
         ],
     )
 
@@ -369,3 +394,60 @@ def test_skilled_bets_empty_when_no_skilled_wallets(
     # Set bar above alpha's 0.99 → no skilled wallets → empty feed.
     resp = client.get("/signals/skilled-bets?min_skill=0.999&min_resolved=20")
     assert resp.json() == []
+
+
+def test_skilled_bets_summary_reports_quarantine_counts(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    pm_dir = _seed(tmp_path)
+    monkeypatch.setenv("POLYMARKET_DATA_DIR", str(pm_dir))
+    body = TestClient(app).get("/signals/skilled-bets/summary").json()
+    assert body == {
+        "trusted": 3,
+        "rebuilding": 0,
+        "blocked": 1,
+        "tailable": 2,
+        "blocked_reasons": {"legacy or incomplete score": 1},
+    }
+
+
+def test_research_leaderboard_keeps_blocked_wallets_with_reasons(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    pm_dir = _seed(tmp_path)
+    monkeypatch.setenv("POLYMARKET_DATA_DIR", str(pm_dir))
+    rows = TestClient(app).get(
+        "/signals/polymarket-leaderboard?min_resolved=1&tailability=blocked"
+    ).json()
+    assert [row["proxy_wallet"] for row in rows] == ["0xnoob"]
+    assert rows[0]["tailability_status"] == "blocked"
+
+
+def test_skilled_bets_drops_positions_absent_from_latest_complete_snapshot(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    pm_dir = _seed(tmp_path)
+    _write_jsonl(
+        pm_dir / "polymarket_position_snapshots.jsonl",
+        [{"proxy_wallet": "0xalpha", "snapshot_id": "snapshot-empty", "complete": True}],
+    )
+    monkeypatch.setenv("POLYMARKET_DATA_DIR", str(pm_dir))
+    rows = TestClient(app).get("/signals/skilled-bets?min_skill=0.9&min_resolved=20").json()
+    assert rows == []
+
+
+def test_legacy_enrichment_is_quarantined_from_active_feed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    pm_dir = _seed(tmp_path)
+    enrichment = pm_dir / "polymarket_wallet_enrichment.jsonl"
+    rows = [
+        json.loads(line)
+        for line in enrichment.read_text(encoding="utf-8").splitlines()
+        if line
+    ]
+    rows[0].pop("score_version")
+    _write_jsonl(enrichment, rows)
+    monkeypatch.setenv("POLYMARKET_DATA_DIR", str(pm_dir))
+    signals = TestClient(app).get("/signals/skilled-bets?min_skill=0.9&min_resolved=20").json()
+    assert signals == []

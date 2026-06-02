@@ -70,7 +70,39 @@ class PolymarketPosition:
     slug: str
     title: str
     event_slug: str
+    current_outcome_price: float = 0.0
+    cash_pnl_usdc: float = 0.0
+    snapshot_id: str = ""
     snapshot_at: str = field(default_factory=_utcnow_iso)
+
+
+@dataclass(frozen=True, slots=True)
+class PolymarketPositionSnapshot:
+    """Manifest for one complete paginated /positions fetch."""
+
+    proxy_wallet: str
+    snapshot_id: str
+    position_count: int
+    complete: bool
+    snapshot_at: str = field(default_factory=_utcnow_iso)
+
+
+@dataclass(frozen=True, slots=True)
+class PolymarketClosedPosition:
+    """An audited row from data-api.polymarket.com/closed-positions."""
+
+    proxy_wallet: str
+    condition_id: str
+    outcome_index: int
+    outcome: str
+    size: float
+    avg_price: float
+    realized_pnl_usdc: float
+    current_outcome_price: float
+    slug: str
+    title: str
+    event_slug: str
+    fetched_at: str = field(default_factory=_utcnow_iso)
 
 
 @dataclass(frozen=True, slots=True)
@@ -201,4 +233,45 @@ class PolymarketWalletEnrichment:
     avg_position_size_usdc: float
     trade_count: int              # total TRADE events (not bets — fills can be multiple per bet)
     last_activity_at: int         # unix timestamp of most recent activity
+    forecast_skill_likelihood: float = 0.0
+    forecast_edge_mean: float = 0.0
+    forecast_edge_lower_bound: float = 0.0
+    independent_settled_events: float = 0.0
+    all_time_pnl_usdc: float = 0.0
+    all_time_volume_usdc: float = 0.0
+    all_time_roi: float = 0.0
+    pnl_30d_usdc: float = 0.0
+    active_pnl_usdc: float = 0.0
+    max_drawdown_usdc: float = 0.0
+    data_quality_status: str = "untrusted"
+    data_quality_reasons: list[str] = field(default_factory=list)
+    economic_qualified: bool = False
+    tailability_status: str = "blocked"
+    tailability_reasons: list[str] = field(default_factory=list)
+    score_version: str = "forecast-v2"
     computed_at: str = field(default_factory=_utcnow_iso)
+
+
+@dataclass(slots=True)
+class PolymarketWalletHydration:
+    """Trust inputs accumulated while a wallet is hydrated."""
+
+    proxy_wallet: str
+    newest_activity_timestamp: int | None = None
+    oldest_activity_cursor_timestamp: int | None = None
+    activity_history_complete: bool = False
+    positions_complete: bool = False
+    closed_positions_complete: bool = False
+    economic_all_time_complete: bool = False
+    economic_month_complete: bool = False
+    metadata_condition_count: int = 0
+    metadata_covered_count: int = 0
+    metadata_coverage: float = 0.0
+    all_time_pnl_usdc: float = 0.0
+    all_time_volume_usdc: float = 0.0
+    pnl_30d_usdc: float = 0.0
+    active_pnl_usdc: float = 0.0
+    max_drawdown_usdc: float = 0.0
+    latest_position_snapshot_id: str | None = None
+    last_refreshed_at: str | None = None
+    errors: list[str] = field(default_factory=list)

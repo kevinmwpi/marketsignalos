@@ -34,7 +34,7 @@ from __future__ import annotations
 
 import logging
 from collections import defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from .bayesian_skill import (
     Bet,
@@ -50,6 +50,7 @@ from .models import (
     PolymarketLeaderboardEntry,
     PolymarketMarket,
     PolymarketWalletEnrichment,
+    PolymarketWalletHydration,
 )
 
 log = logging.getLogger("marketsignalos.polymarket.skill")
@@ -136,19 +137,34 @@ def _market_winning_outcome(market: PolymarketMarket) -> int | None:
     Inspect a market's outcome_prices to determine the winning outcome index.
     Returns None if the market isn't actually resolved.
 
-    Note: Gamma's `closed` boolean is unreliable (markets with future end
-    dates can be marked closed=True). The authoritative signal is
-    outcome_prices having a definite winner (>= 0.99), which corresponds to
-    UMA having settled the market on-chain.
+    Canonical settlement is intentionally strict. Live markets frequently
+    trade at 99c, so price alone is never sufficient evidence of resolution.
     """
-    if not market.outcome_prices:
+    if not market.closed or market.active or not market.outcome_prices:
         return None
-    # A resolved market has one outcome at 1.0 (winner) and the others at 0.0.
-    # Use >= 0.99 to tolerate float rounding.
-    for i, price in enumerate(market.outcome_prices):
-        if price >= 0.99:
-            return i
-    return None  # still trading / canceled / undetermined
+    winners = [i for i, price in enumerate(market.outcome_prices) if price >= 0.99]
+    return winners[0] if len(winners) == 1 else None
+
+
+def _apply_event_weights(bets: list[Bet]) -> list[Bet]:
+    """Cap each event at one likelihood vote, split across legs by capital."""
+    grouped: dict[str, list[tuple[int, Bet]]] = defaultdict(list)
+    for index, bet in enumerate(bets):
+        key = bet.event_slug or f"__blank_event_{index}"
+        grouped[key].append((index, bet))
+
+    weighted: list[Bet | None] = [None] * len(bets)
+    for rows in grouped.values():
+        total_cost = sum(max(0.0, bet.cost_usdc) for _, bet in rows)
+        even_weight = 1.0 / len(rows)
+        for index, bet in rows:
+            weight = (
+                max(0.0, bet.cost_usdc) / total_cost
+                if total_cost > 0.0
+                else even_weight
+            )
+            weighted[index] = replace(bet, weight=weight)
+    return [bet for bet in weighted if bet is not None]
 
 
 @dataclass(slots=True)
@@ -251,7 +267,7 @@ def _roll_up_wallet(
         wallet=wallet.lower(),
         name=name,
         pseudonym=pseudonym,
-        bets=bets,
+        bets=_apply_event_weights(bets),
         wins=wins,
         losses=losses,
         total_pnl_usdc=total_pnl,
@@ -268,6 +284,7 @@ def _enrichment_from_rollup(
     fit: PosteriorFit,
     *,
     ess: float,
+    hydration: PolymarketWalletHydration | None = None,
 ) -> PolymarketWalletEnrichment:
     resolved_trades = rollup.wins + rollup.losses
     win_rate = rollup.wins / resolved_trades if resolved_trades > 0 else 0.0
@@ -281,6 +298,48 @@ def _enrichment_from_rollup(
         edge_lower_bound=fit.edge_lower_bound,
         resolved_volume_usdc=rollup.resolved_volume_usdc,
     )
+
+    has_hydration = hydration is not None
+    hydration = hydration or PolymarketWalletHydration(proxy_wallet=rollup.wallet)
+    all_time_volume = (
+        hydration.all_time_volume_usdc if has_hydration else rollup.total_volume_usdc
+    )
+    all_time_pnl = hydration.all_time_pnl_usdc if has_hydration else rollup.total_pnl_usdc
+    all_time_roi = all_time_pnl / all_time_volume if all_time_volume > 0 else 0.0
+    data_reasons: list[str] = []
+    if not hydration.activity_history_complete:
+        data_reasons.append("incomplete activity history")
+    if not hydration.positions_complete:
+        data_reasons.append("incomplete current positions")
+    if not hydration.closed_positions_complete:
+        data_reasons.append("incomplete closed positions")
+    if not hydration.economic_all_time_complete:
+        data_reasons.append("missing all-time economics")
+    if not hydration.economic_month_complete:
+        data_reasons.append("missing 30-day economics")
+    if hydration.metadata_coverage < 1.0:
+        data_reasons.append("incomplete market metadata")
+    data_status = "trusted" if not data_reasons else "untrusted"
+
+    economic_qualified = (
+        all_time_pnl > 0.0
+        and all_time_roi > 0.0
+        and hydration.pnl_30d_usdc >= 0.0
+    )
+    tailability_reasons = list(data_reasons)
+    if ess < 20.0:
+        tailability_reasons.append("fewer than 20 independent settled events")
+    if fit.posterior_skill < 0.80:
+        tailability_reasons.append("forecast confidence below 80%")
+    if fit.edge_lower_bound <= 0.0:
+        tailability_reasons.append("conservative edge is not positive")
+    if all_time_pnl <= 0.0:
+        tailability_reasons.append("negative or zero all-time PnL")
+    if all_time_roi <= 0.0:
+        tailability_reasons.append("negative or zero all-time ROI")
+    if hydration.pnl_30d_usdc < 0.0:
+        tailability_reasons.append("recent PnL below zero")
+    tailability_status = "tailable" if not tailability_reasons else "blocked"
 
     return PolymarketWalletEnrichment(
         proxy_wallet=rollup.wallet,
@@ -297,11 +356,26 @@ def _enrichment_from_rollup(
         effective_sample_size=round(ess, 4),
         resolved_volume_usdc=round(rollup.resolved_volume_usdc, 2),
         rank_score=round(rs, 6),
-        total_volume_usdc=round(rollup.total_volume_usdc, 2),
-        total_pnl_usdc=round(rollup.total_pnl_usdc, 2),
+        total_volume_usdc=round(all_time_volume, 2),
+        total_pnl_usdc=round(all_time_pnl, 2),
         avg_position_size_usdc=round(avg_size, 2),
         trade_count=rollup.trade_count,
         last_activity_at=rollup.last_activity_ts,
+        forecast_skill_likelihood=round(fit.posterior_skill, 6),
+        forecast_edge_mean=round(fit.edge_mean, 6),
+        forecast_edge_lower_bound=round(fit.edge_lower_bound, 6),
+        independent_settled_events=round(ess, 4),
+        all_time_pnl_usdc=round(all_time_pnl, 2),
+        all_time_volume_usdc=round(all_time_volume, 2),
+        all_time_roi=round(all_time_roi, 8),
+        pnl_30d_usdc=round(hydration.pnl_30d_usdc, 2),
+        active_pnl_usdc=round(hydration.active_pnl_usdc, 2),
+        max_drawdown_usdc=round(hydration.max_drawdown_usdc, 2),
+        data_quality_status=data_status,
+        data_quality_reasons=data_reasons,
+        economic_qualified=economic_qualified,
+        tailability_status=tailability_status,
+        tailability_reasons=tailability_reasons,
     )
 
 
@@ -315,6 +389,7 @@ def compute_wallet_enrichment(
     name: str = "",
     pseudonym: str = "",
     population_prior: PopulationPrior | None = None,
+    hydration: PolymarketWalletHydration | None = None,
 ) -> PolymarketWalletEnrichment:
     """
     Compute one wallet's enrichment row.
@@ -337,7 +412,7 @@ def compute_wallet_enrichment(
         rollup.bets, mu_prior=prior.mu, sigma2_prior=prior.sigma2
     )
     ess = effective_sample_size(rollup.bets)
-    return _enrichment_from_rollup(rollup, fit, ess=ess)
+    return _enrichment_from_rollup(rollup, fit, ess=ess, hydration=hydration)
 
 
 def compute_all_enrichment(
@@ -345,6 +420,7 @@ def compute_all_enrichment(
     activity: list[PolymarketActivity],
     markets: list[PolymarketMarket],
     leaderboard: list[PolymarketLeaderboardEntry],
+    hydration_by_wallet: dict[str, PolymarketWalletHydration] | None = None,
 ) -> list[PolymarketWalletEnrichment]:
     """
     Compute enrichment for every wallet present in the activity stream.
@@ -399,7 +475,8 @@ def compute_all_enrichment(
             rollup.bets, mu_prior=prior.mu, sigma2_prior=prior.sigma2
         )
         ess = effective_sample_size(rollup.bets)
-        out.append(_enrichment_from_rollup(rollup, fit, ess=ess))
+        hydration = (hydration_by_wallet or {}).get(rollup.wallet)
+        out.append(_enrichment_from_rollup(rollup, fit, ess=ess, hydration=hydration))
 
     # Default order: best-ranked first. Tiebreak by skill_likelihood then
     # wallet for determinism.

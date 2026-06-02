@@ -94,6 +94,7 @@ class Bet:
     won: bool                # True if that outcome resolved YES
     event_slug: str = ""     # used only by effective_sample_size()
     cost_usdc: float = 0.0   # used for rank_score weighting
+    weight: float = 1.0      # event-capped likelihood contribution
 
 
 @dataclass(slots=True, frozen=True)
@@ -139,6 +140,7 @@ def fit_wallet_posterior(
 
     logits = [_safe_logit(b.entry_price) for b in bets]
     ys = [1.0 if b.won else 0.0 for b in bets]
+    weights = [max(0.0, b.weight) for b in bets]
     inv_sigma2 = 1.0 / sigma2_prior
 
     edge = mu_prior
@@ -146,10 +148,10 @@ def fit_wallet_posterior(
         # q_i = sigmoid(logit_i + edge); accumulate gradient and Hessian.
         grad_data = 0.0
         hess_data = 0.0
-        for li, yi in zip(logits, ys):
+        for li, yi, weight in zip(logits, ys, weights):
             qi = _sigmoid(li + edge)
-            grad_data += yi - qi
-            hess_data -= qi * (1.0 - qi)
+            grad_data += weight * (yi - qi)
+            hess_data -= weight * qi * (1.0 - qi)
         gradient = grad_data - (edge - mu_prior) * inv_sigma2
         hessian = hess_data - inv_sigma2  # strictly negative
         step = -gradient / hessian
@@ -161,9 +163,9 @@ def fit_wallet_posterior(
 
     # Final Hessian evaluation for the Laplace variance.
     info = inv_sigma2
-    for li in logits:
+    for li, weight in zip(logits, weights):
         qi = _sigmoid(li + edge)
-        info += qi * (1.0 - qi)
+        info += weight * qi * (1.0 - qi)
     edge_var = 1.0 / info
     edge_sd = math.sqrt(edge_var)
     return PosteriorFit(
@@ -230,30 +232,13 @@ def fit_population_prior(per_wallet_bets: list[list[Bet]]) -> PopulationPrior:
 
 def effective_sample_size(bets: list[Bet]) -> float:
     """
-    Correlation-adjusted bet count.
+    Sum event-capped likelihood weights.
 
-    Bets within the same Polymarket event are correlated (settling a
-    single outcome moves all of an event's per-market resolutions at
-    once), so additional bets in the same event contribute less new
-    information than bets on independent events.
-
-    Heuristic:
-        ESS = unique_events + 0.5 * (n_bets - unique_events)
-
-    i.e. each first-in-event bet counts fully, each repeat counts as
-    half. If every bet has an empty event_slug we cannot group at all
-    and fall back to the naive bet count.
+    Skill computation gives each independent event one total vote and
+    distributes it across legs by at-risk capital. Blank event slugs are
+    treated as independent observations and retain their default weight.
     """
-    n = len(bets)
-    if n == 0:
-        return 0.0
-    slugs = [b.event_slug for b in bets if b.event_slug]
-    if not slugs:
-        return float(n)
-    unique = len(set(slugs))
-    # Bets with empty event_slug count as their own "event" of size 1.
-    blanks = n - len(slugs)
-    return float(unique + blanks) + 0.5 * float(len(slugs) - unique)
+    return sum(max(0.0, b.weight) for b in bets)
 
 
 def rank_score(

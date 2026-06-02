@@ -24,6 +24,7 @@ def test_app_registers_active_routes() -> None:
         "/ingestor/run",
         "/ingestor/status",
         "/signals/skilled-bets",
+        "/signals/skilled-bets/summary",
         "/signals/polymarket-leaderboard",
     }.issubset(route_paths)
 

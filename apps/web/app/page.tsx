@@ -9,6 +9,14 @@ type ApiResult<T> = {
   error?: string;
 };
 
+type SkilledBetsSummary = {
+  trusted: number;
+  rebuilding: number;
+  blocked: number;
+  tailable: number;
+  blocked_reasons: Record<string, number>;
+};
+
 function apiUrl(apiBase: string, path: string): string {
   return `${apiBase.replace(/\/$/, "")}${path}`;
 }
@@ -28,8 +36,9 @@ async function fetchJson<T>(url: string, label: string): Promise<ApiResult<T>> {
 async function getDashboardData(apiBase: string): Promise<{
   polymarketLeaderboard: ApiResult<PolymarketWalletSkill[]>;
   skilledBets: ApiResult<SkilledBet[]>;
+  skilledBetsSummary: ApiResult<SkilledBetsSummary>;
 }> {
-  const [polymarketLeaderboard, skilledBets] = await Promise.all([
+  const [polymarketLeaderboard, skilledBets, skilledBetsSummary] = await Promise.all([
     fetchJson<PolymarketWalletSkill[]>(
       apiUrl(apiBase, "/signals/polymarket-leaderboard?min_resolved=5&limit=10"),
       "polymarket leaderboard API",
@@ -38,9 +47,13 @@ async function getDashboardData(apiBase: string): Promise<{
       apiUrl(apiBase, "/signals/skilled-bets?min_skill=0.8&min_resolved=20&limit=50"),
       "skilled-bets API",
     ),
+    fetchJson<SkilledBetsSummary>(
+      apiUrl(apiBase, "/signals/skilled-bets/summary"),
+      "skilled-bets summary API",
+    ),
   ]);
 
-  return { polymarketLeaderboard, skilledBets };
+  return { polymarketLeaderboard, skilledBets, skilledBetsSummary };
 }
 
 function ErrorBanner({ errors }: { errors: string[] }) {
@@ -62,10 +75,11 @@ const usdFormatter = new Intl.NumberFormat("en-US", {
 
 export default async function Home() {
   const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8080";
-  const { polymarketLeaderboard, skilledBets } = await getDashboardData(apiBase);
+  const { polymarketLeaderboard, skilledBets, skilledBetsSummary } = await getDashboardData(apiBase);
   const polymarketLeaderboardRows = polymarketLeaderboard.data ?? [];
   const bets = skilledBets.data ?? [];
-  const errors = [polymarketLeaderboard.error, skilledBets.error].filter(
+  const summary = skilledBetsSummary.data;
+  const errors = [polymarketLeaderboard.error, skilledBets.error, skilledBetsSummary.error].filter(
     (error): error is string => Boolean(error),
   );
   const isLive = errors.length === 0;
@@ -106,15 +120,22 @@ export default async function Home() {
             Skilled wallet bets
           </h1>
           <p className="mt-1.5 max-w-2xl text-sm text-zinc-500">
-            Recent BUY entries from Polymarket wallets whose on-chain win rate beats
-            random at <span className="font-mono">≥80%</span> confidence over{" "}
-            <span className="font-mono">≥20</span> resolved bets — and that are
-            still holding the position. Each row links to the Polymarket event and
-            the wallet&apos;s on-chain history.
+            Recent BUY entries from Polymarket wallets with verified forecast edge
+            versus market-implied odds, positive economics, and complete rebuild
+            coverage. These are historically tailable accounts, not risk-free trades.
           </p>
         </div>
 
         <ErrorBanner errors={errors} />
+        {summary && summary.rebuilding > 0 && (
+          <div className="mb-6 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
+            <span className="text-sm font-semibold text-amber-800">Rebuild in progress: </span>
+            <span className="text-sm text-amber-700">
+              {summary.rebuilding} wallet{summary.rebuilding === 1 ? "" : "s"} remain quarantined
+              until historical coverage is complete.
+            </span>
+          </div>
+        )}
 
         <div className="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-3">
           <div className="rounded-lg border border-zinc-200 bg-white px-4 py-3">

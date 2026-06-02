@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import json
 import logging
+from collections import Counter
 from collections.abc import Iterator
 from dataclasses import dataclass
 from functools import lru_cache
@@ -35,6 +36,7 @@ from marketsignalos_api._paths import (
     polymarket_activity_path,
     polymarket_enrichment_path,
     polymarket_markets_path,
+    polymarket_position_snapshots_path,
     polymarket_positions_path,
 )
 
@@ -59,6 +61,22 @@ class SkilledBetSignal:
     win_rate: float
     edge_mean: float               # posterior edge in log-odds
     edge_lower_bound: float        # 5th-percentile lower bound (conservative)
+    forecast_skill_likelihood: float
+    forecast_edge_mean: float
+    forecast_edge_lower_bound: float
+    independent_settled_events: float
+    all_time_pnl_usdc: float
+    all_time_volume_usdc: float
+    all_time_roi: float
+    pnl_30d_usdc: float
+    active_pnl_usdc: float
+    max_drawdown_usdc: float
+    data_quality_status: str
+    data_quality_reasons: list[str]
+    economic_qualified: bool
+    tailability_status: str
+    tailability_reasons: list[str]
+    score_version: str
 
     # Market
     condition_id: str
@@ -80,6 +98,7 @@ class SkilledBetSignal:
     current_position_size: float
     current_position_value_usdc: float
     current_market_yes_price: float  # 0 if unknown
+    current_outcome_price: float
 
     # Deep links
     polymarket_profile_url: str
@@ -154,6 +173,19 @@ class _SkilledWallet:
     win_rate: float
     edge_mean: float
     edge_lower_bound: float
+    independent_settled_events: float
+    all_time_pnl_usdc: float
+    all_time_volume_usdc: float
+    all_time_roi: float
+    pnl_30d_usdc: float
+    active_pnl_usdc: float
+    max_drawdown_usdc: float
+    data_quality_status: str
+    data_quality_reasons: list[str]
+    economic_qualified: bool
+    tailability_status: str
+    tailability_reasons: list[str]
+    score_version: str
 
 
 @dataclass(slots=True)
@@ -167,6 +199,8 @@ class _HeldPosition:
     title: str
     size: float
     current_value_usdc: float
+    current_outcome_price: float
+    snapshot_id: str
     snapshot_at: str
 
 
@@ -187,7 +221,13 @@ def _load_skilled_wallets(
             continue
         skill = _f(row.get("skill_likelihood"))
         resolved = _i(row.get("resolved_trades"))
-        if skill < min_skill or resolved < min_resolved:
+        if (
+            str(row.get("score_version", "")) != "forecast-v2"
+            or str(row.get("data_quality_status", "untrusted")) != "trusted"
+            or str(row.get("tailability_status", "blocked")) != "tailable"
+            or skill < min_skill
+            or resolved < min_resolved
+        ):
             continue
         out[wallet] = _SkilledWallet(
             proxy_wallet=wallet,
@@ -197,6 +237,23 @@ def _load_skilled_wallets(
             win_rate=_f(row.get("win_rate")),
             edge_mean=_f(row.get("edge_mean")),
             edge_lower_bound=_f(row.get("edge_lower_bound")),
+            independent_settled_events=_f(row.get("independent_settled_events")),
+            all_time_pnl_usdc=_f(row.get("all_time_pnl_usdc")),
+            all_time_volume_usdc=_f(row.get("all_time_volume_usdc")),
+            all_time_roi=_f(row.get("all_time_roi")),
+            pnl_30d_usdc=_f(row.get("pnl_30d_usdc")),
+            active_pnl_usdc=_f(row.get("active_pnl_usdc")),
+            max_drawdown_usdc=_f(row.get("max_drawdown_usdc")),
+            data_quality_status=str(row.get("data_quality_status", "untrusted")),
+            data_quality_reasons=[
+                str(reason) for reason in (row.get("data_quality_reasons") or [])
+            ],
+            economic_qualified=bool(row.get("economic_qualified", False)),
+            tailability_status=str(row.get("tailability_status", "blocked")),
+            tailability_reasons=[
+                str(reason) for reason in (row.get("tailability_reasons") or [])
+            ],
+            score_version=str(row.get("score_version", "legacy")),
         )
     return out
 
@@ -209,10 +266,18 @@ def _load_held_positions(
     (wallet, condition, outcome). Drop anything with size <= 0 (no longer
     held) or where the wallet isn't in the skilled set.
     """
+    manifests = {
+        str(row.get("proxy_wallet", "")).lower(): str(row.get("snapshot_id", ""))
+        for row in _read_jsonl(polymarket_position_snapshots_path())
+        if row.get("complete") is True and row.get("snapshot_id")
+    }
     latest: dict[tuple[str, str, int], _HeldPosition] = {}
     for row in _read_jsonl(polymarket_positions_path()):
         wallet = str(row.get("proxy_wallet", "")).lower()
         if wallet not in skilled_wallets:
+            continue
+        snapshot_id = str(row.get("snapshot_id", ""))
+        if not snapshot_id or manifests.get(wallet) != snapshot_id:
             continue
         cond = str(row.get("condition_id", ""))
         if not cond:
@@ -229,6 +294,8 @@ def _load_held_positions(
             title=str(row.get("title", "")),
             size=_f(row.get("size")),
             current_value_usdc=_f(row.get("current_value_usdc")),
+            current_outcome_price=_f(row.get("current_outcome_price")),
+            snapshot_id=snapshot_id,
             snapshot_at=snap_at,
         )
         key = (wallet, cond, outcome_idx)
@@ -393,6 +460,7 @@ def _input_paths() -> tuple[Path, ...]:
     return (
         polymarket_enrichment_path(),
         polymarket_positions_path(),
+        polymarket_position_snapshots_path(),
         polymarket_markets_path(),
         polymarket_activity_path(),
         kalshi_markets_path(),
@@ -437,6 +505,31 @@ def invalidate_cache() -> None:
     fingerprint to change."""
     _compute_skilled_bets_cached.cache_clear()
     log.info("skilled_bets cache invalidated")
+
+
+def summarize_skilled_bets() -> dict[str, Any]:
+    """Research-facing trust and tailability counts for rebuild diagnostics."""
+    trusted = rebuilding = blocked = tailable = 0
+    reasons: Counter[str] = Counter()
+    for row in _read_jsonl(polymarket_enrichment_path()):
+        if str(row.get("data_quality_status", "untrusted")) == "trusted":
+            trusted += 1
+        else:
+            rebuilding += 1
+        if str(row.get("tailability_status", "blocked")) == "tailable":
+            tailable += 1
+        else:
+            blocked += 1
+            raw_reasons = row.get("tailability_reasons") or ["legacy or incomplete score"]
+            if isinstance(raw_reasons, list):
+                reasons.update(str(reason) for reason in raw_reasons)
+    return {
+        "trusted": trusted,
+        "rebuilding": rebuilding,
+        "blocked": blocked,
+        "tailable": tailable,
+        "blocked_reasons": dict(sorted(reasons.items())),
+    }
 
 
 # ── Public entry point ────────────────────────────────────────────────────────
@@ -503,6 +596,22 @@ def _compute_skilled_bets(
                 win_rate=round(wallet.win_rate, 4),
                 edge_mean=round(wallet.edge_mean, 4),
                 edge_lower_bound=round(wallet.edge_lower_bound, 4),
+                forecast_skill_likelihood=round(wallet.skill_likelihood, 6),
+                forecast_edge_mean=round(wallet.edge_mean, 4),
+                forecast_edge_lower_bound=round(wallet.edge_lower_bound, 4),
+                independent_settled_events=round(wallet.independent_settled_events, 4),
+                all_time_pnl_usdc=round(wallet.all_time_pnl_usdc, 2),
+                all_time_volume_usdc=round(wallet.all_time_volume_usdc, 2),
+                all_time_roi=round(wallet.all_time_roi, 8),
+                pnl_30d_usdc=round(wallet.pnl_30d_usdc, 2),
+                active_pnl_usdc=round(wallet.active_pnl_usdc, 2),
+                max_drawdown_usdc=round(wallet.max_drawdown_usdc, 2),
+                data_quality_status=wallet.data_quality_status,
+                data_quality_reasons=wallet.data_quality_reasons,
+                economic_qualified=wallet.economic_qualified,
+                tailability_status=wallet.tailability_status,
+                tailability_reasons=wallet.tailability_reasons,
+                score_version=wallet.score_version,
                 condition_id=pos.condition_id,
                 slug=pos.slug,
                 event_slug=pos.event_slug,
@@ -520,6 +629,7 @@ def _compute_skilled_bets(
                 current_market_yes_price=round(
                     market_rec.yes_price if market_rec else 0.0, 4
                 ),
+                current_outcome_price=round(pos.current_outcome_price, 4),
                 polymarket_profile_url=polymarket_profile_url(pos.proxy_wallet),
                 polymarket_market_url=polymarket_market_url(pos.event_slug),
                 kalshi_ticker=mirror.ticker if mirror else "",

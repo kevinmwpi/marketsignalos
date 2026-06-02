@@ -337,6 +337,21 @@ def _write_positions(path: Path, rows: list[PolymarketPosition]) -> None:
     with path.open("a", encoding="utf-8") as fh:
         for r in rows:
             fh.write(json.dumps(asdict(r), separators=(",", ":")) + "\n")
+    latest: dict[str, PolymarketPosition] = {}
+    for row in rows:
+        prior = latest.get(row.proxy_wallet)
+        if prior is None or row.snapshot_at > prior.snapshot_at:
+            latest[row.proxy_wallet] = row
+    manifests = path.with_name("polymarket_position_snapshots.jsonl")
+    with manifests.open("w", encoding="utf-8") as fh:
+        for row in latest.values():
+            fh.write(json.dumps({
+                "proxy_wallet": row.proxy_wallet,
+                "snapshot_id": row.snapshot_id,
+                "position_count": 1,
+                "complete": True,
+                "snapshot_at": row.snapshot_at,
+            }, separators=(",", ":")) + "\n")
 
 
 def _enrichment(
@@ -357,7 +372,8 @@ def _position(wallet: str, *, size: float, snapshot_at: str) -> PolymarketPositi
     return PolymarketPosition(
         proxy_wallet=wallet, condition_id="0xc", outcome_index=0, outcome="Yes",
         size=size, avg_price=0.5, current_value_usdc=size * 0.5,
-        slug="s", title="t", event_slug="e", snapshot_at=snapshot_at,
+        slug="s", title="t", event_slug="e", snapshot_id=snapshot_at,
+        snapshot_at=snapshot_at,
     )
 
 

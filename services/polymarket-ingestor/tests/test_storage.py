@@ -10,6 +10,8 @@ from marketsignalos_polymarket.models import (
     PolymarketLeaderboardEntry,
     PolymarketMarket,
     PolymarketPosition,
+    PolymarketPositionSnapshot,
+    PolymarketWalletHydration,
     PolymarketWalletValue,
 )
 from marketsignalos_polymarket.storage import (
@@ -25,6 +27,8 @@ from marketsignalos_polymarket.storage import (
     JsonlMarketLinkStore,
     JsonlMarketStore,
     JsonlPositionStore,
+    JsonlPositionSnapshotStore,
+    JsonlWalletHydrationStore,
     JsonlWalletValueStore,
     JsonWalletCheckpointStore,
 )
@@ -92,7 +96,7 @@ def test_activity_store_dedupes_on_tx_hash_condition_outcome(tmp_path: Path) -> 
     assert len(lines) == 2
 
 
-def test_market_store_dedupes_on_condition_plus_closed_status(tmp_path: Path) -> None:
+def test_market_store_refreshes_latest_state_by_condition(tmp_path: Path) -> None:
     store = JsonlMarketStore(tmp_path / "markets.jsonl")
     open_market = PolymarketMarket(
         gamma_id="1", condition_id="0xc", slug="s", question="q?", category="cat",
@@ -103,10 +107,12 @@ def test_market_store_dedupes_on_condition_plus_closed_status(tmp_path: Path) ->
     closed_market = replace(open_market, closed=True, active=False)
 
     assert store.write_markets([open_market]) == 1
-    # second call with same open record dedupes
-    assert store.write_markets([open_market]) == 0
-    # but the transition open->closed produces a new row
+    # Live records refresh even when closed status is unchanged.
+    assert store.write_markets([open_market]) == 1
     assert store.write_markets([closed_market]) == 1
+    lines = (tmp_path / "markets.jsonl").read_text(encoding="utf-8").strip().splitlines()
+    assert len(lines) == 1
+    assert json.loads(lines[0])["closed"] is True
 
 
 def test_position_store_appends_snapshots(tmp_path: Path) -> None:
@@ -120,6 +126,29 @@ def test_position_store_appends_snapshots(tmp_path: Path) -> None:
     assert store.write_positions([pos]) == 1
     lines = (tmp_path / "positions.jsonl").read_text(encoding="utf-8").strip().splitlines()
     assert len(lines) == 2
+
+
+def test_position_snapshot_store_replaces_wallet_manifest(tmp_path: Path) -> None:
+    path = tmp_path / "snapshots.jsonl"
+    store = JsonlPositionSnapshotStore(path)
+    store.write_position_snapshot(PolymarketPositionSnapshot(
+        proxy_wallet="0xabc", snapshot_id="old", position_count=2, complete=True,
+    ))
+    store.write_position_snapshot(PolymarketPositionSnapshot(
+        proxy_wallet="0xabc", snapshot_id="new", position_count=0, complete=True,
+    ))
+    rows = path.read_text(encoding="utf-8").strip().splitlines()
+    assert len(rows) == 1
+    assert json.loads(rows[0])["snapshot_id"] == "new"
+
+
+def test_wallet_hydration_store_round_trip(tmp_path: Path) -> None:
+    store = JsonlWalletHydrationStore(tmp_path / "hydration.jsonl")
+    state = PolymarketWalletHydration(
+        proxy_wallet="0xabc", activity_history_complete=True, metadata_coverage=1.0,
+    )
+    assert store.upsert_hydration([state]) == 1
+    assert store.load_hydration()["0xabc"].activity_history_complete is True
 
 
 def test_wallet_value_store(tmp_path: Path) -> None:

@@ -18,11 +18,14 @@ from marketsignalos_polymarket.runner import (
     _build_stores,
     _is_kalshi_parlay,
     _paginate_activity,
+    _paginate_activity_window,
+    _paginate_positions,
     parse_activity_row,
     parse_leaderboard_row,
     parse_market_row,
     parse_position_row,
     run_match_markets,
+    run_markets_backfill_from_activity,
     run_pipeline,
     run_wallets,
     seed_watchlist_from_leaderboard,
@@ -179,15 +182,12 @@ def test_paginate_activity_walks_until_empty_page() -> None:
         [],  # exhausted
     ]
     call_count = {"n": 0}
+    ends: list[str | None] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
-        expected_offset = call_count["n"] * 2
-        actual = request.url.params.get("offset")
-        # Client omits offset=0 from the query string; offsets > 0 are sent.
-        if expected_offset == 0:
-            assert actual is None
-        else:
-            assert actual == str(expected_offset)
+        if request.url.params.get("start") is not None:
+            return httpx.Response(200, json=[])
+        ends.append(request.url.params.get("end"))
         body = pages[call_count["n"]]
         call_count["n"] += 1
         return httpx.Response(200, json=body)
@@ -195,6 +195,7 @@ def test_paginate_activity_walks_until_empty_page() -> None:
     client = _client_with_handler(handler)
     result = _paginate_activity(client, "0xabc", page_size=2, max_pages=10, since_timestamp=None)
     assert [a.transaction_hash for a in result] == ["0xa", "0xb", "0xc"]
+    assert ends == [None, "998"]
     client.close()
 
 
@@ -208,6 +209,8 @@ def test_paginate_activity_stops_at_watermark() -> None:
     call_count = {"n": 0}
 
     def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.params.get("start") is not None:
+            return httpx.Response(200, json=[])
         if call_count["n"] >= len(pages):
             return httpx.Response(200, json=[])
         body = pages[call_count["n"]]
@@ -224,14 +227,116 @@ def test_paginate_activity_stops_at_watermark() -> None:
 
 def test_paginate_activity_respects_max_pages() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
-        # Always return a full page so the only stop condition is max_pages.
-        return httpx.Response(200, json=[_activity_row(ts=1000, tx="0xa"),
-                                         _activity_row(ts=999, tx="0xb")])
+        if request.url.params.get("start") is not None:
+            return httpx.Response(200, json=[])
+        end = int(request.url.params.get("end") or 1000)
+        return httpx.Response(200, json=[
+            _activity_row(ts=end, tx=f"0x{end}"),
+            _activity_row(ts=end - 1, tx=f"0x{end - 1}"),
+        ])
 
     client = _client_with_handler(handler)
     result = _paginate_activity(client, "0xabc", page_size=2, max_pages=3, since_timestamp=None)
     assert len(result) == 6  # 3 pages × 2 rows
     client.close()
+
+
+def test_paginate_activity_exhausts_same_second_boundary() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        start = request.url.params.get("start")
+        end = request.url.params.get("end")
+        offset = int(request.url.params.get("offset") or 0)
+        if start == "999" and end == "999":
+            if offset == 0:
+                return httpx.Response(200, json=[
+                    _activity_row(ts=999, tx="0xb"),
+                    _activity_row(ts=999, tx="0xc"),
+                ])
+            return httpx.Response(200, json=[_activity_row(ts=999, tx="0xd")])
+        if end == "998":
+            return httpx.Response(200, json=[])
+        return httpx.Response(200, json=[
+            _activity_row(ts=1000, tx="0xa"),
+            _activity_row(ts=999, tx="0xb"),
+        ])
+
+    client = _client_with_handler(handler)
+    result = _paginate_activity_window(
+        client, "0xabc", page_size=2, max_pages=5, since_timestamp=None
+    )
+    client.close()
+    assert result.boundary_complete is True
+    assert result.exhausted is True
+    assert {event.transaction_hash for event in result.events} == {"0xa", "0xb", "0xc", "0xd"}
+
+
+def test_paginate_activity_resumes_from_oldest_timestamp_cursor() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.params.get("start") is not None:
+            return httpx.Response(200, json=[])
+        end = int(request.url.params.get("end") or 5)
+        return httpx.Response(200, json=[
+            _activity_row(ts=end, tx=f"0x{end}"),
+            _activity_row(ts=end - 1, tx=f"0x{end - 1}"),
+        ])
+
+    client = _client_with_handler(handler)
+    first = _paginate_activity_window(
+        client, "0xabc", page_size=2, max_pages=1, since_timestamp=None
+    )
+    second = _paginate_activity_window(
+        client,
+        "0xabc",
+        page_size=2,
+        max_pages=1,
+        since_timestamp=None,
+        end_timestamp=(first.oldest_timestamp or 0) - 1,
+    )
+    client.close()
+    assert {event.timestamp for event in first.events} == {5, 4}
+    assert {event.timestamp for event in second.events} == {3, 2}
+
+
+def test_paginate_positions_walks_beyond_first_page() -> None:
+    offsets: list[str | None] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        offsets.append(request.url.params.get("offset"))
+        offset = int(request.url.params.get("offset") or 0)
+        count = 500 if offset == 0 else 1
+        return httpx.Response(200, json=[
+            {"conditionId": f"0x{offset + i}", "outcomeIndex": 0}
+            for i in range(count)
+        ])
+
+    client = _client_with_handler(handler)
+    rows = _paginate_positions(client, "0xabc")
+    client.close()
+    assert len(rows) == 501
+    assert offsets == [None, "500"]
+
+
+def test_markets_backfill_fetches_closed_and_active_metadata(tmp_path: Path) -> None:
+    closed_values: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        closed = request.url.params.get("closed")
+        closed_values.append(str(closed))
+        if closed == "true":
+            return httpx.Response(200, json=[{
+                "id": "1", "conditionId": "0xc", "slug": "settled", "question": "?",
+                "outcomes": '["Yes", "No"]', "outcomePrices": '["1", "0"]',
+                "closed": True, "active": False,
+            }])
+        return httpx.Response(200, json=[])
+
+    stores = _build_stores(tmp_path)
+    stores.activity.write_activity([parse_activity_row(_activity_row(1000, "0xa"))])
+    client = _client_with_handler(handler)
+    written = run_markets_backfill_from_activity(client, stores)
+    client.close()
+    assert written == 1
+    assert closed_values == ["true", "false"]
 
 
 def test_run_wallets_advances_checkpoint(tmp_path: Path) -> None:

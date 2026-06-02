@@ -5,7 +5,7 @@ from dataclasses import asdict
 from fastapi import APIRouter, Query
 from pydantic import BaseModel
 
-from marketsignalos_api.services.skilled_bets import compute_skilled_bets
+from marketsignalos_api.services.skilled_bets import compute_skilled_bets, summarize_skilled_bets
 
 
 router = APIRouter(prefix="/signals", tags=["signals"])
@@ -19,6 +19,22 @@ class SkilledBetOut(BaseModel):
     win_rate: float
     edge_mean: float
     edge_lower_bound: float
+    forecast_skill_likelihood: float
+    forecast_edge_mean: float
+    forecast_edge_lower_bound: float
+    independent_settled_events: float
+    all_time_pnl_usdc: float
+    all_time_volume_usdc: float
+    all_time_roi: float
+    pnl_30d_usdc: float
+    active_pnl_usdc: float
+    max_drawdown_usdc: float
+    data_quality_status: str
+    data_quality_reasons: list[str]
+    economic_qualified: bool
+    tailability_status: str
+    tailability_reasons: list[str]
+    score_version: str
 
     condition_id: str
     slug: str
@@ -37,6 +53,7 @@ class SkilledBetOut(BaseModel):
     current_position_size: float
     current_position_value_usdc: float
     current_market_yes_price: float
+    current_outcome_price: float
 
     polymarket_profile_url: str
     polymarket_market_url: str
@@ -72,3 +89,9 @@ def skilled_bets(
         min_position_value_usdc=min_position_value_usdc,
     )
     return [SkilledBetOut(**asdict(s)) for s in signals[:limit]]
+
+
+@router.get("/skilled-bets/summary")
+def skilled_bets_summary() -> dict[str, object]:
+    """Trust-state summary used by the dashboard rebuild banner."""
+    return summarize_skilled_bets()

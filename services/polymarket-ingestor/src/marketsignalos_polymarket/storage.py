@@ -19,15 +19,18 @@ from __future__ import annotations
 import json
 from dataclasses import asdict
 from pathlib import Path
-from typing import Protocol
+from typing import Any, Protocol
 
 from .models import (
     MarketLink,
     PolymarketActivity,
+    PolymarketClosedPosition,
     PolymarketLeaderboardEntry,
     PolymarketMarket,
     PolymarketPosition,
+    PolymarketPositionSnapshot,
     PolymarketWalletEnrichment,
+    PolymarketWalletHydration,
     PolymarketWalletValue,
 )
 
@@ -44,6 +47,19 @@ class ActivityStore(Protocol):
 
 class PositionStore(Protocol):
     def write_positions(self, positions: list[PolymarketPosition]) -> int: ...
+
+
+class PositionSnapshotStore(Protocol):
+    def write_position_snapshot(self, snapshot: PolymarketPositionSnapshot) -> int: ...
+
+
+class ClosedPositionStore(Protocol):
+    def write_closed_positions(self, positions: list[PolymarketClosedPosition]) -> int: ...
+
+
+class WalletHydrationStore(Protocol):
+    def load_hydration(self) -> dict[str, PolymarketWalletHydration]: ...
+    def upsert_hydration(self, rows: list[PolymarketWalletHydration]) -> int: ...
 
 
 class MarketStore(Protocol):
@@ -145,6 +161,102 @@ class JsonlPositionStore:
         return len(positions)
 
 
+def _read_jsonl_rows(path: Path) -> list[dict[str, Any]]:
+    if not path.exists():
+        return []
+    rows: list[dict[str, Any]] = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        try:
+            raw = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(raw, dict):
+            rows.append(raw)
+    return rows
+
+
+def _atomic_write_rows(path: Path, rows: list[Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    with tmp.open("w", encoding="utf-8") as fh:
+        for row in rows:
+            fh.write(json.dumps(asdict(row), separators=(",", ":")) + "\n")
+    tmp.replace(path)
+
+
+class JsonlPositionSnapshotStore:
+    """Latest complete snapshot manifest per wallet."""
+
+    def __init__(self, path: Path) -> None:
+        self._path = path
+        self._path.parent.mkdir(parents=True, exist_ok=True)
+
+    def write_position_snapshot(self, snapshot: PolymarketPositionSnapshot) -> int:
+        rows: dict[str, PolymarketPositionSnapshot] = {}
+        for raw in _read_jsonl_rows(self._path):
+            try:
+                current = PolymarketPositionSnapshot(**raw)
+                rows[current.proxy_wallet.lower()] = current
+            except TypeError:
+                continue
+        rows[snapshot.proxy_wallet.lower()] = snapshot
+        _atomic_write_rows(self._path, [rows[key] for key in sorted(rows)])
+        return 1
+
+
+class JsonlClosedPositionStore:
+    """Latest audited /closed-positions row per wallet leg."""
+
+    def __init__(self, path: Path) -> None:
+        self._path = path
+        self._path.parent.mkdir(parents=True, exist_ok=True)
+
+    def write_closed_positions(self, positions: list[PolymarketClosedPosition]) -> int:
+        if not positions:
+            return 0
+        rows: dict[tuple[str, str, int], PolymarketClosedPosition] = {}
+        for raw in _read_jsonl_rows(self._path):
+            try:
+                current = PolymarketClosedPosition(**raw)
+                key = (
+                    current.proxy_wallet.lower(),
+                    current.condition_id,
+                    current.outcome_index,
+                )
+                rows[key] = current
+            except TypeError:
+                continue
+        for pos in positions:
+            rows[(pos.proxy_wallet.lower(), pos.condition_id, pos.outcome_index)] = pos
+        _atomic_write_rows(self._path, [rows[key] for key in sorted(rows)])
+        return len(positions)
+
+
+class JsonlWalletHydrationStore:
+    """Atomic latest hydration state keyed by wallet."""
+
+    def __init__(self, path: Path) -> None:
+        self._path = path
+        self._path.parent.mkdir(parents=True, exist_ok=True)
+
+    def load_hydration(self) -> dict[str, PolymarketWalletHydration]:
+        rows: dict[str, PolymarketWalletHydration] = {}
+        for raw in _read_jsonl_rows(self._path):
+            try:
+                item = PolymarketWalletHydration(**raw)
+            except TypeError:
+                continue
+            rows[item.proxy_wallet.lower()] = item
+        return rows
+
+    def upsert_hydration(self, rows: list[PolymarketWalletHydration]) -> int:
+        merged = self.load_hydration()
+        for row in rows:
+            merged[row.proxy_wallet.lower()] = row
+        _atomic_write_rows(self._path, [merged[key] for key in sorted(merged)])
+        return len(rows)
+
+
 class JsonlMarketStore:
     """Append + dedupe on condition_id. Closed-market re-fetches overwrite by adding
     a new row; downstream readers should keep the most recent fetched_at."""
@@ -152,25 +264,23 @@ class JsonlMarketStore:
     def __init__(self, path: Path) -> None:
         self._path = path
         self._path.parent.mkdir(parents=True, exist_ok=True)
-        self._index_path = path.with_suffix(path.suffix + ".index.json")
 
     def write_markets(self, markets: list[PolymarketMarket]) -> int:
         if not markets:
             return 0
         # We DO want to refresh closed/active status, so dedupe is by
         # (condition_id, closed_bool) — lets us record the transition.
-        index = _read_index(self._index_path)
-        written = 0
-        with self._path.open("a", encoding="utf-8") as fh:
-            for market in markets:
-                key = f"{market.condition_id}:{market.closed}"
-                if key in index:
-                    continue
-                index.add(key)
-                fh.write(json.dumps(asdict(market), separators=(",", ":")) + "\n")
-                written += 1
-        _write_index(self._index_path, index)
-        return written
+        latest: dict[str, PolymarketMarket] = {}
+        for raw in _read_jsonl_rows(self._path):
+            try:
+                current = PolymarketMarket(**raw)
+                latest[current.condition_id] = current
+            except TypeError:
+                continue
+        for market in markets:
+            latest[market.condition_id] = market
+        _atomic_write_rows(self._path, [latest[key] for key in sorted(latest)])
+        return len(markets)
 
 
 class JsonlWalletValueStore:
@@ -395,16 +505,18 @@ class PostgresPositionStore:
                     """
                     INSERT INTO polymarket_positions
                         (proxy_wallet, condition_id, outcome_index, outcome,
-                         size, avg_price, current_value_usdc,
-                         slug, title, event_slug, snapshot_at)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::timestamptz)
+                         size, avg_price, current_value_usdc, current_outcome_price,
+                         cash_pnl_usdc, slug, title, event_slug, snapshot_id, snapshot_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                            %s::timestamptz)
                     ON CONFLICT (proxy_wallet, condition_id, outcome_index, snapshot_at)
                         DO NOTHING
                     """,
                     [
                         (p.proxy_wallet, p.condition_id, p.outcome_index, p.outcome,
                          p.size, p.avg_price, p.current_value_usdc,
-                         p.slug, p.title, p.event_slug, p.snapshot_at)
+                         p.current_outcome_price, p.cash_pnl_usdc,
+                         p.slug, p.title, p.event_slug, p.snapshot_id, p.snapshot_at)
                         for p in positions
                     ],
                 )
@@ -415,6 +527,157 @@ class PostgresPositionStore:
         finally:
             conn.close()
         return len(positions)
+
+
+class PostgresPositionSnapshotStore:
+    def __init__(self, database_url: str) -> None:
+        self._dsn = database_url
+
+    def write_position_snapshot(self, snapshot: PolymarketPositionSnapshot) -> int:
+        conn = _pg_connect(self._dsn)
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO polymarket_position_snapshots
+                        (proxy_wallet, snapshot_id, position_count, complete, snapshot_at)
+                    VALUES (%s, %s, %s, %s, %s::timestamptz)
+                    ON CONFLICT (proxy_wallet) DO UPDATE SET
+                        snapshot_id = EXCLUDED.snapshot_id,
+                        position_count = EXCLUDED.position_count,
+                        complete = EXCLUDED.complete,
+                        snapshot_at = EXCLUDED.snapshot_at
+                    """,
+                    (
+                        snapshot.proxy_wallet, snapshot.snapshot_id,
+                        snapshot.position_count, snapshot.complete, snapshot.snapshot_at,
+                    ),
+                )
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+        return 1
+
+
+class PostgresClosedPositionStore:
+    def __init__(self, database_url: str) -> None:
+        self._dsn = database_url
+
+    def write_closed_positions(self, positions: list[PolymarketClosedPosition]) -> int:
+        if not positions:
+            return 0
+        conn = _pg_connect(self._dsn)
+        try:
+            with conn.cursor() as cur:
+                cur.executemany(
+                    """
+                    INSERT INTO polymarket_closed_positions
+                        (proxy_wallet, condition_id, outcome_index, outcome, size,
+                         avg_price, realized_pnl_usdc, current_outcome_price,
+                         slug, title, event_slug, fetched_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::timestamptz)
+                    ON CONFLICT (proxy_wallet, condition_id, outcome_index) DO UPDATE SET
+                        outcome = EXCLUDED.outcome,
+                        size = EXCLUDED.size,
+                        avg_price = EXCLUDED.avg_price,
+                        realized_pnl_usdc = EXCLUDED.realized_pnl_usdc,
+                        current_outcome_price = EXCLUDED.current_outcome_price,
+                        slug = EXCLUDED.slug,
+                        title = EXCLUDED.title,
+                        event_slug = EXCLUDED.event_slug,
+                        fetched_at = EXCLUDED.fetched_at
+                    """,
+                    [
+                        (
+                            p.proxy_wallet, p.condition_id, p.outcome_index, p.outcome,
+                            p.size, p.avg_price, p.realized_pnl_usdc,
+                            p.current_outcome_price, p.slug, p.title, p.event_slug,
+                            p.fetched_at,
+                        )
+                        for p in positions
+                    ],
+                )
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+        return len(positions)
+
+
+class PostgresWalletHydrationStore:
+    def __init__(self, database_url: str) -> None:
+        self._dsn = database_url
+
+    def load_hydration(self) -> dict[str, PolymarketWalletHydration]:
+        return {}
+
+    def upsert_hydration(self, rows: list[PolymarketWalletHydration]) -> int:
+        if not rows:
+            return 0
+        conn = _pg_connect(self._dsn)
+        try:
+            with conn.cursor() as cur:
+                cur.executemany(
+                    """
+                    INSERT INTO polymarket_wallet_hydration
+                        (proxy_wallet, newest_activity_timestamp,
+                         oldest_activity_cursor_timestamp, activity_history_complete,
+                         positions_complete, closed_positions_complete,
+                         economic_all_time_complete, economic_month_complete,
+                         metadata_condition_count, metadata_covered_count,
+                         metadata_coverage, all_time_pnl_usdc, all_time_volume_usdc,
+                         pnl_30d_usdc, active_pnl_usdc, max_drawdown_usdc,
+                         latest_position_snapshot_id, last_refreshed_at, errors)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                            %s, %s, %s, %s, %s::timestamptz, %s::jsonb)
+                    ON CONFLICT (proxy_wallet) DO UPDATE SET
+                        newest_activity_timestamp = EXCLUDED.newest_activity_timestamp,
+                        oldest_activity_cursor_timestamp = EXCLUDED.oldest_activity_cursor_timestamp,
+                        activity_history_complete = EXCLUDED.activity_history_complete,
+                        positions_complete = EXCLUDED.positions_complete,
+                        closed_positions_complete = EXCLUDED.closed_positions_complete,
+                        economic_all_time_complete = EXCLUDED.economic_all_time_complete,
+                        economic_month_complete = EXCLUDED.economic_month_complete,
+                        metadata_condition_count = EXCLUDED.metadata_condition_count,
+                        metadata_covered_count = EXCLUDED.metadata_covered_count,
+                        metadata_coverage = EXCLUDED.metadata_coverage,
+                        all_time_pnl_usdc = EXCLUDED.all_time_pnl_usdc,
+                        all_time_volume_usdc = EXCLUDED.all_time_volume_usdc,
+                        pnl_30d_usdc = EXCLUDED.pnl_30d_usdc,
+                        active_pnl_usdc = EXCLUDED.active_pnl_usdc,
+                        max_drawdown_usdc = EXCLUDED.max_drawdown_usdc,
+                        latest_position_snapshot_id = EXCLUDED.latest_position_snapshot_id,
+                        last_refreshed_at = EXCLUDED.last_refreshed_at,
+                        errors = EXCLUDED.errors
+                    """,
+                    [
+                        (
+                            r.proxy_wallet, r.newest_activity_timestamp,
+                            r.oldest_activity_cursor_timestamp,
+                            r.activity_history_complete, r.positions_complete,
+                            r.closed_positions_complete, r.economic_all_time_complete,
+                            r.economic_month_complete, r.metadata_condition_count,
+                            r.metadata_covered_count, r.metadata_coverage,
+                            r.all_time_pnl_usdc, r.all_time_volume_usdc,
+                            r.pnl_30d_usdc, r.active_pnl_usdc, r.max_drawdown_usdc,
+                            r.latest_position_snapshot_id, r.last_refreshed_at,
+                            json.dumps(r.errors),
+                        )
+                        for r in rows
+                    ],
+                )
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+        return len(rows)
 
 
 class PostgresMarketStore:
@@ -521,10 +784,20 @@ class PostgresEnrichmentStore:
                          edge_mean, edge_lower_bound, effective_sample_size,
                          resolved_volume_usdc, rank_score,
                          total_volume_usdc, total_pnl_usdc, avg_position_size_usdc,
-                         trade_count, last_activity_at, computed_at)
+                         trade_count, last_activity_at,
+                         forecast_skill_likelihood, forecast_edge_mean,
+                         forecast_edge_lower_bound, independent_settled_events,
+                         all_time_pnl_usdc, all_time_volume_usdc, all_time_roi,
+                         pnl_30d_usdc, active_pnl_usdc, max_drawdown_usdc,
+                         data_quality_status, data_quality_reasons,
+                         economic_qualified, tailability_status,
+                         tailability_reasons, score_version, computed_at)
                     VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s,
                             %s, %s, %s, %s, %s,
-                            %s, %s, %s, %s, %s, %s::timestamptz)
+                            %s, %s, %s, %s, %s,
+                            %s, %s, %s, %s,
+                            %s, %s, %s, %s, %s, %s,
+                            %s, %s::jsonb, %s, %s, %s::jsonb, %s, %s::timestamptz)
                     ON CONFLICT (proxy_wallet) DO UPDATE SET
                         name                   = EXCLUDED.name,
                         pseudonym              = EXCLUDED.pseudonym,
@@ -544,6 +817,22 @@ class PostgresEnrichmentStore:
                         avg_position_size_usdc = EXCLUDED.avg_position_size_usdc,
                         trade_count            = EXCLUDED.trade_count,
                         last_activity_at       = EXCLUDED.last_activity_at,
+                        forecast_skill_likelihood = EXCLUDED.forecast_skill_likelihood,
+                        forecast_edge_mean = EXCLUDED.forecast_edge_mean,
+                        forecast_edge_lower_bound = EXCLUDED.forecast_edge_lower_bound,
+                        independent_settled_events = EXCLUDED.independent_settled_events,
+                        all_time_pnl_usdc = EXCLUDED.all_time_pnl_usdc,
+                        all_time_volume_usdc = EXCLUDED.all_time_volume_usdc,
+                        all_time_roi = EXCLUDED.all_time_roi,
+                        pnl_30d_usdc = EXCLUDED.pnl_30d_usdc,
+                        active_pnl_usdc = EXCLUDED.active_pnl_usdc,
+                        max_drawdown_usdc = EXCLUDED.max_drawdown_usdc,
+                        data_quality_status = EXCLUDED.data_quality_status,
+                        data_quality_reasons = EXCLUDED.data_quality_reasons,
+                        economic_qualified = EXCLUDED.economic_qualified,
+                        tailability_status = EXCLUDED.tailability_status,
+                        tailability_reasons = EXCLUDED.tailability_reasons,
+                        score_version = EXCLUDED.score_version,
                         computed_at            = EXCLUDED.computed_at
                     """,
                     [
@@ -554,7 +843,14 @@ class PostgresEnrichmentStore:
                          e.resolved_volume_usdc, e.rank_score,
                          e.total_volume_usdc,
                          e.total_pnl_usdc, e.avg_position_size_usdc,
-                         e.trade_count, e.last_activity_at, e.computed_at)
+                         e.trade_count, e.last_activity_at,
+                         e.forecast_skill_likelihood, e.forecast_edge_mean,
+                         e.forecast_edge_lower_bound, e.independent_settled_events,
+                         e.all_time_pnl_usdc, e.all_time_volume_usdc, e.all_time_roi,
+                         e.pnl_30d_usdc, e.active_pnl_usdc, e.max_drawdown_usdc,
+                         e.data_quality_status, json.dumps(e.data_quality_reasons),
+                         e.economic_qualified, e.tailability_status,
+                         json.dumps(e.tailability_reasons), e.score_version, e.computed_at)
                         for e in enrichments
                     ],
                 )
@@ -757,6 +1053,48 @@ class DualPositionStore:
     def write_positions(self, positions: list[PolymarketPosition]) -> int:
         written = self._primary.write_positions(positions)
         self._secondary.write_positions(positions)
+        return written
+
+
+class DualPositionSnapshotStore:
+    def __init__(
+        self, primary: PositionSnapshotStore, secondary: PositionSnapshotStore
+    ) -> None:
+        self._primary = primary
+        self._secondary = secondary
+
+    def write_position_snapshot(self, snapshot: PolymarketPositionSnapshot) -> int:
+        written = self._primary.write_position_snapshot(snapshot)
+        self._secondary.write_position_snapshot(snapshot)
+        return written
+
+
+class DualClosedPositionStore:
+    def __init__(
+        self, primary: ClosedPositionStore, secondary: ClosedPositionStore
+    ) -> None:
+        self._primary = primary
+        self._secondary = secondary
+
+    def write_closed_positions(self, positions: list[PolymarketClosedPosition]) -> int:
+        written = self._primary.write_closed_positions(positions)
+        self._secondary.write_closed_positions(positions)
+        return written
+
+
+class DualWalletHydrationStore:
+    def __init__(
+        self, primary: WalletHydrationStore, secondary: WalletHydrationStore
+    ) -> None:
+        self._primary = primary
+        self._secondary = secondary
+
+    def load_hydration(self) -> dict[str, PolymarketWalletHydration]:
+        return self._primary.load_hydration()
+
+    def upsert_hydration(self, rows: list[PolymarketWalletHydration]) -> int:
+        written = self._primary.upsert_hydration(rows)
+        self._secondary.upsert_hydration(rows)
         return written
 
 

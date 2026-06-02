@@ -138,6 +138,47 @@ def test_get_wallet_activity_passes_user_param() -> None:
     client.close()
 
 
+def test_get_wallet_activity_passes_timestamp_window() -> None:
+    captured: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["params"] = dict(request.url.params)
+        return httpx.Response(200, json=[])
+
+    client = _client_with_mock(handler)
+    client.get_wallet_activity("0xabc", limit=500, offset=50, start=100, end=200)
+    client.close()
+    assert captured["params"] == {
+        "user": "0xabc", "limit": "500", "offset": "50", "start": "100", "end": "200",
+    }
+
+
+def test_get_wallet_positions_passes_pagination_params() -> None:
+    captured: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["params"] = dict(request.url.params)
+        return httpx.Response(200, json=[])
+
+    client = _client_with_mock(handler)
+    client.get_wallet_positions("0xabc", limit=500, offset=500)
+    client.close()
+    assert captured["params"] == {"user": "0xabc", "limit": "500", "offset": "500"}
+
+
+def test_get_markets_by_condition_ids_passes_explicit_closed_filter() -> None:
+    captured: list[dict[str, str]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured.append(dict(request.url.params))
+        return httpx.Response(200, json=[])
+
+    client = _client_with_mock(handler)
+    client.get_markets_by_condition_ids(["0xa", "0xb"], closed=True)
+    client.close()
+    assert captured[0]["closed"] == "true"
+
+
 def test_get_wallet_value_unwraps_single_element_list() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json=[{"user": "0xabc", "value": 1234.5}])

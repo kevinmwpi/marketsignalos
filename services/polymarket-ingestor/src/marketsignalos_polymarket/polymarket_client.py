@@ -23,6 +23,7 @@ import httpx
 LB_API = "https://lb-api.polymarket.com"
 DATA_API = "https://data-api.polymarket.com"
 GAMMA_API = "https://gamma-api.polymarket.com"
+USER_PNL_API = "https://user-pnl-api.polymarket.com"
 GOLDSKY_SUBGRAPH = (
     "https://api.goldsky.com/api/public/project_cl6mb8i9h0003e201j6li0diw/"
     "subgraphs/polymarket-orderbook-resync/prod/gn"
@@ -129,6 +130,7 @@ class PolymarketClient:
         order_by: str = "PNL",
         limit: int = 50,
         offset: int = 0,
+        user: str | None = None,
     ) -> list[dict[str, Any]]:
         """One slice of the official categorized leaderboard.
 
@@ -156,6 +158,8 @@ class PolymarketClient:
         }
         if offset:
             params["offset"] = offset
+        if user:
+            params["user"] = user
         payload = self._get_json(f"{DATA_API}/v1/leaderboard", params=params)
         if isinstance(payload, list):
             rows = payload
@@ -255,20 +259,67 @@ class PolymarketClient:
         *,
         limit: int = 500,
         offset: int = 0,
+        start: int | None = None,
+        end: int | None = None,
     ) -> list[dict[str, Any]]:
         """All trades + redemptions for a wallet, oldest-to-newest within a page."""
         params: dict[str, Any] = {"user": address, "limit": limit}
         if offset:
             params["offset"] = offset
+        if start is not None:
+            params["start"] = start
+        if end is not None:
+            params["end"] = end
         payload = self._get_json(f"{DATA_API}/activity", params=params)
         if not isinstance(payload, list):
             raise ValueError(f"Expected list, got {type(payload).__name__}")
         return cast(list[dict[str, Any]], payload)
 
-    def get_wallet_positions(self, address: str) -> list[dict[str, Any]]:
+    def get_wallet_positions(
+        self, address: str, *, limit: int = 500, offset: int = 0
+    ) -> list[dict[str, Any]]:
         """Currently-open positions for a wallet."""
-        params = {"user": address}
+        params: dict[str, Any] = {"user": address, "limit": limit}
+        if offset:
+            params["offset"] = offset
         payload = self._get_json(f"{DATA_API}/positions", params=params)
+        if not isinstance(payload, list):
+            raise ValueError(f"Expected list, got {type(payload).__name__}")
+        return cast(list[dict[str, Any]], payload)
+
+    def get_wallet_closed_positions(
+        self, address: str, *, limit: int = 50, offset: int = 0
+    ) -> list[dict[str, Any]]:
+        """Closed or exited positions for audit and realized-performance summaries."""
+        params: dict[str, Any] = {"user": address, "limit": limit}
+        if offset:
+            params["offset"] = offset
+        payload = self._get_json(f"{DATA_API}/closed-positions", params=params)
+        if not isinstance(payload, list):
+            raise ValueError(f"Expected list, got {type(payload).__name__}")
+        return cast(list[dict[str, Any]], payload)
+
+    def get_wallet_economic_summary(
+        self, address: str, *, time_period: str
+    ) -> dict[str, Any]:
+        """Official PnL and volume summary for one wallet."""
+        rows = self.get_trader_leaderboard_rankings(
+            category="OVERALL",
+            time_period=time_period,
+            order_by="VOL",
+            limit=1,
+            user=address,
+        )
+        return rows[0] if rows else {}
+
+    def get_wallet_pnl_history(
+        self, address: str, *, interval: str = "all", fidelity: str = "1d"
+    ) -> list[dict[str, Any]]:
+        """Best-effort wallet PnL time series used for drawdown diagnostics."""
+        payload = self._get_json(
+            f"{USER_PNL_API}/user-pnl",
+            params={"user_address": address, "interval": interval, "fidelity": fidelity},
+        )
         if not isinstance(payload, list):
             raise ValueError(f"Expected list, got {type(payload).__name__}")
         return cast(list[dict[str, Any]], payload)
@@ -317,13 +368,21 @@ class PolymarketClient:
         return cast(list[dict[str, Any]], payload)
 
     def get_markets_by_condition_ids(
-        self, condition_ids: list[str], *, batch_size: int = 25
+        self,
+        condition_ids: list[str],
+        *,
+        batch_size: int = 25,
+        closed: bool | None = None,
     ) -> list[dict[str, Any]]:
         """Targeted lookup. Batches because URLs can get long."""
         out: list[dict[str, Any]] = []
         for i in range(0, len(condition_ids), batch_size):
             batch = condition_ids[i : i + batch_size]
-            out.extend(self.get_markets(condition_ids=batch, limit=batch_size))
+            out.extend(
+                self.get_markets(
+                    condition_ids=batch, limit=batch_size, closed=closed
+                )
+            )
         return out
 
     # ── Internals ─────────────────────────────────────────────────────────────

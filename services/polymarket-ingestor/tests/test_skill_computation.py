@@ -14,8 +14,10 @@ from marketsignalos_polymarket.models import (
     PolymarketActivity,
     PolymarketLeaderboardEntry,
     PolymarketMarket,
+    PolymarketWalletHydration,
 )
 from marketsignalos_polymarket.skill_computation import (
+    _apply_event_weights,
     _market_winning_outcome,
     compute_all_enrichment,
     compute_wallet_enrichment,
@@ -187,14 +189,26 @@ def test_ess_all_unique_events_is_n() -> None:
 
 
 def test_ess_repeated_event_discounts() -> None:
-    bets = [Bet(entry_price=0.5, won=True, event_slug="same-event") for _ in range(5)]
-    # 1 unique event + 4 repeats * 0.5 = 3.
-    assert effective_sample_size(bets) == 3.0
+    bets = [
+        Bet(entry_price=0.5, won=True, event_slug="same-event", weight=0.2)
+        for _ in range(5)
+    ]
+    assert effective_sample_size(bets) == 1.0
 
 
 def test_ess_falls_back_when_event_slugs_missing() -> None:
     bets = [Bet(entry_price=0.5, won=True, event_slug="") for _ in range(5)]
     assert effective_sample_size(bets) == 5.0
+
+
+def test_event_weighting_caps_event_and_allocates_by_capital() -> None:
+    bets = [
+        Bet(entry_price=0.5, won=True, event_slug="world-cup", cost_usdc=90.0),
+        Bet(entry_price=0.5, won=False, event_slug="world-cup", cost_usdc=10.0),
+    ]
+    weighted = _apply_event_weights(bets)
+    assert [bet.weight for bet in weighted] == [0.9, 0.1]
+    assert effective_sample_size(weighted) == 1.0
 
 
 # ── rank_score ───────────────────────────────────────────────────────────────
@@ -226,6 +240,30 @@ def test_open_market_has_no_winner() -> None:
         last_trade_price=None, best_bid=None, best_ask=None,
     )
     assert _market_winning_outcome(open_market) is None
+
+
+def test_live_99_cent_market_has_no_winner() -> None:
+    market = PolymarketMarket(
+        gamma_id="x", condition_id="0xworld-cup", slug="", question="",
+        category="", end_date="", outcomes=["Yes", "No"],
+        outcome_prices=[0.001, 0.999],
+        volume_usdc=0, liquidity_usdc=0, closed=False, active=True,
+        last_trade_price=0.999, best_bid=None, best_ask=None,
+    )
+    assert _market_winning_outcome(market) is None
+
+
+def test_ambiguous_closed_market_has_no_winner() -> None:
+    market = _market("0xc", closed=True, winning_outcome=0)
+    market = PolymarketMarket(
+        gamma_id=market.gamma_id, condition_id=market.condition_id,
+        slug=market.slug, question=market.question, category=market.category,
+        end_date=market.end_date, outcomes=market.outcomes,
+        outcome_prices=[0.999, 0.999], volume_usdc=market.volume_usdc,
+        liquidity_usdc=market.liquidity_usdc, closed=True, active=False,
+        last_trade_price=None, best_bid=None, best_ask=None,
+    )
+    assert _market_winning_outcome(market) is None
 
 
 def test_canceled_market_returns_none() -> None:
@@ -395,6 +433,74 @@ def test_favorites_only_wallet_has_near_zero_edge() -> None:
 
 
 # ── compute_all_enrichment ────────────────────────────────────────────────────
+
+def test_many_legs_in_one_event_contribute_one_independent_vote() -> None:
+    activity = [
+        _trade(
+            f"0xc{i}", outcome=0, side="BUY", size=10, price=0.5,
+            ts=i, event_slug="one-event",
+        )
+        for i in range(8)
+    ]
+    markets = {
+        f"0xc{i}": _market(f"0xc{i}", closed=True, winning_outcome=0)
+        for i in range(8)
+    }
+    enrichment = compute_wallet_enrichment(
+        "0xabc", activity=activity, markets_by_condition=markets
+    )
+    assert enrichment.resolved_trades == 8
+    assert enrichment.independent_settled_events == 1.0
+
+
+def test_negative_authoritative_pnl_blocks_otherwise_strong_wallet() -> None:
+    activity = [
+        _trade(f"0xc{i}", outcome=0, side="BUY", size=10, price=0.5, ts=i)
+        for i in range(25)
+    ]
+    activity.append(
+        _trade(
+            "0xworld-cup", outcome=1, side="BUY", size=10, price=0.999,
+            ts=100, event_slug="world-cup-winner",
+        )
+    )
+    markets = {
+        f"0xc{i}": _market(f"0xc{i}", closed=True, winning_outcome=0)
+        for i in range(25)
+    }
+    markets["0xworld-cup"] = PolymarketMarket(
+        gamma_id="world-cup", condition_id="0xworld-cup", slug="world-cup",
+        question="Will this team win the World Cup?", category="sports", end_date="2026",
+        outcomes=["Yes", "No"], outcome_prices=[0.001, 0.999],
+        volume_usdc=1_000, liquidity_usdc=100, closed=False, active=True,
+        last_trade_price=0.999, best_bid=None, best_ask=None,
+    )
+    hydration = PolymarketWalletHydration(
+        proxy_wallet="0x42477970683d4d0a52ec7082fee5d760cc5591c4",
+        activity_history_complete=True,
+        positions_complete=True,
+        closed_positions_complete=True,
+        economic_all_time_complete=True,
+        economic_month_complete=True,
+        metadata_condition_count=26,
+        metadata_covered_count=26,
+        metadata_coverage=1.0,
+        all_time_pnl_usdc=-94_276.66,
+        all_time_volume_usdc=6_280_367.63,
+        pnl_30d_usdc=100.0,
+    )
+    enrichment = compute_wallet_enrichment(
+        hydration.proxy_wallet,
+        activity=activity,
+        markets_by_condition=markets,
+        hydration=hydration,
+    )
+    assert enrichment.forecast_skill_likelihood > 0.8
+    assert enrichment.resolved_trades == 25
+    assert enrichment.data_quality_status == "trusted"
+    assert enrichment.tailability_status == "blocked"
+    assert "negative or zero all-time PnL" in enrichment.tailability_reasons
+
 
 def test_compute_all_buckets_by_wallet_and_attaches_name() -> None:
     activity = [
