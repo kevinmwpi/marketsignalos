@@ -3,11 +3,11 @@ import type { ReactElement } from "react";
 export type SkilledBet = {
   proxy_wallet: string;
   wallet_name: string;
-  skill_likelihood: number;       // P(edge > 0 | data)
+  skill_likelihood: number;
   resolved_trades: number;
   win_rate: number;
-  edge_mean: number;              // posterior edge in log-odds
-  edge_lower_bound: number;       // conservative 5th-percentile edge
+  edge_mean: number;
+  edge_lower_bound: number;
   forecast_skill_likelihood: number;
   forecast_edge_mean: number;
   forecast_edge_lower_bound: number;
@@ -38,6 +38,7 @@ export type SkilledBet = {
   entry_usdc_size: number;
   transaction_hash: string;
   bought_at: number;
+  signal_age_days: number;
 
   current_position_size: number;
   current_position_value_usdc: number;
@@ -47,7 +48,6 @@ export type SkilledBet = {
   polymarket_profile_url: string;
   polymarket_market_url: string;
 
-  // Kalshi mirror — empty/zero when no equivalent Kalshi market was matched.
   kalshi_ticker: string;
   kalshi_event_ticker: string;
   kalshi_title: string;
@@ -55,6 +55,10 @@ export type SkilledBet = {
   kalshi_yes_price: number;
   kalshi_match_confidence: number;
   kalshi_match_status: string;
+  kalshi_vs_entry_cents: number;
+
+  tradability: string;
+  tradability_reasons: string[];
 };
 
 const usdFormatter = new Intl.NumberFormat("en-US", {
@@ -66,6 +70,13 @@ const usdFormatter = new Intl.NumberFormat("en-US", {
 const shareFormatter = new Intl.NumberFormat("en-US", {
   maximumFractionDigits: 0,
 });
+
+const TRADABILITY_LABELS: Record<string, string> = {
+  poly_direct: "Tail on Polymarket",
+  kalshi_mirror: "Tail on Kalshi",
+  on_chain_only: "On-chain only",
+  closed: "Closed / unavailable",
+};
 
 function shortWallet(addr: string): string {
   if (addr.length < 10) return addr;
@@ -93,6 +104,19 @@ function driftColor(drift: number | null): string {
   return "text-zinc-500";
 }
 
+function tradabilityBadgeClass(status: string): string {
+  switch (status) {
+    case "poly_direct":
+      return "bg-emerald-50 text-emerald-800";
+    case "kalshi_mirror":
+      return "bg-blue-50 text-blue-800";
+    case "closed":
+      return "bg-zinc-100 text-zinc-600";
+    default:
+      return "bg-amber-50 text-amber-800";
+  }
+}
+
 export default function SkilledBetsPanel({
   bets,
 }: {
@@ -101,12 +125,11 @@ export default function SkilledBetsPanel({
   if (bets.length === 0) {
     return (
       <div className="rounded-lg border border-dashed border-zinc-300 bg-white p-10 text-center">
-        <p className="text-sm font-semibold text-zinc-900">No active skilled bets yet</p>
+        <p className="text-sm font-semibold text-zinc-900">No actionable skilled bets yet</p>
         <p className="mt-1.5 text-xs leading-relaxed text-zinc-500">
-          No skilled wallets are holding traceable open positions yet. Click{" "}
-          <span className="font-mono">Run ingest</span> above to scan Polymarket
-          leaderboards for skilled wallets and their open positions, or lower
-          the skill threshold.
+          No skilled wallets are holding positions you can tail on Polymarket or via an
+          approved Kalshi mirror. Run ingest to refresh, or widen filters with{" "}
+          <span className="font-mono">include_untradable=true</span> on the API.
         </p>
       </div>
     );
@@ -118,6 +141,12 @@ export default function SkilledBetsPanel({
         const drift = driftPct(bet.entry_price, bet.current_outcome_price);
         const outcomeLabel =
           bet.outcome || (bet.outcome_index === 0 ? "YES" : "NO");
+        const showKalshiCta =
+          bet.tradability === "kalshi_mirror" &&
+          bet.kalshi_match_status === "approved" &&
+          bet.kalshi_market_url;
+        const showPolyCta =
+          bet.tradability === "poly_direct" && bet.polymarket_market_url;
 
         return (
           <li
@@ -139,6 +168,11 @@ export default function SkilledBetsPanel({
                     >
                       {outcomeLabel}
                     </span>
+                    <span
+                      className={`rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${tradabilityBadgeClass(bet.tradability)}`}
+                    >
+                      {TRADABILITY_LABELS[bet.tradability] ?? bet.tradability}
+                    </span>
                     {bet.category && (
                       <span className="rounded bg-zinc-100 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-zinc-500">
                         {bet.category}
@@ -149,21 +183,9 @@ export default function SkilledBetsPanel({
                     </span>
                   </div>
 
-                  {bet.polymarket_market_url ? (
-                    <a
-                      className="mt-1.5 block text-sm font-semibold leading-snug text-zinc-900 hover:underline"
-                      href={bet.polymarket_market_url}
-                      rel="noopener noreferrer"
-                      target="_blank"
-                      title="Open this market on Polymarket"
-                    >
-                      {bet.title || bet.slug}
-                    </a>
-                  ) : (
-                    <p className="mt-1.5 text-sm font-semibold leading-snug text-zinc-900">
-                      {bet.title || bet.slug}
-                    </p>
-                  )}
+                  <p className="mt-1.5 text-sm font-semibold leading-snug text-zinc-900">
+                    {bet.title || bet.slug}
+                  </p>
                 </div>
 
                 <div className="shrink-0 text-right">
@@ -176,7 +198,12 @@ export default function SkilledBetsPanel({
                 </div>
               </div>
 
-              {/* Price + drift */}
+              {bet.tradability_reasons.length > 0 && (
+                <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-800">
+                  {bet.tradability_reasons.join(" · ")}
+                </div>
+              )}
+
               <div className="mt-3 grid grid-cols-3 gap-3 rounded-md bg-zinc-50 px-3 py-2">
                 <div>
                   <p className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">
@@ -207,20 +234,56 @@ export default function SkilledBetsPanel({
                 </div>
                 <div className="text-right">
                   <p className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">
-                    Still held
+                    Signal age
                   </p>
                   <p className="mt-1 font-mono text-sm font-semibold tabular-nums text-zinc-900">
-                    {shareFormatter.format(bet.current_position_size)} sh
+                    {bet.signal_age_days}d
                   </p>
                   <p className="font-mono text-[10px] text-zinc-500">
-                    {usdFormatter.format(bet.current_position_value_usdc)} value
+                    latest BUY
                   </p>
                 </div>
               </div>
 
-              {/* Wallet provenance */}
+              {(showPolyCta || showKalshiCta) && (
+                <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+                  {showPolyCta && (
+                    <a
+                      className="inline-flex flex-1 items-center justify-center rounded-md bg-emerald-600 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-700"
+                      href={bet.polymarket_market_url}
+                      rel="noopener noreferrer"
+                      target="_blank"
+                    >
+                      Tail on Polymarket
+                    </a>
+                  )}
+                  {showKalshiCta && (
+                    <a
+                      className="inline-flex flex-1 flex-col items-center justify-center rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-semibold text-blue-900 hover:bg-blue-100"
+                      href={bet.kalshi_market_url}
+                      rel="noopener noreferrer"
+                      target="_blank"
+                      title={bet.kalshi_title || bet.kalshi_ticker}
+                    >
+                      <span>Tail on Kalshi</span>
+                      <span className="mt-0.5 font-mono text-[10px] font-normal text-blue-800">
+                        {bet.kalshi_match_confidence > 0
+                          ? `${(bet.kalshi_match_confidence * 100).toFixed(0)}% match · `
+                          : ""}
+                        {bet.kalshi_yes_price > 0
+                          ? `$${bet.kalshi_yes_price.toFixed(3)} YES`
+                          : "price unknown"}
+                        {bet.kalshi_vs_entry_cents !== 0
+                          ? ` · ${bet.kalshi_vs_entry_cents > 0 ? "+" : ""}${bet.kalshi_vs_entry_cents.toFixed(1)}¢ vs wallet entry`
+                          : ""}
+                      </span>
+                    </a>
+                  )}
+                </div>
+              )}
+
               <div className="mt-3 flex items-center justify-between gap-3 text-[11px] text-zinc-500">
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <span className="text-zinc-400">Signal source:</span>
                   {bet.polymarket_profile_url ? (
                     <a
@@ -250,52 +313,9 @@ export default function SkilledBetsPanel({
                   <span className="text-zinc-300">·</span>
                   <span>
                     <span className="font-mono font-semibold text-zinc-700">
-                      {(bet.win_rate * 100).toFixed(0)}%
-                    </span>{" "}
-                    on{" "}
-                    <span className="font-mono font-semibold text-zinc-700">
                       {bet.independent_settled_events.toFixed(1)}
                     </span>{" "}
-                    independent settled events
-                  </span>
-                  <span className="text-zinc-300">·</span>
-                  <span title="Market-relative posterior edge in log-odds. The bracketed value is the conservative 5th-percentile floor.">
-                    edge{" "}
-                    <span
-                      className={`font-mono font-semibold ${
-                        bet.edge_lower_bound > 0
-                          ? "text-emerald-700"
-                          : "text-zinc-500"
-                      }`}
-                    >
-                      {bet.edge_mean >= 0 ? "+" : ""}
-                      {bet.edge_mean.toFixed(2)}
-                    </span>
-                    <span className="ml-1 font-mono text-zinc-400">
-                      [≥{bet.edge_lower_bound >= 0 ? "+" : ""}
-                      {bet.edge_lower_bound.toFixed(2)}]
-                    </span>
-                  </span>
-                  <span className="text-zinc-300">Â·</span>
-                  <span>
-                    all-time PnL{" "}
-                    <span className="font-mono font-semibold text-zinc-700">
-                      {usdFormatter.format(bet.all_time_pnl_usdc)}
-                    </span>
-                  </span>
-                  <span className="text-zinc-300">Â·</span>
-                  <span>
-                    ROI{" "}
-                    <span className="font-mono font-semibold text-zinc-700">
-                      {(bet.all_time_roi * 100).toFixed(1)}%
-                    </span>
-                  </span>
-                  <span className="text-zinc-300">Â·</span>
-                  <span>
-                    30d PnL{" "}
-                    <span className="font-mono font-semibold text-zinc-700">
-                      {usdFormatter.format(bet.pnl_30d_usdc)}
-                    </span>
+                    independent events
                   </span>
                 </div>
               </div>

@@ -2,13 +2,13 @@
 
 ## What this project is
 
-MarketSignalOS identifies skilled Polymarket wallets, surfaces their currently-held positions, and maps each position to the equivalent Kalshi market so users can tail those predictions on either exchange.
+MarketSignalOS identifies skilled Polymarket wallets, surfaces their currently-held positions, and classifies each bet by where it can actually be tailed (Polymarket first; approved Kalshi mirror as fallback).
 
-**Core value:** scan Polymarket leaderboards across time windows → score wallets by on-chain win rate → show their open BUY positions with a one-click "tail this on Kalshi" link.
+**Core value:** scan Polymarket leaderboards + skill-qualified wallets → score by Bayesian forecast edge → show actionable open BUY positions with tradability classification (`poly_direct`, `kalshi_mirror`, `on_chain_only`, `closed`).
 
-**Why not Kalshi-as-source.** Kalshi hides per-user bet history, so there's no way to compute a true skill score from public Kalshi data. The original Kalshi-only design was abandoned for this reason; only Kalshi's *public market list* is consumed (to find the equivalent Kalshi market for each skilled Polymarket bet). See `docs/0002-cross-exchange-decision.md`.
+**Why not Kalshi-as-source.** Kalshi hides per-user bet history, so there's no way to compute a true skill score from public Kalshi data. The original Kalshi-only design was abandoned for this reason; only Kalshi's *public market list* is consumed (to find an optional Kalshi mirror when Polymarket is unavailable). See `docs/0002-cross-exchange-decision.md`.
 
-**Why Kalshi is the tail target, not a comparison side.** The operator is US-based and cannot bet on Polymarket. Polymarket is the *source of intelligence*; Kalshi is the *only venue where the operator can act*. An earlier framing of this project surfaced "cross-exchange price dislocations" as the headline signal; that was reversed on 2026-05-23 because a dislocation assumes you can trade both legs, which the operator cannot.
+**Execution model (2026-06 update).** Polymarket is the primary tail venue when Gamma marks a market active. Kalshi appears only for **approved** mirrors when Polymarket is closed/unavailable. On-chain-only signals (common for international/weather markets) are hidden from the default feed.
 
 **Non-goals (never build these):**
 - Automated trading or order placement
@@ -171,9 +171,10 @@ The pipeline runs JSONL-first. Postgres is opt-in via `DATABASE_URL` (`Dual*` st
 
 | Signal | Description |
 |---|---|
-| `skill_likelihood` | Binomial model: how unlikely is this win rate by chance given N resolved markets |
-| `win_rate` | Resolved-bet win rate per wallet |
-| `kalshi_match_confidence` | TF-IDF cosine similarity between Polymarket and Kalshi market titles, bucketed end-date-aware |
+| `skill_likelihood` | Bayesian forecast edge: P(edge > 0 \| data) vs market-implied entry prices |
+| `independent_settled_events` | Effective sample size penalizing correlated bets within the same event |
+| `tradability` (per bet) | `poly_direct` \| `kalshi_mirror` \| `on_chain_only` \| `closed` — execution path classification |
+| `kalshi_match_confidence` | TF-IDF cosine similarity between Polymarket and Kalshi market titles (±3-day date window) |
 
 ---
 

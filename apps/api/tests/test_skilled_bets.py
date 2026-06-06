@@ -211,6 +211,16 @@ def _seed(tmp_path: Path) -> Path:
                 "last_trade_price": 0.58, "best_bid": 0.57, "best_ask": 0.59,
                 "fetched_at": "2026-05-12T08:00:00Z",
             },
+            {
+                "gamma_id": "2", "condition_id": "0xcond_btc", "slug": "btc-100k-eoy",
+                "question": "Bitcoin closes 2026 above $100k", "category": "crypto",
+                "end_date": "2026-12-31T00:00:00Z",
+                "outcomes": ["Yes", "No"], "outcome_prices": [0.40, 0.60],
+                "volume_usdc": 50000, "liquidity_usdc": 2500,
+                "closed": False, "active": True,
+                "last_trade_price": 0.40, "best_bid": 0.39, "best_ask": 0.41,
+                "fetched_at": "2026-05-12T08:00:00Z",
+            },
         ],
     )
 
@@ -276,6 +286,70 @@ def test_skilled_bets_carries_deep_link_urls_and_current_price(
     # Live market has moved from 0.45 (entry) to 0.58 — caller can compute drift.
     assert fed_row["current_market_yes_price"] == 0.58
     assert fed_row["current_position_size"] == 5000.0
+    assert fed_row["tradability"] == "poly_direct"
+
+
+def test_skilled_bets_hides_closed_markets_by_default(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    pm_dir = _seed(tmp_path)
+    markets_path = pm_dir / "polymarket_markets.jsonl"
+    rows = json.loads(markets_path.read_text(encoding="utf-8").strip().splitlines()[1])
+    rows["closed"] = True
+    rows["active"] = False
+    markets_path.write_text(
+        markets_path.read_text(encoding="utf-8").splitlines()[0]
+        + "\n"
+        + json.dumps(rows, separators=(",", ":"))
+        + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("POLYMARKET_DATA_DIR", str(pm_dir))
+
+    client = TestClient(app)
+    default_rows = client.get("/signals/skilled-bets?min_skill=0.9&min_resolved=20").json()
+    assert all(row["condition_id"] != "0xcond_btc" for row in default_rows)
+
+    all_rows = client.get(
+        "/signals/skilled-bets?min_skill=0.9&min_resolved=20&include_untradable=true"
+    ).json()
+    closed_row = next(row for row in all_rows if row["condition_id"] == "0xcond_btc")
+    assert closed_row["tradability"] == "closed"
+
+
+def test_skilled_bets_pending_kalshi_mirror_has_no_tail_url(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    pm_dir = _seed(tmp_path)
+    _write_jsonl(
+        pm_dir / "market_links.jsonl",
+        [
+            {
+                "kalshi_ticker": "KXFED-PENDING",
+                "polymarket_condition_id": "0xcond_fed",
+                "polymarket_slug": "fed-50bp-sep",
+                "kalshi_title": "Pending mirror",
+                "polymarket_title": "Fed cuts 50bp in September",
+                "kalshi_end_date": "2026-09-18T00:00:00Z",
+                "polymarket_end_date": "2026-09-18T00:00:00Z",
+                "confidence": 0.55,
+                "status": "pending",
+                "matched_by": "auto",
+                "matched_at": "2026-05-12T08:00:00Z",
+            },
+        ],
+    )
+    monkeypatch.setenv("POLYMARKET_DATA_DIR", str(pm_dir))
+    fed = next(
+        row
+        for row in TestClient(app)
+        .get("/signals/skilled-bets?min_skill=0.9&min_resolved=20")
+        .json()
+        if row["condition_id"] == "0xcond_fed"
+    )
+    assert fed["tradability"] == "poly_direct"
+    assert fed["kalshi_match_status"] == "pending"
+    assert fed["kalshi_market_url"] == ""
 
 
 def test_skilled_bets_min_position_value_filters_dust(
@@ -402,13 +476,14 @@ def test_skilled_bets_summary_reports_quarantine_counts(
     pm_dir = _seed(tmp_path)
     monkeypatch.setenv("POLYMARKET_DATA_DIR", str(pm_dir))
     body = TestClient(app).get("/signals/skilled-bets/summary").json()
-    assert body == {
-        "trusted": 3,
-        "rebuilding": 0,
-        "blocked": 1,
-        "tailable": 2,
-        "blocked_reasons": {"legacy or incomplete score": 1},
-    }
+    assert body["trusted"] == 3
+    assert body["rebuilding"] == 0
+    assert body["blocked"] == 1
+    assert body["tailable"] == 2
+    assert body["blocked_reasons"] == {"legacy or incomplete score": 1}
+    assert body["feed_poly_direct"] == 2
+    assert body["feed_actionable"] == 2
+    assert body["latest_signal_at"] == 1731500000
 
 
 def test_research_leaderboard_keeps_blocked_wallets_with_reasons(

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
@@ -675,3 +676,58 @@ def test_run_pipeline_include_profit_reenables_profit(
         include_profit_leaderboard=True, client=_client_with_handler(handler),
     )
     assert metrics_called == {"profit", "volume"}
+
+
+def test_merge_skill_qualified_wallets_into_watchlist(tmp_path: Path) -> None:
+    from marketsignalos_polymarket.runner import _merge_skill_qualified_wallets_into_watchlist
+
+    enrichment = tmp_path / "polymarket_wallet_enrichment.jsonl"
+    watchlist = tmp_path / "watchlist.txt"
+    watchlist.write_text("# header\n0xexisting\n", encoding="utf-8")
+    enrichment.write_text(
+        "\n".join(
+            [
+                json.dumps(
+                    {
+                        "proxy_wallet": "0xexisting",
+                        "skill_likelihood": 0.95,
+                        "resolved_trades": 40,
+                        "tailability_status": "tailable",
+                    },
+                    separators=(",", ":"),
+                ),
+                json.dumps(
+                    {
+                        "proxy_wallet": "0xedge",
+                        "skill_likelihood": 0.7,
+                        "resolved_trades": 15,
+                        "tailability_status": "blocked",
+                    },
+                    separators=(",", ":"),
+                ),
+                json.dumps(
+                    {
+                        "proxy_wallet": "0xweak",
+                        "skill_likelihood": 0.4,
+                        "resolved_trades": 30,
+                        "tailability_status": "blocked",
+                    },
+                    separators=(",", ":"),
+                ),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    added = _merge_skill_qualified_wallets_into_watchlist(
+        enrichment_path=enrichment,
+        watchlist_path=watchlist,
+    )
+    assert added == 1
+    wallets = {
+        line.strip()
+        for line in watchlist.read_text(encoding="utf-8").splitlines()
+        if line.strip() and not line.startswith("#")
+    }
+    assert wallets == {"0xedge", "0xexisting"}

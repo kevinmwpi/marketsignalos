@@ -4,7 +4,9 @@
 
 The original framing of this ADR — "cross-exchange price dislocation as the headline signal" — was wrong for our operator. The operator is US-based and **cannot bet on Polymarket at all**, which makes a two-legged dislocation signal useless: there is no second leg to take. Polymarket is the *source of intelligence*; Kalshi is the *only venue where the operator can act*.
 
-The corrected product is what alternative #2 below described and rejected: **a Polymarket-only skilled-bets feed, with the equivalent Kalshi market shown alongside each row as the actionable tail target**. The rejection reasoning ("doesn't produce a tradeable spread by itself") was the wrong objective — we don't want a spread, we want a single defensible bet to place on Kalshi.
+The corrected product is what alternative #2 below described and rejected: **a Polymarket skilled-bets feed with tradability classification and an optional approved Kalshi mirror when Polymarket is unavailable**. The rejection reasoning ("doesn't produce a tradeable spread by itself") was the wrong objective — we don't want a spread, we want a single defensible bet to place where the operator can act.
+
+**2026-06 addendum:** The operator can now access Polymarket directly. Primary execution is **tail on Polymarket** when Gamma marks the market active; **approved Kalshi mirrors** are a fallback only. International/weather markets may exist on-chain but 404 in the consumer UI — the feed classifies these as `on_chain_only` and hides them by default.
 
 Concretely:
 - `/signals/skilled-bets` (already implemented) is the headline endpoint and surfaces the Kalshi mirror per row.

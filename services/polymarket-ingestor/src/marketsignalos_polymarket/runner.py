@@ -1125,6 +1125,48 @@ def run_enrichment(stores: _Stores) -> int:
     return written
 
 
+def _merge_skill_qualified_wallets_into_watchlist(
+    *,
+    enrichment_path: Path,
+    watchlist_path: Path,
+    min_skill: float = 0.6,
+    min_resolved: int = 10,
+) -> int:
+    """Append wallets with demonstrated edge to the watchlist for future runs."""
+    existing = set(_load_watchlist(watchlist_path))
+    before = len(existing)
+    for row in _read_jsonl(enrichment_path):
+        wallet = str(row.get("proxy_wallet", "")).lower()
+        if not wallet:
+            continue
+        skill = float(row.get("skill_likelihood", 0) or 0)
+        resolved = int(row.get("resolved_trades", 0) or 0)
+        if str(row.get("tailability_status", "")) == "tailable":
+            existing.add(wallet)
+            continue
+        if skill >= min_skill and resolved >= min_resolved:
+            existing.add(wallet)
+    added = len(existing) - before
+    if added <= 0:
+        return 0
+    watchlist_path.parent.mkdir(parents=True, exist_ok=True)
+    watchlist_path.write_text(
+        "\n".join(
+            ["# Polymarket wallet watchlist — auto-seeded + manual additions"]
+            + sorted(existing),
+        ) + "\n",
+        encoding="utf-8",
+    )
+    log.info(
+        "watchlist_skill_merge added=%d total=%d min_skill=%.2f min_resolved=%d",
+        added,
+        len(existing),
+        min_skill,
+        min_resolved,
+    )
+    return added
+
+
 def _quality_counts(stores: _Stores) -> dict[str, int]:
     rows = _read_jsonl(_data_dir() / "polymarket_wallet_enrichment.jsonl")
     hydration = stores.hydration.load_hydration()
@@ -1516,7 +1558,7 @@ def run_pipeline(
     windows: list[str] | None = None,
     leaderboard_limit: int = 50,
     activity_page_size: int = 500,
-    max_pages_per_wallet: int = 20,
+    max_pages_per_wallet: int = 40,
     market_pages: int = 5,
     market_page_size: int = 100,
     kalshi_status: str = "open",
@@ -1649,6 +1691,15 @@ def run_pipeline(
         _emit({"stage": "enrichment"})
         enrichment_written = run_enrichment(stores)
         quality = _quality_counts(stores)
+        skill_watchlist_added = _merge_skill_qualified_wallets_into_watchlist(
+            enrichment_path=_data_dir() / "polymarket_wallet_enrichment.jsonl",
+            watchlist_path=_watchlist_path(),
+        )
+        if skill_watchlist_added:
+            log.info(
+                "pipeline skill-qualified wallets merged into watchlist count=%d",
+                skill_watchlist_added,
+            )
 
         # 5. Kalshi mirror: fetch public markets + match
         kalshi_written = 0

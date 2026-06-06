@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import asdict
 
 from fastapi import APIRouter, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from marketsignalos_api.services.skilled_bets import compute_skilled_bets, summarize_skilled_bets
 
@@ -49,6 +49,7 @@ class SkilledBetOut(BaseModel):
     entry_usdc_size: float
     transaction_hash: str
     bought_at: int
+    signal_age_days: int
 
     current_position_size: float
     current_position_value_usdc: float
@@ -65,33 +66,53 @@ class SkilledBetOut(BaseModel):
     kalshi_yes_price: float
     kalshi_match_confidence: float
     kalshi_match_status: str
+    kalshi_vs_entry_cents: float
+
+    tradability: str
+    tradability_reasons: list[str] = Field(default_factory=list)
 
 
 @router.get("/skilled-bets", response_model=list[SkilledBetOut])
 def skilled_bets(
     min_skill: float = Query(default=0.8, ge=0.0, le=1.0),
     min_resolved: int = Query(default=20, ge=1, le=10_000),
+    min_independent_events: float = Query(default=20.0, ge=0.0),
     min_position_value_usdc: float = Query(default=0.0, ge=0.0),
+    max_bet_age_days: int = Query(
+        default=0,
+        ge=0,
+        le=3650,
+        description="When >0, only include bets whose latest BUY is at most this many days old.",
+    ),
+    require_positive_edge: bool = Query(
+        default=False,
+        description="When true, require wallet edge_lower_bound > 0.",
+    ),
+    include_untradable: bool = Query(
+        default=False,
+        description="When true, include closed/on-chain-only bets with no execution path.",
+    ),
     limit: int = Query(default=50, ge=1, le=500),
 ) -> list[SkilledBetOut]:
     """
     Recent BUY entries from skilled Polymarket wallets that are STILL HELD,
-    sorted by entry timestamp (newest first). "Skilled" = enrichment row
-    with skill_likelihood >= min_skill and resolved_trades >= min_resolved.
-
-    Use this feed to tail/monitor: each row shows the wallet, the market,
-    the buy price + size, the still-open position, and deep links into
-    Polymarket for the wallet and the event.
+    sorted by entry timestamp (newest first). By default only actionable bets
+    (`tradability` of poly_direct or kalshi_mirror) are returned.
     """
     signals = compute_skilled_bets(
         min_skill=min_skill,
         min_resolved=min_resolved,
+        min_independent_events=min_independent_events,
         min_position_value_usdc=min_position_value_usdc,
+        max_bet_age_days=max_bet_age_days,
+        require_positive_edge=require_positive_edge,
+        include_untradable=include_untradable,
+        limit=limit,
     )
-    return [SkilledBetOut(**asdict(s)) for s in signals[:limit]]
+    return [SkilledBetOut(**asdict(s)) for s in signals]
 
 
 @router.get("/skilled-bets/summary")
 def skilled_bets_summary() -> dict[str, object]:
-    """Trust-state summary used by the dashboard rebuild banner."""
+    """Trust-state and feed tradability summary for the dashboard."""
     return summarize_skilled_bets()

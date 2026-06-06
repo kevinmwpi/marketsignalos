@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from collections import Counter
 from collections.abc import Iterator
 from dataclasses import dataclass
@@ -44,6 +45,13 @@ from marketsignalos_api.services.external_urls import (
     kalshi_market_url,
     polymarket_market_url,
     polymarket_profile_url,
+)
+from marketsignalos_api.services.tradability import (
+    KalshiMirrorInput,
+    MarketTradabilityInput,
+    classify_tradability,
+    is_actionable,
+    resolve_event_slug,
 )
 
 log = logging.getLogger("marketsignalos.api.skilled_bets")
@@ -115,6 +123,12 @@ class SkilledBetSignal:
     kalshi_yes_price: float  # 0.0..1.0; 0.0 when unknown
     kalshi_match_confidence: float  # 0.0..1.0
     kalshi_match_status: str  # "approved" | "pending" | ""
+    kalshi_vs_entry_cents: float  # Kalshi YES minus wallet entry; 0 when unknown
+
+    # Execution path for this specific bet (may differ from wallet tailability).
+    tradability: str  # poly_direct | kalshi_mirror | on_chain_only | closed
+    tradability_reasons: list[str]
+    signal_age_days: int
 
 
 # ── Internal helpers ──────────────────────────────────────────────────────────
@@ -208,7 +222,12 @@ class _HeldPosition:
 class _PolymarketMarketRec:
     condition_id: str
     category: str
+    slug: str
+    event_slug: str
+    active: bool
+    closed: bool
     yes_price: float  # last_trade_price or mid; 0 if unknown
+    fetched_at: str
 
 
 def _load_skilled_wallets(
@@ -324,7 +343,12 @@ def _load_polymarket_markets() -> dict[str, _PolymarketMarketRec]:
         out[cond] = _PolymarketMarketRec(
             condition_id=cond,
             category=str(row.get("category", "") or ""),
+            slug=str(row.get("slug", "") or ""),
+            event_slug=str(row.get("event_slug", "") or ""),
+            active=bool(row.get("active", False)),
+            closed=bool(row.get("closed", False)),
             yes_price=price,
+            fetched_at=str(row.get("fetched_at", "") or ""),
         )
     return out
 
@@ -487,6 +511,10 @@ def _compute_skilled_bets_cached(
     min_skill: float,
     min_resolved: int,
     min_position_value_usdc: float,
+    min_independent_events: float,
+    max_bet_age_days: int,
+    include_untradable: bool,
+    require_positive_edge: bool,
 ) -> tuple[SkilledBetSignal, ...]:
     # _fingerprint is unused inside the body — it exists only to key the cache
     # on input-file state so changed data forces a recompute.
@@ -495,6 +523,10 @@ def _compute_skilled_bets_cached(
             min_skill=min_skill,
             min_resolved=min_resolved,
             min_position_value_usdc=min_position_value_usdc,
+            min_independent_events=min_independent_events,
+            max_bet_age_days=max_bet_age_days,
+            include_untradable=include_untradable,
+            require_positive_edge=require_positive_edge,
         )
     )
 
@@ -523,12 +555,27 @@ def summarize_skilled_bets() -> dict[str, Any]:
             raw_reasons = row.get("tailability_reasons") or ["legacy or incomplete score"]
             if isinstance(raw_reasons, list):
                 reasons.update(str(reason) for reason in raw_reasons)
+
+    all_signals = compute_skilled_bets(include_untradable=True, limit=None)
+    tradability_counts: Counter[str] = Counter(signal.tradability for signal in all_signals)
+    latest_snapshot = max(
+        (signal.bought_at for signal in all_signals),
+        default=0,
+    )
     return {
         "trusted": trusted,
         "rebuilding": rebuilding,
         "blocked": blocked,
         "tailable": tailable,
         "blocked_reasons": dict(sorted(reasons.items())),
+        "feed_poly_direct": tradability_counts.get("poly_direct", 0),
+        "feed_kalshi_mirror": tradability_counts.get("kalshi_mirror", 0),
+        "feed_on_chain_only": tradability_counts.get("on_chain_only", 0),
+        "feed_closed": tradability_counts.get("closed", 0),
+        "feed_actionable": sum(
+            tradability_counts.get(key, 0) for key in ("poly_direct", "kalshi_mirror")
+        ),
+        "latest_signal_at": latest_snapshot,
     }
 
 
@@ -539,6 +586,11 @@ def compute_skilled_bets(
     min_skill: float = 0.8,
     min_resolved: int = 20,
     min_position_value_usdc: float = 0.0,
+    min_independent_events: float = 20.0,
+    max_bet_age_days: int = 0,
+    include_untradable: bool = False,
+    require_positive_edge: bool = False,
+    limit: int | None = 50,
 ) -> list[SkilledBetSignal]:
     """
     Returns recent BUY entries from skilled wallets that are STILL HELD,
@@ -550,8 +602,15 @@ def compute_skilled_bets(
         min_skill,
         min_resolved,
         min_position_value_usdc,
+        min_independent_events,
+        max_bet_age_days,
+        include_untradable,
+        require_positive_edge,
     )
-    return list(cached)
+    signals = list(cached)
+    if limit is None:
+        return signals
+    return signals[:limit]
 
 
 def _compute_skilled_bets(
@@ -559,6 +618,10 @@ def _compute_skilled_bets(
     min_skill: float = 0.8,
     min_resolved: int = 20,
     min_position_value_usdc: float = 0.0,
+    min_independent_events: float = 20.0,
+    max_bet_age_days: int = 0,
+    include_untradable: bool = False,
+    require_positive_edge: bool = False,
 ) -> list[SkilledBetSignal]:
     """Uncached worker — reads the JSONL stores and builds the signal list."""
     skilled = _load_skilled_wallets(
@@ -574,19 +637,63 @@ def _compute_skilled_bets(
     markets = _load_polymarket_markets()
     latest_buys = _latest_buy_per_position(keys=set(held.keys()))
     kalshi_mirrors = _load_best_kalshi_mirror_by_cond()
+    now_ts = int(time.time())
 
     out: list[SkilledBetSignal] = []
     for key, pos in held.items():
         if pos.current_value_usdc < min_position_value_usdc:
             continue
         wallet = skilled[pos.proxy_wallet]
+        if wallet.independent_settled_events < min_independent_events:
+            continue
+        if require_positive_edge and wallet.edge_lower_bound <= 0.0:
+            continue
         buy = latest_buys.get(key)
         if buy is None:
             # Wallet still holds the position but we never observed the entry
             # in the activity window. Skip — we can't say when they bought.
             continue
+        bought_at = _i(buy.get("timestamp"))
+        signal_age_days = max(0, (now_ts - bought_at) // 86400) if bought_at else 0
+        if max_bet_age_days > 0 and signal_age_days > max_bet_age_days:
+            continue
         market_rec = markets.get(pos.condition_id)
         mirror = kalshi_mirrors.get(pos.condition_id)
+        event_slug = resolve_event_slug(
+            position_slug=pos.event_slug,
+            buy_slug=str(buy.get("event_slug", "") or ""),
+            gamma_slug=market_rec.event_slug if market_rec else "",
+        )
+        market_input = (
+            MarketTradabilityInput(
+                active=market_rec.active,
+                closed=market_rec.closed,
+                category=market_rec.category,
+            )
+            if market_rec
+            else None
+        )
+        mirror_input = (
+            KalshiMirrorInput(status=mirror.status, confidence=mirror.confidence)
+            if mirror
+            else None
+        )
+        title = pos.title or str(buy.get("title", ""))
+        tradability, tradability_reasons = classify_tradability(
+            market=market_input,
+            event_slug=event_slug,
+            title=title,
+            mirror=mirror_input,
+        )
+        if not include_untradable and not is_actionable(tradability):
+            continue
+        entry_price = round(_f(buy.get("price")), 4)
+        kalshi_yes = round(mirror.yes_price, 4) if mirror else 0.0
+        kalshi_vs_entry_cents = (
+            round((kalshi_yes - entry_price) * 100.0, 2)
+            if kalshi_yes > 0 and entry_price > 0
+            else 0.0
+        )
         out.append(
             SkilledBetSignal(
                 proxy_wallet=pos.proxy_wallet,
@@ -614,16 +721,17 @@ def _compute_skilled_bets(
                 score_version=wallet.score_version,
                 condition_id=pos.condition_id,
                 slug=pos.slug,
-                event_slug=pos.event_slug,
-                title=pos.title or str(buy.get("title", "")),
+                event_slug=event_slug,
+                title=title,
                 category=market_rec.category if market_rec else "",
                 outcome_index=pos.outcome_index,
                 outcome=pos.outcome,
-                entry_price=round(_f(buy.get("price")), 4),
+                entry_price=entry_price,
                 entry_size=round(_f(buy.get("size")), 4),
                 entry_usdc_size=round(_f(buy.get("usdc_size")), 2),
                 transaction_hash=str(buy.get("transaction_hash", "")),
-                bought_at=_i(buy.get("timestamp")),
+                bought_at=bought_at,
+                signal_age_days=signal_age_days,
                 current_position_size=round(pos.size, 4),
                 current_position_value_usdc=round(pos.current_value_usdc, 2),
                 current_market_yes_price=round(
@@ -631,18 +739,23 @@ def _compute_skilled_bets(
                 ),
                 current_outcome_price=round(pos.current_outcome_price, 4),
                 polymarket_profile_url=polymarket_profile_url(pos.proxy_wallet),
-                polymarket_market_url=polymarket_market_url(pos.event_slug),
+                polymarket_market_url=polymarket_market_url(event_slug),
                 kalshi_ticker=mirror.ticker if mirror else "",
                 kalshi_event_ticker=mirror.event_ticker if mirror else "",
                 kalshi_title=mirror.title if mirror else "",
                 kalshi_market_url=(
-                    kalshi_market_url(mirror.event_ticker) if mirror else ""
+                    kalshi_market_url(mirror.event_ticker)
+                    if mirror and mirror.status == "approved"
+                    else ""
                 ),
-                kalshi_yes_price=round(mirror.yes_price, 4) if mirror else 0.0,
+                kalshi_yes_price=kalshi_yes,
                 kalshi_match_confidence=(
                     round(mirror.confidence, 4) if mirror else 0.0
                 ),
                 kalshi_match_status=mirror.status if mirror else "",
+                kalshi_vs_entry_cents=kalshi_vs_entry_cents,
+                tradability=tradability,
+                tradability_reasons=tradability_reasons,
             )
         )
 

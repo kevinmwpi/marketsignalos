@@ -15,6 +15,12 @@ type SkilledBetsSummary = {
   blocked: number;
   tailable: number;
   blocked_reasons: Record<string, number>;
+  feed_poly_direct: number;
+  feed_kalshi_mirror: number;
+  feed_on_chain_only: number;
+  feed_closed: number;
+  feed_actionable: number;
+  latest_signal_at: number;
 };
 
 function apiUrl(apiBase: string, path: string): string {
@@ -40,11 +46,17 @@ async function getDashboardData(apiBase: string): Promise<{
 }> {
   const [polymarketLeaderboard, skilledBets, skilledBetsSummary] = await Promise.all([
     fetchJson<PolymarketWalletSkill[]>(
-      apiUrl(apiBase, "/signals/polymarket-leaderboard?min_resolved=5&limit=10"),
+      apiUrl(
+        apiBase,
+        "/signals/polymarket-leaderboard?min_resolved=20&min_skill=0.8&tailability=tailable&limit=10",
+      ),
       "polymarket leaderboard API",
     ),
     fetchJson<SkilledBet[]>(
-      apiUrl(apiBase, "/signals/skilled-bets?min_skill=0.8&min_resolved=20&limit=50"),
+      apiUrl(
+        apiBase,
+        "/signals/skilled-bets?min_skill=0.8&min_resolved=20&min_independent_events=20&max_bet_age_days=90&require_positive_edge=true&limit=50",
+      ),
       "skilled-bets API",
     ),
     fetchJson<SkilledBetsSummary>(
@@ -73,6 +85,14 @@ const usdFormatter = new Intl.NumberFormat("en-US", {
   maximumFractionDigits: 1,
 });
 
+function formatSnapshotAge(unixSeconds: number): string {
+  if (!unixSeconds) return "unknown";
+  const diffDays = Math.max(0, Math.round(Date.now() / 1000 - unixSeconds) / 86400);
+  if (diffDays < 1) return "today";
+  if (diffDays < 2) return "1 day ago";
+  return `${Math.round(diffDays)} days ago`;
+}
+
 export default async function Home() {
   const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8080";
   const { polymarketLeaderboard, skilledBets, skilledBetsSummary } = await getDashboardData(apiBase);
@@ -85,6 +105,9 @@ export default async function Home() {
   const isLive = errors.length === 0;
   const uniqueWallets = new Set(bets.map((b) => b.proxy_wallet)).size;
   const capitalHeld = bets.reduce((acc, b) => acc + b.current_position_value_usdc, 0);
+  const actionableOnPoly = summary?.feed_poly_direct ?? bets.filter((b) => b.tradability === "poly_direct").length;
+  const actionableOnKalshi =
+    summary?.feed_kalshi_mirror ?? bets.filter((b) => b.tradability === "kalshi_mirror").length;
 
   return (
     <div className="min-h-screen bg-[#fafafa]">
@@ -120,10 +143,14 @@ export default async function Home() {
             Skilled wallet bets
           </h1>
           <p className="mt-1.5 max-w-2xl text-sm text-zinc-500">
-            Recent BUY entries from Polymarket wallets with verified forecast edge
-            versus market-implied odds, positive economics, and complete rebuild
-            coverage. These are historically tailable accounts, not risk-free trades.
+            Actionable tails from verified Polymarket wallets. Primary path is Polymarket;
+            approved Kalshi mirrors appear only as a fallback when Polymarket is unavailable.
           </p>
+          {summary?.latest_signal_at ? (
+            <p className="mt-2 text-xs text-zinc-400">
+              Newest held signal: {formatSnapshotAge(summary.latest_signal_at)}
+            </p>
+          ) : null}
         </div>
 
         <ErrorBanner errors={errors} />
@@ -137,13 +164,29 @@ export default async function Home() {
           </div>
         )}
 
-        <div className="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <div className="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
           <div className="rounded-lg border border-zinc-200 bg-white px-4 py-3">
             <p className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">
-              Active bets
+              Actionable bets
             </p>
             <p className="mt-1 font-mono text-2xl font-semibold text-zinc-900">
               {bets.length}
+            </p>
+          </div>
+          <div className="rounded-lg border border-zinc-200 bg-white px-4 py-3">
+            <p className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">
+              Tail on Polymarket
+            </p>
+            <p className="mt-1 font-mono text-2xl font-semibold text-emerald-700">
+              {actionableOnPoly}
+            </p>
+          </div>
+          <div className="rounded-lg border border-zinc-200 bg-white px-4 py-3">
+            <p className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">
+              Tail on Kalshi
+            </p>
+            <p className="mt-1 font-mono text-2xl font-semibold text-blue-700">
+              {actionableOnKalshi}
             </p>
           </div>
           <div className="rounded-lg border border-zinc-200 bg-white px-4 py-3">
