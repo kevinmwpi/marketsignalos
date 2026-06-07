@@ -148,28 +148,28 @@ $env:INGEST_POLYMARKET = "1"
 
 ### Skill score (`skill_likelihood`)
 
-Computed in `skill_computation.py`:
+Computed in `skill_computation.py` + `bayesian_skill.py`:
 
-1. For each wallet, aggregate `TRADE` events by `(condition_id, outcome_index)` into positions (net_size, total_cost, realized_pnl_from_exits).
-2. For each position on a market with a definite winner (Gamma's `outcome_prices` shows one outcome at >= 0.99):
-   - Win iff the wallet's outcome matches the winner.
-   - PnL = (shares × 1.0 if win else 0) − total_cost + realized_pnl_from_exits.
-3. `skill_likelihood = Phi((wins − n*0.5) / sqrt(n*0.25))` — same binomial test against random as the Kalshi skill engine.
+1. Aggregate `TRADE` events into per-(condition, outcome) positions; resolve wins from Gamma `outcome_prices >= 0.99`.
+2. Fit a hierarchical Bayesian logistic edge model: each bet is judged against **market-implied entry price**, not 50%.
+3. `skill_likelihood = P(edge > 0 | data)` with Empirical-Bayes shrinkage across wallets.
+4. `independent_settled_events` (ESS) down-weights correlated bets within the same Polymarket event; wallets need ESS ≥ 20 for `tailability_status=tailable`.
 
 `REDEEM` / `MERGE` events are skipped during position aggregation (they have `outcome_index=999`, a Polymarket sentinel for "no direction").
 
-Gamma's `closed` flag is **unreliable** — markets with future end dates can be marked closed. The authoritative resolution signal is `outcome_prices`. See the comment in `skill_computation.py::_market_winning_outcome`.
+Gamma's `closed` flag is **unreliable** for resolution — use `outcome_prices`. For **tradability**, Gamma `active`/`closed` **is** used to gate the default skilled-bets feed.
 
 ### Skilled-bets feed
 
-Computed in `skilled_bets.py` — see the "Signal semantics" section above for the join sequence. Each row carries:
+Computed in `skilled_bets.py`. Each row carries:
 
-- The latest BUY entry (price, size, USDC notional, tx hash, timestamp) for the still-held bet.
-- The current Polymarket YES price + drift vs the entry price.
-- The wallet's skill_likelihood, win_rate, edge_mean, and edge_lower_bound from enrichment.
-- The Kalshi mirror (ticker, event_ticker, title, live YES price, match confidence, status) when a non-rejected `market_links.jsonl` row exists for the bet's condition_id. Empty strings / 0 otherwise — the panel uses truthiness to decide whether to render the "Mirror on Kalshi" CTA.
+- Latest BUY entry + signal age (`max_bet_age_days` filter supported).
+- `tradability` + reasons (`poly_direct`, `kalshi_mirror`, `on_chain_only`, `closed`).
+- Polymarket deep link (preferred CTA when tradable).
+- Approved Kalshi mirror only (`kalshi_match_status=approved`); pending matches never get a tail URL.
+- `kalshi_vs_entry_cents` — Kalshi YES vs wallet entry (not vs current Poly).
 
-The Kalshi YES price is shown as a reference on each row, not as the second leg of a spread (see ADR 0002 correction). It lets the operator see whether they'd be tailing at a slight premium or discount.
+Default API behavior hides `on_chain_only` and `closed` rows (`include_untradable=false`).
 
 ### Match confidence
 
@@ -186,8 +186,8 @@ Manual decisions (`matched_by="manual"`) override auto decisions on subsequent m
 ## Known limitations
 
 1. ~~**Kalshi parlay tickers have concatenated titles.**~~ Resolved: `_is_kalshi_parlay()` in `runner.py` filters `KXMVE*` tickers out of the matcher's input. Raw `kalshi_markets.jsonl` is preserved (still useful for orderflow); the prefix list is a one-line constant if more parlay families need to be added.
-2. **`/positions` endpoint caps at ~100 rows.** Affects whales with broad exposure. Targeted backfill via condition_id might be needed.
-3. **Activity sample depth.** Top traders generate hundreds of events per day; the default `max-pages-per-wallet=20` covers ~10k events but historical depth beyond that requires `--full-backfill`. Steady-state checkpointing means this only matters on first ingest.
+2. **`/positions` pagination.** The ingestor paginates `/positions` via `_paginate_positions()`; very large books may still hit the safety bound — monitor hydration errors.
+3. **Activity sample depth.** Default `max-pages-per-wallet=40` (~20k events). Historical depth beyond that requires `--full-backfill`.
 4. **Postgres backend not wired.** All stores fall through to JSONL. Postgres stubs exist in `storage.py` for the eventual migration. Tracked as Phase 7.5.
 5. **TF-IDF over neural embeddings.** Picked for zero-dependency simplicity. Recall on long paraphrases ("Will Donald Trump win the 2024 election?" vs "2024 US Presidential winner: Trump?") is below ideal. Tracked for Phase 8 as a swap to `sentence-transformers` if precision/recall numbers demand it.
 
@@ -198,7 +198,8 @@ Manual decisions (`matched_by="manual"`) override auto decisions on subsequent m
 | Method | Path | Returns |
 |---|---|---|
 | GET | `/signals/polymarket-leaderboard?min_resolved=N&min_skill=X&limit=N` | List of skilled wallets, sorted by skill_likelihood |
-| GET | `/signals/skilled-bets?min_skill=X&min_resolved=N&min_position_value_usdc=V&limit=N` | Still-held skilled bets newest-first, each row carrying its Kalshi mirror when one exists |
+| GET | `/signals/skilled-bets?...&include_untradable=false` | Actionable skilled bets (default hides closed/on-chain-only) |
+| GET | `/signals/skilled-bets/summary` | Wallet trust counts + feed tradability breakdown |
 
 Both routes are read-only and idempotent. The data they serve is refreshed only by ingestor runs.
 

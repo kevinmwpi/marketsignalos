@@ -2,9 +2,9 @@
 Polymarket → Kalshi market matcher.
 
 Joins Kalshi markets to Polymarket markets by:
-  1. Bucketing both sides by (year, month) of end_date and an optional
-     normalized category, then intersecting buckets with a +/- date window.
-  2. Within each bucket, scoring title similarity via TF-IDF cosine
+  1. Bucketing both sides by normalized category, then intersecting with a
+     continuous +/- date window on end_date (default 3 days).
+  2. Within each candidate pair, scoring title similarity via TF-IDF cosine
      (pure Python — no scikit-learn dep).
   3. Producing MarketLinks with a confidence score and an auto status
      (approved / pending / rejected).
@@ -16,10 +16,10 @@ Design notes:
     short titles is empirically strong (matches share Bitcoin/Fed/election
     terms), and it's deterministic + zero-dependency.
 
-Confidence buckets:
-  - >= 0.85: auto-approved
-  - 0.60-0.85: pending manual review
-  - < 0.60:  not stored (would clutter market_links.jsonl)
+Confidence buckets (MatchConfig defaults):
+  - >= 0.75: auto-approved
+  - 0.35-0.75: pending manual review
+  - < 0.35:  not stored (would clutter market_links.jsonl)
 
 Manual overrides (stored in market_links.jsonl with matched_by="manual")
 are sticky: the auto matcher cannot overwrite a human decision.
