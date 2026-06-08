@@ -43,6 +43,7 @@ class LeaderboardStore(Protocol):
 
 class ActivityStore(Protocol):
     def write_activity(self, events: list[PolymarketActivity]) -> int: ...
+    def flush(self) -> None: ...
 
 
 class PositionStore(Protocol):
@@ -96,7 +97,12 @@ def _read_index(index_path: Path) -> set[str]:
 
 
 def _write_index(index_path: Path, values: set[str]) -> None:
-    index_path.write_text(json.dumps(sorted(values), indent=2), encoding="utf-8")
+    # Compact (no indent) + atomic temp-swap. The index can reach multiple GB;
+    # pretty-printing roughly doubles its size for zero benefit, and a partial
+    # write here would corrupt cross-run dedupe.
+    tmp = index_path.with_suffix(index_path.suffix + ".tmp")
+    tmp.write_text(json.dumps(sorted(values), separators=(",", ":")), encoding="utf-8")
+    tmp.replace(index_path)
 
 
 class JsonlLeaderboardStore:
@@ -115,18 +121,61 @@ class JsonlLeaderboardStore:
         return len(entries)
 
 
+# Fields persisted to the activity JSONL. price/outcome/slug/title are dropped
+# on purpose: skill computation never reads them and they are derivable from
+# polymarket_markets.jsonl by condition_id. They stay on the in-memory dataclass
+# so the Postgres dual-write path is unaffected. transaction_hash is kept so the
+# dedupe index can be rebuilt from the file if it is ever lost.
+_ACTIVITY_JSONL_FIELDS = (
+    "proxy_wallet",
+    "timestamp",
+    "condition_id",
+    "type",
+    "side",
+    "size",
+    "usdc_size",
+    "outcome_index",
+    "event_slug",
+    "transaction_hash",
+    "name",
+    "pseudonym",
+    "fetched_at",
+)
+
+
+def _dump_activity(event: PolymarketActivity) -> str:
+    row = asdict(event)
+    return json.dumps(
+        {key: row[key] for key in _ACTIVITY_JSONL_FIELDS}, separators=(",", ":")
+    )
+
+
 class JsonlActivityStore:
-    """Append + dedupe on (transaction_hash, condition_id, outcome_index)."""
+    """Append + dedupe on (transaction_hash, condition_id, outcome_index, type).
+
+    The dedupe index is loaded from disk once, held in memory for the life of
+    the store, and persisted with flush(). Re-reading and re-writing the
+    (potentially multi-GB) sidecar index on every per-wallet write was O(n) in
+    the index size and dominated ingest time as history grew. Callers must
+    flush() once the activity write loop is done (see runner.run_wallets).
+    """
 
     def __init__(self, path: Path) -> None:
         self._path = path
         self._path.parent.mkdir(parents=True, exist_ok=True)
         self._index_path = path.with_suffix(path.suffix + ".index.json")
+        self._index: set[str] | None = None
+        self._index_dirty = False
+
+    def _ensure_index(self) -> set[str]:
+        if self._index is None:
+            self._index = _read_index(self._index_path)
+        return self._index
 
     def write_activity(self, events: list[PolymarketActivity]) -> int:
         if not events:
             return 0
-        index = _read_index(self._index_path)
+        index = self._ensure_index()
         written = 0
         with self._path.open("a", encoding="utf-8") as fh:
             for event in events:
@@ -134,10 +183,16 @@ class JsonlActivityStore:
                 if key in index:
                     continue
                 index.add(key)
-                fh.write(json.dumps(asdict(event), separators=(",", ":")) + "\n")
+                fh.write(_dump_activity(event) + "\n")
                 written += 1
-        _write_index(self._index_path, index)
+        if written:
+            self._index_dirty = True
         return written
+
+    def flush(self) -> None:
+        if self._index is not None and self._index_dirty:
+            _write_index(self._index_path, self._index)
+            self._index_dirty = False
 
     @staticmethod
     def _dedupe_key(event: PolymarketActivity) -> str:
@@ -486,6 +541,10 @@ class PostgresActivityStore:
         finally:
             conn.close()
         return len(events)
+
+    def flush(self) -> None:
+        # Postgres writes commit per call; nothing is buffered.
+        return None
 
 
 class PostgresPositionStore:
@@ -1043,6 +1102,10 @@ class DualActivityStore:
         written = self._primary.write_activity(events)
         self._secondary.write_activity(events)
         return written
+
+    def flush(self) -> None:
+        self._primary.flush()
+        self._secondary.flush()
 
 
 class DualPositionStore:

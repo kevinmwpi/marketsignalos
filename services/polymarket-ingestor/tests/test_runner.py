@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 import httpx
+import pytest
 
 from marketsignalos_polymarket.polymarket_client import (
     PolymarketClient,
@@ -21,6 +22,10 @@ from marketsignalos_polymarket.runner import (
     _paginate_activity,
     _paginate_activity_window,
     _paginate_positions,
+    _plan_market_backfill_fetches,
+    _select_shallow_wallet_targets,
+    _write_economics_cache,
+    _EconomicsPeriodEntry,
     parse_activity_row,
     parse_leaderboard_row,
     parse_market_row,
@@ -338,6 +343,146 @@ def test_markets_backfill_fetches_closed_and_active_metadata(tmp_path: Path) -> 
     client.close()
     assert written == 1
     assert closed_values == ["true", "false"]
+
+
+def test_markets_backfill_skips_settled_markets(tmp_path: Path) -> None:
+    gamma_calls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        gamma_calls.append(request.url.host)
+        return httpx.Response(200, json=[])
+
+    stores = _build_stores(tmp_path)
+    stores.activity.write_activity([parse_activity_row(_activity_row(1000, "0xa"))])
+    settled = parse_market_row({
+        "id": "1",
+        "conditionId": "0xc",
+        "slug": "settled",
+        "question": "?",
+        "outcomes": '["Yes", "No"]',
+        "outcomePrices": '["1", "0"]',
+        "closed": True,
+        "active": False,
+    })
+    stores.markets.write_markets([settled])
+
+    client = _client_with_handler(handler)
+    written = run_markets_backfill_from_activity(client, stores, open_market_ttl_seconds=3600)
+    client.close()
+
+    assert written == 0
+    assert gamma_calls == []
+
+
+def test_markets_backfill_refreshes_stale_open_markets_only(tmp_path: Path) -> None:
+    closed_values: list[str | None] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        closed_values.append(request.url.params.get("closed"))
+        return httpx.Response(200, json=[{
+            "id": "2", "conditionId": "0xc", "slug": "open", "question": "?",
+            "outcomes": '["Yes", "No"]', "outcomePrices": '["0.6", "0.4"]',
+            "closed": False, "active": True,
+        }])
+
+    stores = _build_stores(tmp_path)
+    stores.activity.write_activity([parse_activity_row(_activity_row(1000, "0xa"))])
+    stale = parse_market_row({
+        "id": "1",
+        "conditionId": "0xc",
+        "slug": "open",
+        "question": "?",
+        "outcomes": '["Yes", "No"]',
+        "outcomePrices": '["0.5", "0.5"]',
+        "closed": False,
+        "active": True,
+    })
+    object.__setattr__(stale, "fetched_at", "2020-01-01T00:00:00Z")
+    stores.markets.write_markets([stale])
+
+    client = _client_with_handler(handler)
+    written = run_markets_backfill_from_activity(client, stores, open_market_ttl_seconds=3600)
+    client.close()
+
+    assert written == 2
+    assert closed_values == ["true", "false"]
+
+
+def test_plan_market_backfill_splits_missing_and_stale() -> None:
+    missing, stale = _plan_market_backfill_fetches(
+        {"0xnew", "0xopen"},
+        {
+            "0xopen": {"closed": False, "fetched_at": "2020-01-01T00:00:00Z"},
+            "0xsettled": {"closed": True, "fetched_at": "2026-01-01T00:00:00Z"},
+        },
+        open_market_ttl_seconds=3600,
+    )
+    assert missing == ["0xnew"]
+    assert stale == ["0xopen"]
+
+
+def test_run_wallets_uses_economics_cache_without_user_leaderboard_calls(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import marketsignalos_polymarket.runner as runner_module
+
+    cache_path = tmp_path / "polymarket_wallet_economics_cache.json"
+    monkeypatch.setattr(runner_module, "_economics_cache_path", lambda: cache_path)
+    _write_economics_cache({
+        "0xabc": {
+            "ALL": _EconomicsPeriodEntry(pnl_usdc=100.0, volume_usdc=1000.0),
+            "MONTH": _EconomicsPeriodEntry(pnl_usdc=10.0, volume_usdc=None),
+        },
+    })
+
+    leaderboard_calls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if path == "/v1/leaderboard" and request.url.params.get("user"):
+            leaderboard_calls.append(str(request.url.params.get("user")))
+        if path == "/activity":
+            return httpx.Response(200, json=[])
+        if path == "/positions":
+            return httpx.Response(200, json=[])
+        if path == "/closed-positions":
+            return httpx.Response(200, json=[])
+        if path == "/value":
+            return httpx.Response(200, json=[{"user": "0xabc", "value": 1.0}])
+        if path.startswith("/user-pnl"):
+            return httpx.Response(200, json=[])
+        return httpx.Response(404)
+
+    client = _client_with_handler(handler)
+    stores = _build_stores(tmp_path)
+    run_wallets(client, stores, addresses=["0xabc"], max_pages_per_wallet=1)
+    client.close()
+
+    assert leaderboard_calls == []
+    hydration = stores.hydration.load_hydration()["0xabc"]
+    assert hydration.economic_all_time_complete is True
+    assert hydration.economic_month_complete is True
+    assert hydration.all_time_pnl_usdc == 100.0
+    assert hydration.pnl_30d_usdc == 10.0
+
+
+def test_select_shallow_wallet_targets_prefers_hot_wallets(tmp_path: Path) -> None:
+    stores = _build_stores(tmp_path)
+    enrichment = stores.activity_path.parent / "polymarket_wallet_enrichment.jsonl"
+    enrichment.write_text(
+        json.dumps({
+            "proxy_wallet": "0xhot",
+            "skill_likelihood": 0.95,
+            "resolved_trades": 40,
+            "tailability_status": "tailable",
+        }) + "\n",
+        encoding="utf-8",
+    )
+    selected = _select_shallow_wallet_targets(
+        ["0xhot", "0xcold"],
+        stores=stores,
+    )
+    assert selected == ["0xhot"]
 
 
 def test_run_wallets_advances_checkpoint(tmp_path: Path) -> None:

@@ -23,7 +23,9 @@ import argparse
 import json
 import logging
 import os
+import threading
 import uuid
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
@@ -56,6 +58,7 @@ from .models import (
     PolymarketWalletValue,
 )
 from .polymarket_client import PolymarketClient, PolymarketClientConfig
+from .rate_limiter import HostRateLimiter
 from .skill_computation import compute_all_enrichment
 from .storage import (
     ActivityStore,
@@ -534,7 +537,7 @@ def _paginate_positions(
 
 
 def _paginate_closed_positions(
-    client: PolymarketClient, address: str, *, page_size: int = 50
+    client: PolymarketClient, address: str, *, page_size: int = 500
 ) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for offset in range(0, 100_000, page_size):
@@ -562,6 +565,593 @@ def _max_drawdown(rows: list[dict[str, Any]]) -> float:
     return drawdown
 
 
+def _economics_cache_path() -> Path:
+    return _data_dir() / "polymarket_wallet_economics_cache.json"
+
+
+@dataclass(slots=True)
+class _EconomicsPeriodEntry:
+    pnl_usdc: float | None = None
+    volume_usdc: float | None = None
+
+
+def _load_economics_cache() -> dict[str, dict[str, _EconomicsPeriodEntry]]:
+    path = _economics_cache_path()
+    if not path.exists():
+        return {}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return {}
+    if not isinstance(payload, dict):
+        return {}
+    out: dict[str, dict[str, _EconomicsPeriodEntry]] = {}
+    for wallet, periods in payload.items():
+        if not isinstance(wallet, str) or not isinstance(periods, dict):
+            continue
+        wallet_key = wallet.lower()
+        out[wallet_key] = {}
+        for period, values in periods.items():
+            if not isinstance(period, str) or not isinstance(values, dict):
+                continue
+            pnl = values.get("pnl_usdc")
+            vol = values.get("volume_usdc")
+            out[wallet_key][period] = _EconomicsPeriodEntry(
+                pnl_usdc=float(pnl) if pnl is not None else None,
+                volume_usdc=float(vol) if vol is not None else None,
+            )
+    return out
+
+
+def _write_economics_cache(cache: dict[str, dict[str, _EconomicsPeriodEntry]]) -> None:
+    path = _economics_cache_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        wallet: {
+            period: {
+                "pnl_usdc": entry.pnl_usdc,
+                "volume_usdc": entry.volume_usdc,
+            }
+            for period, entry in periods.items()
+        }
+        for wallet, periods in sorted(cache.items())
+    }
+    tmp = path.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(payload, separators=(",", ":")), encoding="utf-8")
+    os.replace(tmp, path)
+
+
+def _economics_period_entry(
+    cache: dict[str, dict[str, _EconomicsPeriodEntry]], wallet: str, period: str
+) -> _EconomicsPeriodEntry:
+    return cache.setdefault(wallet.lower(), {}).setdefault(period, _EconomicsPeriodEntry())
+
+
+def _economics_from_leaderboard_row(
+    row: dict[str, Any], *, order_by: str
+) -> tuple[float | None, float | None]:
+    pnl = _economic_value(row, "pnl", "profit")
+    vol = _economic_value(row, "vol", "volume")
+    amount = _economic_value(row, "amount")
+    if order_by == "PNL":
+        if pnl == 0.0 and amount != 0.0:
+            pnl = amount
+        if pnl != 0.0 or amount != 0.0:
+            return pnl, None
+        return None, None
+    if order_by == "VOL":
+        if vol == 0.0 and amount != 0.0:
+            vol = amount
+        if vol != 0.0 or amount != 0.0:
+            return None, vol
+        return None, None
+    return None, None
+
+
+def _merge_leaderboard_rows_into_economics_cache(
+    cache: dict[str, dict[str, _EconomicsPeriodEntry]],
+    rows: list[dict[str, Any]],
+    *,
+    time_period: str,
+    order_by: str,
+) -> None:
+    period_key = time_period.upper()
+    for row in rows:
+        wallet = str(row.get("proxyWallet", "")).lower()
+        if not wallet:
+            continue
+        entry = _economics_period_entry(cache, wallet, period_key)
+        pnl, vol = _economics_from_leaderboard_row(row, order_by=order_by)
+        if pnl is not None:
+            entry.pnl_usdc = pnl
+        if vol is not None:
+            entry.volume_usdc = vol
+
+
+def _supplement_economics_cache_pnl_slices(
+    client: PolymarketClient,
+    cache: dict[str, dict[str, _EconomicsPeriodEntry]],
+    *,
+    depth: int = 500,
+    page_size: int = 50,
+) -> None:
+    """Fill ALL/MONTH PnL for top leaderboard wallets in two matrix passes."""
+    for time_period in ("ALL", "MONTH"):
+        for offset in range(0, depth, page_size):
+            limit = min(page_size, depth - offset)
+            try:
+                raw = client.get_trader_leaderboard_rankings(
+                    category="OVERALL",
+                    time_period=time_period,
+                    order_by="PNL",
+                    limit=limit,
+                    offset=offset,
+                )
+            except (httpx.HTTPStatusError, httpx.TransportError):
+                break
+            if not raw:
+                break
+            _merge_leaderboard_rows_into_economics_cache(
+                cache, raw, time_period=time_period, order_by="PNL",
+            )
+            if len(raw) < limit:
+                break
+
+
+def _apply_cached_economics(
+    state: PolymarketWalletHydration,
+    cache: dict[str, dict[str, _EconomicsPeriodEntry]],
+    wallet: str,
+) -> None:
+    periods = cache.get(wallet.lower(), {})
+    all_time = periods.get("ALL")
+    month = periods.get("MONTH")
+    if all_time is not None:
+        if all_time.pnl_usdc is not None:
+            state.all_time_pnl_usdc = all_time.pnl_usdc
+        if all_time.volume_usdc is not None:
+            state.all_time_volume_usdc = all_time.volume_usdc
+        if all_time.pnl_usdc is not None and all_time.volume_usdc is not None:
+            state.economic_all_time_complete = True
+    if month is not None and month.pnl_usdc is not None:
+        state.pnl_30d_usdc = month.pnl_usdc
+        state.economic_month_complete = True
+
+
+def _open_market_ttl_seconds() -> int:
+    raw = os.getenv("POLYMARKET_OPEN_MARKET_TTL_SECONDS", "3600")
+    try:
+        return max(0, int(raw))
+    except ValueError:
+        return 3600
+
+
+def _wallet_concurrency() -> int:
+    raw = os.getenv("POLYMARKET_WALLET_CONCURRENCY", "4")
+    try:
+        return max(1, int(raw))
+    except ValueError:
+        return 4
+
+
+def _api_rps() -> float:
+    raw = os.getenv("POLYMARKET_API_RPS", "5")
+    try:
+        return max(0.1, float(raw))
+    except ValueError:
+        return 5.0
+
+
+def _activity_exhaust_page_cap() -> int:
+    raw = os.getenv("POLYMARKET_ACTIVITY_EXHAUST_PAGES", "2000")
+    try:
+        return max(1, int(raw))
+    except ValueError:
+        return 2000
+
+
+def _skip_reference_refresh_default() -> bool:
+    return os.getenv("POLYMARKET_SKIP_REFERENCE_REFRESH", "").lower() in {
+        "1", "true", "yes", "on",
+    }
+
+
+def _market_row_has_settlement(row: dict[str, Any]) -> bool:
+    if bool(row.get("closed", False)):
+        return True
+    prices_raw = row.get("outcome_prices")
+    if isinstance(prices_raw, list):
+        prices = [_as_float(price) for price in prices_raw]
+    else:
+        prices = _decode_float_list(prices_raw)
+    return any(price >= 0.99 for price in prices)
+
+
+def _fetched_at_age_seconds(fetched_at: str) -> float | None:
+    if not fetched_at:
+        return None
+    try:
+        normalized = fetched_at.replace("Z", "+00:00")
+        dt = datetime.fromisoformat(normalized)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return (datetime.now(timezone.utc) - dt).total_seconds()
+    except ValueError:
+        return None
+
+
+def _load_market_index(markets_path: Path) -> dict[str, dict[str, Any]]:
+    index: dict[str, dict[str, Any]] = {}
+    for row in _read_jsonl(markets_path):
+        cond = str(row.get("condition_id", ""))
+        if not cond:
+            continue
+        rec = index.setdefault(
+            cond,
+            {"closed": False, "fetched_at": "", "has_settlement": False},
+        )
+        if bool(row.get("closed", False)):
+            rec["closed"] = True
+        if _market_row_has_settlement(row):
+            rec["has_settlement"] = True
+        fetched_at = str(row.get("fetched_at", "") or "")
+        if fetched_at >= str(rec.get("fetched_at", "")):
+            rec["fetched_at"] = fetched_at
+            rec["closed"] = bool(row.get("closed", False)) or rec["closed"]
+            rec["has_settlement"] = _market_row_has_settlement(row) or rec["has_settlement"]
+    return index
+
+
+def _plan_market_backfill_fetches(
+    activity_conds: set[str],
+    market_index: dict[str, dict[str, Any]],
+    *,
+    open_market_ttl_seconds: int,
+) -> tuple[list[str], list[str]]:
+    missing: list[str] = []
+    stale_open: list[str] = []
+    for cond in sorted(activity_conds):
+        rec = market_index.get(cond)
+        if rec is None:
+            missing.append(cond)
+            continue
+        if rec.get("closed") and rec.get("has_settlement"):
+            continue
+        if rec.get("closed"):
+            continue
+        age = _fetched_at_age_seconds(str(rec.get("fetched_at", "")))
+        if age is None or age > open_market_ttl_seconds:
+            stale_open.append(cond)
+    return missing, stale_open
+
+
+def _reference_refresh_is_stale(stores: _Stores, *, open_market_ttl_seconds: int) -> bool:
+    activity_rows = _read_jsonl(stores.activity_path)
+    activity_conds = {
+        str(row.get("condition_id", ""))
+        for row in activity_rows
+        if row.get("type") == "TRADE" and row.get("condition_id")
+    }
+    if not activity_conds:
+        return False
+    market_index = _load_market_index(stores.markets_path)
+    missing, stale_open = _plan_market_backfill_fetches(
+        activity_conds, market_index, open_market_ttl_seconds=open_market_ttl_seconds,
+    )
+    return bool(missing or stale_open)
+
+
+def _refresh_metadata_coverage(stores: _Stores) -> None:
+    """Update hydration metadata coverage using settlement-ready Gamma rows."""
+    activity_rows = _read_jsonl(stores.activity_path)
+    conds_by_wallet: dict[str, set[str]] = {}
+    for row in activity_rows:
+        if row.get("type") != "TRADE":
+            continue
+        wallet = str(row.get("proxy_wallet", "")).lower()
+        cond = str(row.get("condition_id", ""))
+        if wallet and cond:
+            conds_by_wallet.setdefault(wallet, set()).add(cond)
+    if not conds_by_wallet:
+        return
+
+    market_index = _load_market_index(stores.markets_path)
+    hydration = stores.hydration.load_hydration()
+    updated: list[PolymarketWalletHydration] = []
+    for wallet, conditions in conds_by_wallet.items():
+        state = hydration.get(wallet) or PolymarketWalletHydration(proxy_wallet=wallet)
+        state.metadata_condition_count = len(conditions)
+        covered = {
+            cond
+            for cond in conditions
+            if market_index.get(cond, {}).get("has_settlement")
+        }
+        state.metadata_covered_count = len(covered)
+        state.metadata_coverage = (
+            state.metadata_covered_count / state.metadata_condition_count
+            if state.metadata_condition_count
+            else 1.0
+        )
+        updated.append(state)
+    stores.hydration.upsert_hydration(updated)
+
+
+def _fetch_wallet_economics(
+    client: PolymarketClient,
+    addr: str,
+    state: PolymarketWalletHydration,
+    economics_cache: dict[str, dict[str, _EconomicsPeriodEntry]],
+    *,
+    rate_limiter: HostRateLimiter | None,
+) -> None:
+    _apply_cached_economics(state, economics_cache, addr)
+    if not state.economic_all_time_complete:
+        if rate_limiter is not None:
+            rate_limiter.wait()
+        pnl_row, vol_row = client.get_wallet_economics_for_period(addr, time_period="ALL")
+        if pnl_row:
+            state.all_time_pnl_usdc = _economic_value(pnl_row, "pnl", "profit", "amount")
+        if vol_row:
+            state.all_time_volume_usdc = _economic_value(vol_row, "vol", "volume", "amount")
+        state.economic_all_time_complete = bool(pnl_row or vol_row)
+    if not state.economic_month_complete:
+        if rate_limiter is not None:
+            rate_limiter.wait()
+        pnl_row, _vol_row = client.get_wallet_economics_for_period(addr, time_period="MONTH")
+        if pnl_row:
+            state.pnl_30d_usdc = _economic_value(pnl_row, "pnl", "profit", "amount")
+            state.economic_month_complete = True
+
+
+def _extend_activity_via_subgraph(
+    client: PolymarketClient,
+    addr: str,
+    state: PolymarketWalletHydration,
+    *,
+    activity_page_size: int,
+    max_pages: int,
+    rate_limiter: HostRateLimiter | None,
+) -> list[PolymarketActivity]:
+    if state.activity_history_complete:
+        return []
+    try:
+        if rate_limiter is not None:
+            rate_limiter.wait()
+        fills = client.get_wallet_order_fills_from_subgraph(
+            addr,
+            before_timestamp=state.oldest_activity_cursor_timestamp,
+        )
+    except Exception as exc:  # noqa: BLE001
+        state.errors.append(f"subgraph: {exc}")
+        return []
+    if not fills:
+        return []
+    timestamps = [
+        int(fill.get("timestamp", 0) or 0)
+        for fill in fills
+        if fill.get("timestamp") not in (None, "")
+    ]
+    if not timestamps:
+        return []
+    oldest = min(timestamps)
+    if (
+        state.oldest_activity_cursor_timestamp is not None
+        and oldest >= state.oldest_activity_cursor_timestamp
+    ):
+        return []
+    state.oldest_activity_cursor_timestamp = oldest - 1
+    if rate_limiter is not None:
+        rate_limiter.wait()
+    extra = _paginate_activity_window(
+        client,
+        addr,
+        page_size=activity_page_size,
+        max_pages=max_pages,
+        since_timestamp=None,
+        end_timestamp=state.oldest_activity_cursor_timestamp,
+    )
+    state.activity_history_complete = extra.exhausted and extra.boundary_complete
+    if not extra.boundary_complete:
+        state.errors.append("activity boundary exceeded offset safety bound")
+    return extra.events
+
+
+@dataclass(slots=True)
+class _WalletHydrationTotals:
+    activity: int = 0
+    positions: int = 0
+    values: int = 0
+
+
+def _hydrate_single_wallet(
+    client: PolymarketClient,
+    stores: _Stores,
+    addr: str,
+    *,
+    hydration_by_wallet: dict[str, PolymarketWalletHydration],
+    economics_cache: dict[str, dict[str, _EconomicsPeriodEntry]],
+    activity_page_size: int,
+    max_pages: int,
+    full_backfill: bool,
+    exhaust_activity: bool,
+    try_subgraph_backfill: bool,
+    rate_limiter: HostRateLimiter | None,
+    write_lock: threading.Lock | None,
+) -> _WalletHydrationTotals:
+    state = hydration_by_wallet.get(addr.lower()) or PolymarketWalletHydration(
+        proxy_wallet=addr.lower()
+    )
+    state.errors = []
+    since = None if full_backfill else stores.checkpoints.get_last_timestamp(addr)
+    activity: list[PolymarketActivity] = []
+    try:
+        if since is not None:
+            if rate_limiter is not None:
+                rate_limiter.wait()
+            incremental = _paginate_activity_window(
+                client,
+                addr,
+                page_size=activity_page_size,
+                max_pages=max_pages,
+                since_timestamp=since,
+            )
+            activity.extend(incremental.events)
+
+        if full_backfill:
+            state.activity_history_complete = False
+            state.oldest_activity_cursor_timestamp = None
+        if not state.activity_history_complete:
+            if rate_limiter is not None:
+                rate_limiter.wait()
+            history = _paginate_activity_window(
+                client,
+                addr,
+                page_size=activity_page_size,
+                max_pages=max_pages,
+                since_timestamp=None,
+                end_timestamp=state.oldest_activity_cursor_timestamp,
+            )
+            activity.extend(history.events)
+            if history.oldest_timestamp is not None:
+                state.oldest_activity_cursor_timestamp = history.oldest_timestamp - 1
+            state.activity_history_complete = history.exhausted and history.boundary_complete
+            if not history.boundary_complete:
+                state.errors.append("activity boundary exceeded offset safety bound")
+
+        if try_subgraph_backfill and not state.activity_history_complete:
+            activity.extend(
+                _extend_activity_via_subgraph(
+                    client,
+                    addr,
+                    state,
+                    activity_page_size=activity_page_size,
+                    max_pages=max_pages,
+                    rate_limiter=rate_limiter,
+                )
+            )
+    except Exception as exc:  # noqa: BLE001
+        state.activity_history_complete = False
+        state.errors.append(f"activity: {exc}")
+
+    parsed_positions: list[PolymarketPosition] = []
+    value = PolymarketWalletValue(proxy_wallet=addr, value_usdc=0.0)
+    activity_written = positions_written = values_written = 0
+    position_snapshot_at = _utcnow_iso()
+    position_snapshot_id = f"{addr.lower()}:{uuid.uuid4().hex}"
+
+    def _write() -> None:
+        nonlocal activity_written, positions_written, values_written
+        activity_written += stores.activity.write_activity(activity)
+        if activity:
+            max_ts = max(event.timestamp for event in activity)
+            stores.checkpoints.set_last_timestamp(addr, max_ts)
+            state.newest_activity_timestamp = max(
+                state.newest_activity_timestamp or 0, max_ts
+            )
+        if parsed_positions:
+            positions_written += stores.positions.write_positions(parsed_positions)
+            stores.position_snapshots.write_position_snapshot(
+                PolymarketPositionSnapshot(
+                    proxy_wallet=addr.lower(),
+                    snapshot_id=position_snapshot_id,
+                    position_count=len(parsed_positions),
+                    complete=True,
+                    snapshot_at=position_snapshot_at,
+                )
+            )
+        values_written += stores.values.write_values([value])
+        state.last_refreshed_at = _utcnow_iso()
+        if state.metadata_condition_count == 0:
+            state.metadata_coverage = 1.0
+        hydration_by_wallet[addr.lower()] = state
+        stores.hydration.upsert_hydration([state])
+
+    try:
+        if rate_limiter is not None:
+            rate_limiter.wait()
+        raw_positions = _paginate_positions(client, addr)
+        parsed_positions = [
+            parse_position_row(
+                row,
+                proxy_wallet=addr,
+                snapshot_id=position_snapshot_id,
+                snapshot_at=position_snapshot_at,
+            )
+            for row in raw_positions
+        ]
+        state.latest_position_snapshot_id = position_snapshot_id
+        state.positions_complete = True
+        state.active_pnl_usdc = sum(position.cash_pnl_usdc for position in parsed_positions)
+    except Exception as exc:  # noqa: BLE001
+        state.positions_complete = False
+        state.errors.append(f"positions: {exc}")
+
+    try:
+        if rate_limiter is not None:
+            rate_limiter.wait()
+        raw_closed = _paginate_closed_positions(client, addr)
+        closed_rows = [
+            parse_closed_position_row(row, proxy_wallet=addr) for row in raw_closed
+        ]
+        if write_lock is not None:
+            with write_lock:
+                stores.closed_positions.write_closed_positions(closed_rows)
+        else:
+            stores.closed_positions.write_closed_positions(closed_rows)
+        state.closed_positions_complete = True
+    except Exception as exc:  # noqa: BLE001
+        state.closed_positions_complete = False
+        state.errors.append(f"closed positions: {exc}")
+
+    try:
+        _fetch_wallet_economics(
+            client, addr, state, economics_cache, rate_limiter=rate_limiter,
+        )
+    except Exception as exc:  # noqa: BLE001
+        state.economic_all_time_complete = False
+        state.economic_month_complete = False
+        state.errors.append(f"economics: {exc}")
+
+    try:
+        if rate_limiter is not None:
+            rate_limiter.wait()
+        raw_value = client.get_wallet_value(addr)
+        value = PolymarketWalletValue(
+            proxy_wallet=addr,
+            value_usdc=_as_float(raw_value.get("value")),
+        )
+    except Exception as exc:  # noqa: BLE001
+        state.errors.append(f"value: {exc}")
+
+    try:
+        if rate_limiter is not None:
+            rate_limiter.wait()
+        state.max_drawdown_usdc = _max_drawdown(client.get_wallet_pnl_history(addr))
+    except Exception as exc:  # noqa: BLE001
+        log.info("wallet_pnl_history_unavailable wallet=%s error=%s", addr, exc)
+
+    if write_lock is not None:
+        with write_lock:
+            _write()
+    else:
+        _write()
+
+    log.info(
+        "wallet wallet=%s since=%s activity_new=%d positions=%d value_usdc=%.2f errors=%d",
+        addr,
+        since,
+        len(activity),
+        len(parsed_positions),
+        value.value_usdc,
+        len(state.errors),
+    )
+    return _WalletHydrationTotals(
+        activity=activity_written,
+        positions=positions_written,
+        values=values_written,
+    )
+
+
 def run_wallets(
     client: PolymarketClient,
     stores: _Stores,
@@ -570,153 +1160,78 @@ def run_wallets(
     activity_page_size: int = 500,
     max_pages_per_wallet: int = 20,
     full_backfill: bool = False,
+    exhaust_activity: bool = False,
+    try_subgraph_backfill: bool = False,
+    wallet_concurrency: int | None = None,
     progress_cb: ProgressCallback | None = None,
 ) -> tuple[int, int, int]:
     """Hydrate wallets while persisting fail-closed trust inputs."""
-    total_activity = total_positions = total_values = 0
+    if not addresses:
+        return 0, 0, 0
+
+    max_pages = (
+        _activity_exhaust_page_cap() if exhaust_activity else max_pages_per_wallet
+    )
+    concurrency = wallet_concurrency or _wallet_concurrency()
     hydration_by_wallet = stores.hydration.load_hydration()
+    economics_cache = _load_economics_cache()
+    rate_limiter = HostRateLimiter(rps=_api_rps()) if concurrency > 1 else None
+    write_lock = threading.Lock() if concurrency > 1 else None
     total = len(addresses)
-    for i, addr in enumerate(addresses):
-        if progress_cb is not None:
-            progress_cb({
-                "stage": "wallets",
-                "current": i + 1,
-                "total": total,
-                "wallet": addr,
-            })
-        state = hydration_by_wallet.get(addr.lower()) or PolymarketWalletHydration(
-            proxy_wallet=addr.lower()
-        )
-        state.errors = []
-        since = None if full_backfill else stores.checkpoints.get_last_timestamp(addr)
-        activity: list[PolymarketActivity] = []
-        try:
-            if since is not None:
-                incremental = _paginate_activity_window(
-                    client,
-                    addr,
-                    page_size=activity_page_size,
-                    max_pages=max_pages_per_wallet,
-                    since_timestamp=since,
-                )
-                activity.extend(incremental.events)
+    total_activity = total_positions = total_values = 0
 
-            if full_backfill:
-                state.activity_history_complete = False
-                state.oldest_activity_cursor_timestamp = None
-            if not state.activity_history_complete:
-                history = _paginate_activity_window(
-                    client,
-                    addr,
-                    page_size=activity_page_size,
-                    max_pages=max_pages_per_wallet,
-                    since_timestamp=None,
-                    end_timestamp=state.oldest_activity_cursor_timestamp,
-                )
-                activity.extend(history.events)
-                if history.oldest_timestamp is not None:
-                    state.oldest_activity_cursor_timestamp = history.oldest_timestamp - 1
-                state.activity_history_complete = history.exhausted and history.boundary_complete
-                if not history.boundary_complete:
-                    state.errors.append("activity boundary exceeded offset safety bound")
-
-            total_activity += stores.activity.write_activity(activity)
-            if activity:
-                max_ts = max(event.timestamp for event in activity)
-                stores.checkpoints.set_last_timestamp(addr, max_ts)
-                state.newest_activity_timestamp = max(
-                    state.newest_activity_timestamp or 0, max_ts
-                )
-        except Exception as exc:  # noqa: BLE001
-            state.activity_history_complete = False
-            state.errors.append(f"activity: {exc}")
-
-        parsed_positions: list[PolymarketPosition] = []
-        try:
-            snapshot_at = _utcnow_iso()
-            snapshot_id = f"{addr.lower()}:{uuid.uuid4().hex}"
-            raw_positions = _paginate_positions(client, addr)
-            parsed_positions = [
-                parse_position_row(
-                    row,
-                    proxy_wallet=addr,
-                    snapshot_id=snapshot_id,
-                    snapshot_at=snapshot_at,
-                )
-                for row in raw_positions
-            ]
-            total_positions += stores.positions.write_positions(parsed_positions)
-            stores.position_snapshots.write_position_snapshot(
-                PolymarketPositionSnapshot(
-                    proxy_wallet=addr.lower(),
-                    snapshot_id=snapshot_id,
-                    position_count=len(parsed_positions),
-                    complete=True,
-                    snapshot_at=snapshot_at,
-                )
-            )
-            state.latest_position_snapshot_id = snapshot_id
-            state.positions_complete = True
-            state.active_pnl_usdc = sum(position.cash_pnl_usdc for position in parsed_positions)
-        except Exception as exc:  # noqa: BLE001
-            state.positions_complete = False
-            state.errors.append(f"positions: {exc}")
-
-        try:
-            raw_closed = _paginate_closed_positions(client, addr)
-            stores.closed_positions.write_closed_positions(
-                [parse_closed_position_row(row, proxy_wallet=addr) for row in raw_closed]
-            )
-            state.closed_positions_complete = True
-        except Exception as exc:  # noqa: BLE001
-            state.closed_positions_complete = False
-            state.errors.append(f"closed positions: {exc}")
-
-        try:
-            all_time = client.get_wallet_economic_summary(addr, time_period="ALL")
-            state.all_time_pnl_usdc = _economic_value(all_time, "pnl", "profit")
-            state.all_time_volume_usdc = _economic_value(all_time, "vol", "volume")
-            state.economic_all_time_complete = bool(all_time)
-        except Exception as exc:  # noqa: BLE001
-            state.economic_all_time_complete = False
-            state.errors.append(f"all-time economics: {exc}")
-        try:
-            month = client.get_wallet_economic_summary(addr, time_period="MONTH")
-            state.pnl_30d_usdc = _economic_value(month, "pnl", "profit")
-            state.economic_month_complete = bool(month)
-        except Exception as exc:  # noqa: BLE001
-            state.economic_month_complete = False
-            state.errors.append(f"30-day economics: {exc}")
-        try:
-            state.max_drawdown_usdc = _max_drawdown(client.get_wallet_pnl_history(addr))
-        except Exception as exc:  # noqa: BLE001
-            log.info("wallet_pnl_history_unavailable wallet=%s error=%s", addr, exc)
-
-        try:
-            raw_value = client.get_wallet_value(addr)
-            value = PolymarketWalletValue(
-                proxy_wallet=addr,
-                value_usdc=_as_float(raw_value.get("value")),
-            )
-            total_values += stores.values.write_values([value])
-        except Exception as exc:  # noqa: BLE001
-            state.errors.append(f"value: {exc}")
-            value = PolymarketWalletValue(proxy_wallet=addr, value_usdc=0.0)
-
-        state.last_refreshed_at = _utcnow_iso()
-        if state.metadata_condition_count == 0:
-            state.metadata_coverage = 1.0
-        hydration_by_wallet[addr.lower()] = state
-        stores.hydration.upsert_hydration([state])
-        log.info(
-            "wallet wallet=%s since=%s activity_new=%d positions=%d value_usdc=%.2f errors=%d",
+    def _run_one(addr: str) -> _WalletHydrationTotals:
+        return _hydrate_single_wallet(
+            client,
+            stores,
             addr,
-            since,
-            len(activity),
-            len(parsed_positions),
-            value.value_usdc,
-            len(state.errors),
+            hydration_by_wallet=hydration_by_wallet,
+            economics_cache=economics_cache,
+            activity_page_size=activity_page_size,
+            max_pages=max_pages,
+            full_backfill=full_backfill,
+            exhaust_activity=exhaust_activity,
+            try_subgraph_backfill=try_subgraph_backfill or exhaust_activity,
+            rate_limiter=rate_limiter,
+            write_lock=write_lock,
         )
+
+    if concurrency <= 1 or total == 1:
+        for i, addr in enumerate(addresses):
+            if progress_cb is not None:
+                progress_cb({
+                    "stage": "wallets",
+                    "current": i + 1,
+                    "total": total,
+                    "wallet": addr,
+                })
+            result = _run_one(addr)
+            total_activity += result.activity
+            total_positions += result.positions
+            total_values += result.values
+    else:
+        completed = 0
+        with ThreadPoolExecutor(max_workers=concurrency) as pool:
+            futures = {pool.submit(_run_one, addr): addr for addr in addresses}
+            for future in as_completed(futures):
+                completed += 1
+                addr = futures[future]
+                if progress_cb is not None:
+                    progress_cb({
+                        "stage": "wallets",
+                        "current": completed,
+                        "total": total,
+                        "wallet": addr,
+                    })
+                result = future.result()
+                total_activity += result.activity
+                total_positions += result.positions
+                total_values += result.values
+
+    # Persist the activity dedupe index once, now that all per-wallet writes
+    # for this run are done (write_activity keeps it in memory until here).
+    stores.activity.flush()
+    _refresh_metadata_coverage(stores)
     return total_activity, total_positions, total_values
 
 
@@ -807,12 +1322,16 @@ def run_markets(
 
 
 def run_markets_backfill_from_activity(
-    client: PolymarketClient, stores: _Stores
+    client: PolymarketClient,
+    stores: _Stores,
+    *,
+    open_market_ttl_seconds: int | None = None,
 ) -> int:
     """
-    Refresh every condition_id referenced in local activity through explicit
-    closed and active Gamma passes. Gamma defaults to active-only when the
-    filter is omitted, which silently drops historical settlement metadata.
+    Refresh condition_ids referenced in local activity through Gamma.
+
+    Skips settled markets already in the store and only re-fetches open
+    markets whose cached snapshot is older than the TTL (default 1 hour).
     """
     activity_rows = _read_jsonl(stores.activity_path)
     activity_conds = {
@@ -822,42 +1341,98 @@ def run_markets_backfill_from_activity(
     if not activity_conds:
         return 0
 
-    log.info(
-        "markets_backfill refresh activity_conds=%d",
-        len(activity_conds),
+    ttl = (
+        open_market_ttl_seconds
+        if open_market_ttl_seconds is not None
+        else _open_market_ttl_seconds()
     )
-    condition_ids = sorted(activity_conds)
-    raw = client.get_markets_by_condition_ids(condition_ids, closed=True)
-    raw.extend(client.get_markets_by_condition_ids(condition_ids, closed=False))
+    market_index = _load_market_index(stores.markets_path)
+    missing, stale_open = _plan_market_backfill_fetches(
+        activity_conds, market_index, open_market_ttl_seconds=ttl,
+    )
+    stale_only = [cond for cond in stale_open if cond not in missing]
+    to_fetch = sorted(set(missing) | set(stale_open))
+
+    raw: list[dict[str, Any]] = []
+    if missing:
+        raw.extend(client.get_markets_by_condition_ids(missing, closed=True))
+        raw.extend(client.get_markets_by_condition_ids(missing, closed=False))
+    if stale_only:
+        raw.extend(client.get_markets_by_condition_ids(stale_only, closed=True))
+        raw.extend(client.get_markets_by_condition_ids(stale_only, closed=False))
+
+    log.info(
+        "markets_backfill activity_conds=%d missing=%d stale_open=%d "
+        "fetching=%d skipped=%d ttl_s=%d",
+        len(activity_conds),
+        len(missing),
+        len(stale_open),
+        len(to_fetch),
+        len(activity_conds) - len(to_fetch),
+        ttl,
+    )
+
     parsed = [parse_market_row(r) for r in raw]
-    written = stores.markets.write_markets(parsed)
+    written = stores.markets.write_markets(parsed) if parsed else 0
+    _refresh_metadata_coverage(stores)
     known_conds = {
         str(row.get("condition_id", ""))
         for row in _read_jsonl(stores.markets_path)
         if row.get("condition_id")
     }
-    conds_by_wallet: dict[str, set[str]] = {}
-    for row in activity_rows:
-        wallet = str(row.get("proxy_wallet", "")).lower()
-        cond = str(row.get("condition_id", ""))
-        if wallet and cond and row.get("type") == "TRADE":
-            conds_by_wallet.setdefault(wallet, set()).add(cond)
-    hydration = stores.hydration.load_hydration()
-    for wallet, conditions in conds_by_wallet.items():
-        state = hydration.get(wallet) or PolymarketWalletHydration(proxy_wallet=wallet)
-        state.metadata_condition_count = len(conditions)
-        state.metadata_covered_count = len(conditions & known_conds)
-        state.metadata_coverage = (
-            state.metadata_covered_count / state.metadata_condition_count
-            if state.metadata_condition_count
-            else 1.0
-        )
-        stores.hydration.upsert_hydration([state])
     log.info(
         "markets_backfill fetched=%d written=%d covered=%d/%d",
         len(raw), written, len(activity_conds & known_conds), len(activity_conds),
     )
     return written
+
+
+def run_reference_refresh(
+    client: PolymarketClient,
+    stores: _Stores,
+    *,
+    market_pages: int = 5,
+    market_page_size: int = 100,
+    skip_kalshi: bool = True,
+    kalshi_status: str = "open",
+    kalshi_max_pages: int = 25,
+    open_market_ttl_seconds: int | None = None,
+    progress_cb: ProgressCallback | None = None,
+) -> tuple[int, int, int, int]:
+    """Refresh shared market metadata and optional Kalshi mirrors (no wallet I/O)."""
+    if progress_cb is not None:
+        progress_cb({"stage": "markets"})
+    markets_written = run_markets(
+        client,
+        stores,
+        closed=True,
+        pages=market_pages,
+        page_size=market_page_size,
+    )
+    markets_backfilled = run_markets_backfill_from_activity(
+        client,
+        stores,
+        open_market_ttl_seconds=open_market_ttl_seconds,
+    )
+    kalshi_written = 0
+    links_written = 0
+    if not skip_kalshi:
+        if progress_cb is not None:
+            progress_cb({"stage": "kalshi_markets"})
+        try:
+            kalshi_written = run_fetch_kalshi_markets(
+                stores, status=kalshi_status, max_pages=kalshi_max_pages,
+            )
+            if progress_cb is not None:
+                progress_cb({"stage": "match_markets"})
+            links_written = run_match_markets(stores)
+        except Exception as exc:  # noqa: BLE001
+            log.warning(
+                "kalshi mirror step failed (non-fatal): %s — enrichment "
+                "will still run without Kalshi cross-references",
+                exc,
+            )
+    return markets_written, markets_backfilled, kalshi_written, links_written
 
 
 # ── JSONL readers (for the enrichment pass) ──────────────────────────────────
@@ -1288,6 +1863,37 @@ def _load_skilled_wallets(enrichment_path: Path) -> set[str]:
     return skilled
 
 
+def _select_shallow_wallet_targets(
+    watchlist: list[str],
+    *,
+    stores: _Stores,
+) -> list[str]:
+    """Hot wallets for shallow ingest: actionable signals + pinned review state."""
+    data_dir = stores.activity_path.parent
+    enrichment_path = data_dir / "polymarket_wallet_enrichment.jsonl"
+    positions_path = data_dir / "polymarket_positions.jsonl"
+
+    watchlist_set = {wallet.lower() for wallet in watchlist if wallet}
+    hot: set[str] = set()
+    hot |= _load_wallets_with_open_positions(positions_path)
+    hot |= _load_skilled_wallets(enrichment_path)
+    for row in _read_jsonl(enrichment_path):
+        if str(row.get("tailability_status", "")) == "tailable":
+            wallet = str(row.get("proxy_wallet", "")).lower()
+            if wallet:
+                hot.add(wallet)
+
+    review = _load_review_state(_review_state_path())
+    for wallet, record in review.items():
+        if record.status == "pinned":
+            hot.add(wallet.lower())
+
+    selected = sorted(hot & watchlist_set)
+    if selected:
+        return selected
+    return sorted(watchlist_set)
+
+
 def _load_last_activity_by_wallet(enrichment_path: Path) -> dict[str, int]:
     """Most-recent activity timestamp per wallet, sourced from enrichment.
     Wallets not present here are treated as `last_activity_at = None`."""
@@ -1378,6 +1984,11 @@ def _build_parser() -> argparse.ArgumentParser:
     sub.add_parser(
         "enrichment",
         help="Recompute wallet skill enrichment from the local JSONL stores",
+    )
+
+    sub.add_parser(
+        "reference-refresh",
+        help="Refresh Gamma market metadata from activity + optional Kalshi mirror",
     )
 
     fk = sub.add_parser("fetch-kalshi-markets", help="Pull Kalshi public markets into kalshi_markets.jsonl")
@@ -1565,6 +2176,7 @@ def run_pipeline(
     kalshi_max_pages: int = 25,
     skip_kalshi: bool = True,
     include_profit_leaderboard: bool = False,
+    refresh_reference: bool | None = None,
     client: PolymarketClient | None = None,
     progress_cb: ProgressCallback | None = None,
 ) -> PipelineResult:
@@ -1663,28 +2275,57 @@ def run_pipeline(
             len(merged), len(seeded - existing), succeeded,
         )
 
-        # 2. Per-wallet activity/positions/value
-        log.info("pipeline step=wallets count=%d", len(merged))
+        # 2. Per-wallet activity/positions/value — shallow runs only hot wallets
+        # (open positions, skilled/tailable, pinned) to keep steady-state cheap.
+        wallet_targets = _select_shallow_wallet_targets(merged, stores=stores)
+        log.info(
+            "pipeline step=wallets watchlist=%d selected=%d",
+            len(merged),
+            len(wallet_targets),
+        )
         activity_total, positions_total, values_total = (0, 0, 0)
-        if merged:
-            _emit({"stage": "wallets", "current": 0, "total": len(merged)})
+        if wallet_targets:
+            _emit({"stage": "wallets", "current": 0, "total": len(wallet_targets)})
             activity_total, positions_total, values_total = run_wallets(
                 client,
                 stores,
-                addresses=merged,
+                addresses=wallet_targets,
                 activity_page_size=activity_page_size,
                 max_pages_per_wallet=max_pages_per_wallet,
                 progress_cb=progress_cb,
             )
 
-        # 3. Polymarket market metadata + activity-backfill
-        log.info("pipeline step=markets")
-        _emit({"stage": "markets"})
-        markets_written = run_markets(
-            client, stores,
-            closed=True, pages=market_pages, page_size=market_page_size,
+        # 3. Shared market metadata (+ optional Kalshi mirror).
+        do_reference = (
+            refresh_reference
+            if refresh_reference is not None
+            else not _skip_reference_refresh_default()
         )
-        markets_backfilled = run_markets_backfill_from_activity(client, stores)
+        if not do_reference:
+            do_reference = _reference_refresh_is_stale(
+                stores, open_market_ttl_seconds=_open_market_ttl_seconds(),
+            )
+        markets_written = markets_backfilled = 0
+        kalshi_written = links_written = 0
+        if do_reference:
+            log.info("pipeline step=reference_refresh")
+            (
+                markets_written,
+                markets_backfilled,
+                kalshi_written,
+                links_written,
+            ) = run_reference_refresh(
+                client,
+                stores,
+                market_pages=market_pages,
+                market_page_size=market_page_size,
+                skip_kalshi=skip_kalshi,
+                kalshi_status=kalshi_status,
+                kalshi_max_pages=kalshi_max_pages,
+                progress_cb=progress_cb,
+            )
+        else:
+            log.info("pipeline skip reference refresh (fresh cache)")
 
         # 4. Compute on-chain skill enrichment
         log.info("pipeline step=enrichment")
@@ -1700,26 +2341,6 @@ def run_pipeline(
                 "pipeline skill-qualified wallets merged into watchlist count=%d",
                 skill_watchlist_added,
             )
-
-        # 5. Kalshi mirror: fetch public markets + match
-        kalshi_written = 0
-        links_written = 0
-        if not skip_kalshi:
-            log.info("pipeline step=kalshi_markets status=%s", kalshi_status)
-            _emit({"stage": "kalshi_markets"})
-            try:
-                kalshi_written = run_fetch_kalshi_markets(
-                    stores, status=kalshi_status, max_pages=kalshi_max_pages,
-                )
-                log.info("pipeline step=match_markets")
-                _emit({"stage": "match_markets"})
-                links_written = run_match_markets(stores)
-            except Exception as exc:  # noqa: BLE001
-                log.warning(
-                    "kalshi mirror step failed (non-fatal): %s — skilled bets "
-                    "will still show but without Kalshi cross-references",
-                    exc,
-                )
 
         result = PipelineResult(
             windows_attempted=attempts,
@@ -1828,6 +2449,7 @@ def run_deep_leaderboard(
     consecutive_degraded = 0
     aborted_early = False
     abort_reason: str | None = None
+    economics_cache = _load_economics_cache()
 
     # Flatten the matrix so the circuit breaker can abort the whole sweep
     # with a single `break` (Python has no labeled break across nested
@@ -1908,6 +2530,12 @@ def run_deep_leaderboard(
             ]
             stores.leaderboard.write_leaderboard(entries)
             leaderboard_entries += len(entries)
+            _merge_leaderboard_rows_into_economics_cache(
+                economics_cache,
+                raw,
+                time_period=time_period,
+                order_by=order_by,
+            )
 
             for i, entry in enumerate(entries):
                 wallet = entry.proxy_wallet
@@ -1950,11 +2578,13 @@ def run_deep_leaderboard(
                 category, time_period, order_by,
             )
 
+    _write_economics_cache(economics_cache)
+
     log.info(
         "deep_leaderboard complete discovered=%d entries=%d slices_attempted=%d "
-        "slices_succeeded=%d aborted_early=%s",
+        "slices_succeeded=%d aborted_early=%s economics_wallets=%d",
         len(discovered), leaderboard_entries, slices_attempted, slices_succeeded,
-        aborted_early,
+        aborted_early, len(economics_cache),
     )
     return _DeepSweepResult(
         discovered=discovered,
@@ -2135,6 +2765,7 @@ def run_deep_pipeline(
     kalshi_status: str = "open",
     kalshi_max_pages: int = 25,
     skip_kalshi: bool = True,
+    refresh_reference: bool | None = None,
     client: PolymarketClient | None = None,
     progress_cb: ProgressCallback | None = None,
 ) -> PipelineResult:
@@ -2173,6 +2804,15 @@ def run_deep_pipeline(
             client, stores, depth=leaderboard_depth,
             orders=leaderboard_orders, progress_cb=progress_cb,
         )
+        economics_cache = _load_economics_cache()
+        _supplement_economics_cache_pnl_slices(
+            client,
+            economics_cache,
+            depth=leaderboard_depth,
+            page_size=_DEEP_LIMIT_PER_REQUEST,
+        )
+        _write_economics_cache(economics_cache)
+        log.info("deep_pipeline economics_cache wallets=%d", len(economics_cache))
 
         # 1b. Fold in recent on-chain traders (de-biased discovery source).
         # Non-fatal: a subgraph blip should not kill an otherwise-good run,
@@ -2252,6 +2892,8 @@ def run_deep_pipeline(
                 addresses=batch,
                 activity_page_size=activity_page_size,
                 max_pages_per_wallet=activity_pages,
+                exhaust_activity=True,
+                try_subgraph_backfill=True,
                 progress_cb=progress_cb,
             )
             # Stamp last_polled_at on every wallet in the batch so the cursor
@@ -2277,38 +2919,38 @@ def run_deep_pipeline(
         # Persist the updated review-state (atomic rewrite).
         _write_review_state(review_path, state)
 
-        # 5. Markets + enrichment + Kalshi mirror (same as shallow pipeline).
-        log.info("deep_pipeline step=markets")
-        _emit({"stage": "markets"})
-        markets_written = run_markets(
-            client, stores,
-            closed=True, pages=market_pages, page_size=market_page_size,
+        # 5. Shared reference data + enrichment.
+        do_reference = (
+            refresh_reference
+            if refresh_reference is not None
+            else True
         )
-        markets_backfilled = run_markets_backfill_from_activity(client, stores)
+        markets_written = markets_backfilled = 0
+        kalshi_written = links_written = 0
+        if do_reference:
+            log.info("deep_pipeline step=reference_refresh")
+            (
+                markets_written,
+                markets_backfilled,
+                kalshi_written,
+                links_written,
+            ) = run_reference_refresh(
+                client,
+                stores,
+                market_pages=market_pages,
+                market_page_size=market_page_size,
+                skip_kalshi=skip_kalshi,
+                kalshi_status=kalshi_status,
+                kalshi_max_pages=kalshi_max_pages,
+                progress_cb=progress_cb,
+            )
+        else:
+            log.info("deep_pipeline skip reference refresh")
 
         log.info("deep_pipeline step=enrichment")
         _emit({"stage": "enrichment"})
         enrichment_written = run_enrichment(stores)
         quality = _quality_counts(stores)
-
-        kalshi_written = 0
-        links_written = 0
-        if not skip_kalshi:
-            log.info("deep_pipeline step=kalshi_markets status=%s", kalshi_status)
-            _emit({"stage": "kalshi_markets"})
-            try:
-                kalshi_written = run_fetch_kalshi_markets(
-                    stores, status=kalshi_status, max_pages=kalshi_max_pages,
-                )
-                log.info("deep_pipeline step=match_markets")
-                _emit({"stage": "match_markets"})
-                links_written = run_match_markets(stores)
-            except Exception as exc:  # noqa: BLE001
-                log.warning(
-                    "kalshi mirror step failed (non-fatal): %s — skilled bets "
-                    "will still show but without Kalshi cross-references",
-                    exc,
-                )
 
         active = sum(1 for r in state.values() if r.status == "active")
         archived = sum(1 for r in state.values() if r.status == "archived")
@@ -2508,6 +3150,8 @@ def main(argv: list[str] | None = None) -> int:
                 run_markets_backfill_from_activity(client, stores)
         elif args.mode == "enrichment":
             run_enrichment(stores)
+        elif args.mode == "reference-refresh":
+            run_reference_refresh(client, stores)
         elif args.mode == "fetch-kalshi-markets":
             run_fetch_kalshi_markets(stores, status=args.status, max_pages=args.max_pages)
         elif args.mode == "match-markets":
