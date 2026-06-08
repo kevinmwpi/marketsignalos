@@ -120,6 +120,23 @@ def test_get_trader_leaderboard_rankings_validates_args() -> None:
     client.close()
 
 
+def test_get_wallet_economics_for_period_uses_separate_orders() -> None:
+    orders: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/v1/leaderboard":
+            orders.append(str(request.url.params.get("orderBy")))
+            return httpx.Response(200, json=[{"proxyWallet": "0xabc", "amount": 1.0}])
+        return httpx.Response(404)
+
+    client = _client_with_mock(handler)
+    pnl, vol = client.get_wallet_economics_for_period("0xabc", time_period="ALL")
+    client.close()
+    assert orders == ["PNL", "VOL"]
+    assert pnl.get("proxyWallet") == "0xabc"
+    assert vol.get("proxyWallet") == "0xabc"
+
+
 def test_get_wallet_activity_passes_user_param() -> None:
     captured: dict[str, Any] = {}
 

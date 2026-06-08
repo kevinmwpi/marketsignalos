@@ -288,7 +288,7 @@ class PolymarketClient:
         return cast(list[dict[str, Any]], payload)
 
     def get_wallet_closed_positions(
-        self, address: str, *, limit: int = 50, offset: int = 0
+        self, address: str, *, limit: int = 500, offset: int = 0
     ) -> list[dict[str, Any]]:
         """Closed or exited positions for audit and realized-performance summaries."""
         params: dict[str, Any] = {"user": address, "limit": limit}
@@ -302,7 +302,7 @@ class PolymarketClient:
     def get_wallet_economic_summary(
         self, address: str, *, time_period: str
     ) -> dict[str, Any]:
-        """Official PnL and volume summary for one wallet."""
+        """Official PnL and volume summary for one wallet (VOL ranking row)."""
         rows = self.get_trader_leaderboard_rankings(
             category="OVERALL",
             time_period=time_period,
@@ -311,6 +311,73 @@ class PolymarketClient:
             user=address,
         )
         return rows[0] if rows else {}
+
+    def get_wallet_economics_for_period(
+        self, address: str, *, time_period: str
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        """Return (pnl_row, volume_row) from separate PNL and VOL leaderboard lookups."""
+        pnl_rows = self.get_trader_leaderboard_rankings(
+            category="OVERALL",
+            time_period=time_period,
+            order_by="PNL",
+            limit=1,
+            user=address,
+        )
+        vol_rows = self.get_trader_leaderboard_rankings(
+            category="OVERALL",
+            time_period=time_period,
+            order_by="VOL",
+            limit=1,
+            user=address,
+        )
+        return (
+            pnl_rows[0] if pnl_rows else {},
+            vol_rows[0] if vol_rows else {},
+        )
+
+    def get_wallet_order_fills_from_subgraph(
+        self,
+        address: str,
+        *,
+        max_pages: int = 20,
+        page_size: int = 500,
+        before_timestamp: int | None = None,
+    ) -> list[dict[str, Any]]:
+        """Wallet-specific orderbook fills from Goldsky (newest first).
+
+        Used to extend Data API activity backfill when pagination bounds are hit.
+        Rows do not include conditionId — callers use timestamps to drive further
+        /activity window fetches.
+        """
+        wallet = address.lower()
+        if not wallet:
+            return []
+        if not 1 <= page_size <= 1000:
+            raise ValueError("page_size must be in [1, 1000]")
+
+        fills: list[dict[str, Any]] = []
+        cursor_ts = before_timestamp
+        for _ in range(max_pages):
+            ts_filter = f", timestamp_lt: {cursor_ts}" if cursor_ts is not None else ""
+            query = (
+                "{ orderFilledEvents(first: %d, orderBy: timestamp, "
+                'orderDirection: desc, where: { or: [{ maker: "%s" }, { taker: "%s" }]%s }) '
+                "{ id timestamp transactionHash maker { id } taker { id } "
+                "makerAssetId takerAssetId makerAmountFilled takerAmountFilled } }"
+                % (page_size, wallet, wallet, ts_filter)
+            )
+            events = self._post_graphql(query).get("orderFilledEvents")
+            if not isinstance(events, list) or not events:
+                break
+            oldest_ts: int | None = None
+            for event in events:
+                if isinstance(event, dict):
+                    fills.append(event)
+                    oldest_ts = int(event.get("timestamp", 0) or 0)
+            if len(events) < page_size or oldest_ts is None:
+                break
+            cursor_ts = oldest_ts
+        return fills
 
     def get_wallet_pnl_history(
         self, address: str, *, interval: str = "all", fidelity: str = "1d"
