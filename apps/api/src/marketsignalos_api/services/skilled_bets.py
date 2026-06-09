@@ -130,6 +130,48 @@ class SkilledBetSignal:
     tradability_reasons: list[str]
     signal_age_days: int
 
+    # Remaining-edge assessment: how much of the wallet's thesis the market
+    # has already priced in since their entry.
+    #   move_captured_pct     (current - entry) / (1 - entry), clamped to [-1, 1].
+    #                         0 = price still at entry; 1 = fully converged to $1;
+    #                         negative = price now BELOW the wallet's entry.
+    #   remaining_edge_status "discounted" | "fresh" | "partial" | "late" | "unknown"
+    move_captured_pct: float
+    remaining_edge_status: str
+
+
+# ── Remaining-edge classification ─────────────────────────────────────────────
+#
+# A tailing user cares whether the wallet's thesis is still buyable near the
+# wallet's own entry. move_captured_pct measures the fraction of the maximum
+# possible move (entry → $1) the market has already made.
+
+_REMAINING_EDGE_SORT_RANK = {
+    "discounted": 0,  # price below entry — better than the wallet got
+    "fresh": 0,       # ≤25% of the move captured
+    "partial": 1,     # 25–75% captured
+    "unknown": 1,     # no live price — don't promote, don't bury
+    "late": 2,        # >75% captured — mostly priced in
+}
+
+
+def _remaining_edge(entry_price: float, current_price: float) -> tuple[float, str]:
+    """(move_captured_pct, status) for a bet entered at entry_price whose
+    picked outcome now trades at current_price. Prices are 0..1 probabilities."""
+    if current_price <= 0.0 or entry_price <= 0.0 or entry_price >= 1.0:
+        return 0.0, "unknown"
+    captured = (current_price - entry_price) / (1.0 - entry_price)
+    captured = max(-1.0, min(1.0, captured))
+    if captured < -0.02:
+        status = "discounted"
+    elif captured <= 0.25:
+        status = "fresh"
+    elif captured <= 0.75:
+        status = "partial"
+    else:
+        status = "late"
+    return round(captured, 4), status
+
 
 # ── Internal helpers ──────────────────────────────────────────────────────────
 
@@ -241,7 +283,9 @@ def _load_skilled_wallets(
         skill = _f(row.get("skill_likelihood"))
         resolved = _i(row.get("resolved_trades"))
         if (
-            str(row.get("score_version", "")) != "forecast-v2"
+            # v2 rows (no recency fit) stay eligible so the feed survives a
+            # deploy until the next enrichment pass rewrites the file as v3.
+            str(row.get("score_version", "")) not in ("forecast-v2", "forecast-v3")
             or str(row.get("data_quality_status", "untrusted")) != "trusted"
             or str(row.get("tailability_status", "blocked")) != "tailable"
             or skill < min_skill
@@ -515,6 +559,7 @@ def _compute_skilled_bets_cached(
     max_bet_age_days: int,
     include_untradable: bool,
     require_positive_edge: bool,
+    max_move_captured: float,
 ) -> tuple[SkilledBetSignal, ...]:
     # _fingerprint is unused inside the body — it exists only to key the cache
     # on input-file state so changed data forces a recompute.
@@ -527,6 +572,7 @@ def _compute_skilled_bets_cached(
             max_bet_age_days=max_bet_age_days,
             include_untradable=include_untradable,
             require_positive_edge=require_positive_edge,
+            max_move_captured=max_move_captured,
         )
     )
 
@@ -590,12 +636,17 @@ def compute_skilled_bets(
     max_bet_age_days: int = 0,
     include_untradable: bool = False,
     require_positive_edge: bool = False,
+    max_move_captured: float = 1.0,
     limit: int | None = 50,
 ) -> list[SkilledBetSignal]:
     """
-    Returns recent BUY entries from skilled wallets that are STILL HELD,
-    sorted by entry timestamp (newest first). Memoized on input-file
-    fingerprint + params; see the caching note above.
+    Returns recent BUY entries from skilled wallets that are STILL HELD.
+
+    Ordering: remaining-edge rank first (fresh/discounted entries before
+    partially-priced ones, fully-converged "late" signals last), then entry
+    timestamp (newest first) within each rank. When `max_move_captured` < 1,
+    signals whose move_captured_pct meets or exceeds it are dropped entirely.
+    Memoized on input-file fingerprint + params; see the caching note above.
     """
     cached = _compute_skilled_bets_cached(
         _inputs_fingerprint(),
@@ -606,6 +657,7 @@ def compute_skilled_bets(
         max_bet_age_days,
         include_untradable,
         require_positive_edge,
+        max_move_captured,
     )
     signals = list(cached)
     if limit is None:
@@ -622,6 +674,7 @@ def _compute_skilled_bets(
     max_bet_age_days: int = 0,
     include_untradable: bool = False,
     require_positive_edge: bool = False,
+    max_move_captured: float = 1.0,
 ) -> list[SkilledBetSignal]:
     """Uncached worker — reads the JSONL stores and builds the signal list."""
     skilled = _load_skilled_wallets(
@@ -688,6 +741,25 @@ def _compute_skilled_bets(
         if not include_untradable and not is_actionable(tradability):
             continue
         entry_price = round(_f(buy.get("price")), 4)
+        # Live price of the PICKED outcome: prefer the position snapshot's
+        # outcome price; fall back to the Gamma market YES price (inverted
+        # for NO-side bets).
+        current_outcome = pos.current_outcome_price
+        if current_outcome <= 0.0 and market_rec and market_rec.yes_price > 0.0:
+            current_outcome = (
+                market_rec.yes_price
+                if pos.outcome_index == 0
+                else 1.0 - market_rec.yes_price
+            )
+        move_captured, remaining_edge_status = _remaining_edge(
+            entry_price, current_outcome
+        )
+        if (
+            max_move_captured < 1.0
+            and remaining_edge_status != "unknown"
+            and move_captured >= max_move_captured
+        ):
+            continue
         kalshi_yes = round(mirror.yes_price, 4) if mirror else 0.0
         kalshi_vs_entry_cents = (
             round((kalshi_yes - entry_price) * 100.0, 2)
@@ -756,8 +828,17 @@ def _compute_skilled_bets(
                 kalshi_vs_entry_cents=kalshi_vs_entry_cents,
                 tradability=tradability,
                 tradability_reasons=tradability_reasons,
+                move_captured_pct=move_captured,
+                remaining_edge_status=remaining_edge_status,
             )
         )
 
-    out.sort(key=lambda s: -s.bought_at)
+    # Down-rank converged signals: a stale entry is worse than no entry for a
+    # tailing user. Within each remaining-edge rank, newest BUY first.
+    out.sort(
+        key=lambda s: (
+            _REMAINING_EDGE_SORT_RANK.get(s.remaining_edge_status, 1),
+            -s.bought_at,
+        )
+    )
     return out

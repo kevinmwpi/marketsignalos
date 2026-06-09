@@ -81,3 +81,7 @@ def kalshi_markets_path() -> Path:
 
 def market_links_path() -> Path:
     return _polymarket_dir() / "market_links.jsonl"
+
+
+def signal_ledger_path() -> Path:
+    return _polymarket_dir() / "signal_ledger.jsonl"

@@ -511,6 +511,74 @@ def test_skilled_bets_drops_positions_absent_from_latest_complete_snapshot(
     assert rows == []
 
 
+def test_skilled_bets_carries_remaining_edge_fields(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Each row reports how much of the entry→$1 move the market has already
+    made, so a tailing user can tell fresh entries from priced-in ones."""
+    pm_dir = _seed(tmp_path)
+    monkeypatch.setenv("POLYMARKET_DATA_DIR", str(pm_dir))
+
+    rows = TestClient(app).get(
+        "/signals/skilled-bets?min_skill=0.9&min_resolved=20"
+    ).json()
+    fed = next(r for r in rows if r["condition_id"] == "0xcond_fed")
+    # entry 0.45 → now 0.58: (0.58 - 0.45) / (1 - 0.45) = 0.2364 → fresh.
+    assert fed["move_captured_pct"] == 0.2364
+    assert fed["remaining_edge_status"] == "fresh"
+    btc = next(r for r in rows if r["condition_id"] == "0xcond_btc")
+    # entry 0.30 → now 0.40: 0.10 / 0.70 = 0.1429 → fresh.
+    assert btc["move_captured_pct"] == 0.1429
+    assert btc["remaining_edge_status"] == "fresh"
+
+
+def _make_fed_position_late(pm_dir: Path) -> None:
+    """Rewrite the fed position so its picked outcome now trades at 0.95 —
+    91% of the 0.45→$1 move already captured."""
+    positions_path = pm_dir / "polymarket_positions.jsonl"
+    rows = [
+        json.loads(line)
+        for line in positions_path.read_text(encoding="utf-8").splitlines()
+        if line
+    ]
+    for row in rows:
+        if row["condition_id"] == "0xcond_fed" and row["proxy_wallet"] == "0xalpha":
+            row["current_outcome_price"] = 0.95
+    _write_jsonl(positions_path, rows)
+
+
+def test_skilled_bets_down_ranks_late_signals(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The fed entry is NEWER than btc, but once its move is >75% captured it
+    must sort below the still-fresh btc signal."""
+    pm_dir = _seed(tmp_path)
+    _make_fed_position_late(pm_dir)
+    monkeypatch.setenv("POLYMARKET_DATA_DIR", str(pm_dir))
+
+    rows = TestClient(app).get(
+        "/signals/skilled-bets?min_skill=0.9&min_resolved=20"
+    ).json()
+    assert [r["condition_id"] for r in rows] == ["0xcond_btc", "0xcond_fed"]
+    fed = rows[1]
+    assert fed["remaining_edge_status"] == "late"
+    # (0.95 - 0.45) / 0.55 = 0.9091
+    assert fed["move_captured_pct"] == 0.9091
+
+
+def test_skilled_bets_max_move_captured_filters_late_signals(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    pm_dir = _seed(tmp_path)
+    _make_fed_position_late(pm_dir)
+    monkeypatch.setenv("POLYMARKET_DATA_DIR", str(pm_dir))
+
+    rows = TestClient(app).get(
+        "/signals/skilled-bets?min_skill=0.9&min_resolved=20&max_move_captured=0.75"
+    ).json()
+    assert [r["condition_id"] for r in rows] == ["0xcond_btc"]
+
+
 def test_legacy_enrichment_is_quarantined_from_active_feed(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -10,6 +10,7 @@ from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from marketsignalos_api.api.routes.health import router as health_router
 from marketsignalos_api.api.routes.ingestor import router as ingestor_router
 from marketsignalos_api.api.routes.polymarket import router as polymarket_router
+from marketsignalos_api.api.routes.signal_ledger import router as signal_ledger_router
 from marketsignalos_api.api.routes.skilled_bets import router as skilled_bets_router
 
 
@@ -100,6 +101,7 @@ def create_app() -> FastAPI:
     app.include_router(health_router)
     app.include_router(ingestor_router)
     app.include_router(polymarket_router)
+    app.include_router(signal_ledger_router)
     app.include_router(skilled_bets_router)
 
     @app.get("/", response_class=HTMLResponse, include_in_schema=False)

@@ -848,6 +848,8 @@ class PostgresEnrichmentStore:
                          forecast_edge_lower_bound, independent_settled_events,
                          all_time_pnl_usdc, all_time_volume_usdc, all_time_roi,
                          pnl_30d_usdc, active_pnl_usdc, max_drawdown_usdc,
+                         recent_skill_likelihood, recent_edge_mean,
+                         recent_edge_lower_bound, recent_independent_events,
                          data_quality_status, data_quality_reasons,
                          economic_qualified, tailability_status,
                          tailability_reasons, score_version, computed_at)
@@ -856,6 +858,7 @@ class PostgresEnrichmentStore:
                             %s, %s, %s, %s, %s,
                             %s, %s, %s, %s,
                             %s, %s, %s, %s, %s, %s,
+                            %s, %s, %s, %s,
                             %s, %s::jsonb, %s, %s, %s::jsonb, %s, %s::timestamptz)
                     ON CONFLICT (proxy_wallet) DO UPDATE SET
                         name                   = EXCLUDED.name,
@@ -886,6 +889,10 @@ class PostgresEnrichmentStore:
                         pnl_30d_usdc = EXCLUDED.pnl_30d_usdc,
                         active_pnl_usdc = EXCLUDED.active_pnl_usdc,
                         max_drawdown_usdc = EXCLUDED.max_drawdown_usdc,
+                        recent_skill_likelihood = EXCLUDED.recent_skill_likelihood,
+                        recent_edge_mean = EXCLUDED.recent_edge_mean,
+                        recent_edge_lower_bound = EXCLUDED.recent_edge_lower_bound,
+                        recent_independent_events = EXCLUDED.recent_independent_events,
                         data_quality_status = EXCLUDED.data_quality_status,
                         data_quality_reasons = EXCLUDED.data_quality_reasons,
                         economic_qualified = EXCLUDED.economic_qualified,
@@ -907,6 +914,8 @@ class PostgresEnrichmentStore:
                          e.forecast_edge_lower_bound, e.independent_settled_events,
                          e.all_time_pnl_usdc, e.all_time_volume_usdc, e.all_time_roi,
                          e.pnl_30d_usdc, e.active_pnl_usdc, e.max_drawdown_usdc,
+                         e.recent_skill_likelihood, e.recent_edge_mean,
+                         e.recent_edge_lower_bound, e.recent_independent_events,
                          e.data_quality_status, json.dumps(e.data_quality_reasons),
                          e.economic_qualified, e.tailability_status,
                          json.dumps(e.tailability_reasons), e.score_version, e.computed_at)

@@ -46,7 +46,7 @@ scipy dependency required; everything below uses stdlib `math`.
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 # Standard-normal CDF / inverse used to translate posterior-stddev units
 # into probabilities and quantiles.
@@ -95,6 +95,7 @@ class Bet:
     event_slug: str = ""     # used only by effective_sample_size()
     cost_usdc: float = 0.0   # used for rank_score weighting
     weight: float = 1.0      # event-capped likelihood contribution
+    ts: int = 0              # unix seconds of the last fill — recency weighting input
 
 
 @dataclass(slots=True, frozen=True)
@@ -226,6 +227,42 @@ def fit_population_prior(per_wallet_bets: list[list[Bet]]) -> PopulationPrior:
     within_var = sum(f.edge_var for f in fits) / len(fits)
     sigma2 = max(_MIN_SIGMA2_POP, total_var - within_var)
     return PopulationPrior(mu=mu, sigma2=sigma2)
+
+
+# ── Recency weighting ────────────────────────────────────────────────────────
+
+# Half-life for the recency-weighted ("recent form") edge fit. A bet that
+# settled one half-life before the reference timestamp contributes half a
+# vote; two half-lives, a quarter; and so on.
+RECENCY_HALF_LIFE_DAYS = 180.0
+
+_SECONDS_PER_DAY = 86_400.0
+
+
+def apply_recency_weights(
+    bets: list[Bet],
+    *,
+    now_ts: int,
+    half_life_days: float = RECENCY_HALF_LIFE_DAYS,
+) -> list[Bet]:
+    """
+    Multiply each bet's (event-capped) weight by an exponential time decay:
+
+        decay = 0.5 ** (age_days / half_life_days)
+
+    `now_ts` is the deterministic reference point — callers pass the newest
+    bet timestamp observed in the dataset rather than the wall clock, so the
+    same input data always reproduces the same score. Bets with ts=0 (no
+    timestamp recorded) decay fully, which is the conservative choice.
+    """
+    if half_life_days <= 0.0:
+        return list(bets)
+    out: list[Bet] = []
+    for bet in bets:
+        age_days = max(0.0, (now_ts - bet.ts) / _SECONDS_PER_DAY)
+        decay = 0.5 ** (age_days / half_life_days)
+        out.append(replace(bet, weight=bet.weight * decay))
+    return out
 
 
 # ── Effective sample size & rank score ───────────────────────────────────────

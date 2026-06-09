@@ -243,12 +243,19 @@ class PolymarketWalletEnrichment:
     pnl_30d_usdc: float = 0.0
     active_pnl_usdc: float = 0.0
     max_drawdown_usdc: float = 0.0
+    # Recency-weighted ("recent form") edge fit: same model, with each bet's
+    # likelihood weight decayed by RECENCY_HALF_LIFE_DAYS half-lives between
+    # its last fill and the newest bet in the enrichment pass.
+    recent_skill_likelihood: float = 0.0
+    recent_edge_mean: float = 0.0
+    recent_edge_lower_bound: float = 0.0
+    recent_independent_events: float = 0.0
     data_quality_status: str = "untrusted"
     data_quality_reasons: list[str] = field(default_factory=list)
     economic_qualified: bool = False
     tailability_status: str = "blocked"
     tailability_reasons: list[str] = field(default_factory=list)
-    score_version: str = "forecast-v2"
+    score_version: str = "forecast-v3"
     computed_at: str = field(default_factory=_utcnow_iso)
 
 

@@ -40,6 +40,7 @@ from .bayesian_skill import (
     Bet,
     PopulationPrior,
     PosteriorFit,
+    apply_recency_weights,
     effective_sample_size,
     fit_population_prior,
     fit_wallet_posterior,
@@ -54,6 +55,12 @@ from .models import (
 )
 
 log = logging.getLogger("marketsignalos.polymarket.skill")
+
+# Tailability floor for the recency-weighted fit: a wallet must have at least
+# this many *recent* independent settled events (after exponential decay) to
+# remain tailable. Protects against tailing a wallet whose record is entirely
+# stale — the lifetime gate (ESS >= 20) can't catch that.
+MIN_RECENT_INDEPENDENT_EVENTS = 5.0
 
 
 # ── Position aggregation ──────────────────────────────────────────────────────
@@ -250,6 +257,7 @@ def _roll_up_wallet(
                 won=won,
                 event_slug=pos.event_slug,
                 cost_usdc=bet_cost,
+                ts=pos.last_ts,
             )
         )
         position_sizes.append(bet_cost)
@@ -284,6 +292,8 @@ def _enrichment_from_rollup(
     fit: PosteriorFit,
     *,
     ess: float,
+    recent_fit: PosteriorFit,
+    recent_ess: float,
     hydration: PolymarketWalletHydration | None = None,
 ) -> PolymarketWalletEnrichment:
     resolved_trades = rollup.wins + rollup.losses
@@ -339,6 +349,14 @@ def _enrichment_from_rollup(
         tailability_reasons.append("negative or zero all-time ROI")
     if hydration.pnl_30d_usdc < 0.0:
         tailability_reasons.append("recent PnL below zero")
+    if recent_ess < MIN_RECENT_INDEPENDENT_EVENTS:
+        tailability_reasons.append(
+            "fewer than 5 recent independent settled events"
+        )
+    elif recent_fit.edge_mean < 0.0:
+        # Only meaningful when there is enough recent data — with a near-empty
+        # recent sample the fit just echoes the population prior.
+        tailability_reasons.append("recent forecast edge is negative")
     tailability_status = "tailable" if not tailability_reasons else "blocked"
 
     return PolymarketWalletEnrichment(
@@ -371,6 +389,10 @@ def _enrichment_from_rollup(
         pnl_30d_usdc=round(hydration.pnl_30d_usdc, 2),
         active_pnl_usdc=round(hydration.active_pnl_usdc, 2),
         max_drawdown_usdc=round(hydration.max_drawdown_usdc, 2),
+        recent_skill_likelihood=round(recent_fit.posterior_skill, 6),
+        recent_edge_mean=round(recent_fit.edge_mean, 6),
+        recent_edge_lower_bound=round(recent_fit.edge_lower_bound, 6),
+        recent_independent_events=round(recent_ess, 4),
         data_quality_status=data_status,
         data_quality_reasons=data_reasons,
         economic_qualified=economic_qualified,
@@ -412,7 +434,22 @@ def compute_wallet_enrichment(
         rollup.bets, mu_prior=prior.mu, sigma2_prior=prior.sigma2
     )
     ess = effective_sample_size(rollup.bets)
-    return _enrichment_from_rollup(rollup, fit, ess=ess, hydration=hydration)
+    # Single-wallet callers have no population-wide reference timestamp, so
+    # the wallet's own newest bet anchors the recency decay.
+    now_ts = max((bet.ts for bet in rollup.bets), default=0)
+    recent_bets = apply_recency_weights(rollup.bets, now_ts=now_ts)
+    recent_fit = fit_wallet_posterior(
+        recent_bets, mu_prior=prior.mu, sigma2_prior=prior.sigma2
+    )
+    recent_ess = effective_sample_size(recent_bets)
+    return _enrichment_from_rollup(
+        rollup,
+        fit,
+        ess=ess,
+        recent_fit=recent_fit,
+        recent_ess=recent_ess,
+        hydration=hydration,
+    )
 
 
 def compute_all_enrichment(
@@ -468,6 +505,12 @@ def compute_all_enrichment(
     # Empirical-Bayes population prior from per-wallet MLEs.
     prior = fit_population_prior([r.bets for r in rollups])
 
+    # Deterministic recency reference: the newest resolved bet anywhere in the
+    # dataset. Using data (not the wall clock) keeps scores reproducible.
+    now_ts = max(
+        (bet.ts for rollup in rollups for bet in rollup.bets), default=0
+    )
+
     # Pass 2: fit each wallet under the empirical prior.
     out: list[PolymarketWalletEnrichment] = []
     for rollup in rollups:
@@ -475,8 +518,22 @@ def compute_all_enrichment(
             rollup.bets, mu_prior=prior.mu, sigma2_prior=prior.sigma2
         )
         ess = effective_sample_size(rollup.bets)
+        recent_bets = apply_recency_weights(rollup.bets, now_ts=now_ts)
+        recent_fit = fit_wallet_posterior(
+            recent_bets, mu_prior=prior.mu, sigma2_prior=prior.sigma2
+        )
+        recent_ess = effective_sample_size(recent_bets)
         hydration = (hydration_by_wallet or {}).get(rollup.wallet)
-        out.append(_enrichment_from_rollup(rollup, fit, ess=ess, hydration=hydration))
+        out.append(
+            _enrichment_from_rollup(
+                rollup,
+                fit,
+                ess=ess,
+                recent_fit=recent_fit,
+                recent_ess=recent_ess,
+                hydration=hydration,
+            )
+        )
 
     # Default order: best-ranked first. Tiebreak by skill_likelihood then
     # wallet for determinism.
