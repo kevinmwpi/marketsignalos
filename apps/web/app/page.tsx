@@ -1,5 +1,6 @@
 export const dynamic = "force-dynamic";
 
+import ExitSignalsPanel, { type ExitSignal } from "./components/ExitSignalsPanel";
 import IngestButton from "./components/IngestButton";
 import PolymarketLeaderboardPanel, { type PolymarketWalletSkill } from "./components/PolymarketLeaderboardPanel";
 import SkilledBetsPanel, { type SkilledBet } from "./components/SkilledBetsPanel";
@@ -43,29 +44,35 @@ async function getDashboardData(apiBase: string): Promise<{
   polymarketLeaderboard: ApiResult<PolymarketWalletSkill[]>;
   skilledBets: ApiResult<SkilledBet[]>;
   skilledBetsSummary: ApiResult<SkilledBetsSummary>;
+  exitSignals: ApiResult<ExitSignal[]>;
 }> {
-  const [polymarketLeaderboard, skilledBets, skilledBetsSummary] = await Promise.all([
-    fetchJson<PolymarketWalletSkill[]>(
-      apiUrl(
-        apiBase,
-        "/signals/polymarket-leaderboard?min_resolved=20&min_skill=0.8&tailability=tailable&limit=10",
+  const [polymarketLeaderboard, skilledBets, skilledBetsSummary, exitSignals] =
+    await Promise.all([
+      fetchJson<PolymarketWalletSkill[]>(
+        apiUrl(
+          apiBase,
+          "/signals/polymarket-leaderboard?min_resolved=20&min_skill=0.8&tailability=tailable&limit=10",
+        ),
+        "polymarket leaderboard API",
       ),
-      "polymarket leaderboard API",
-    ),
-    fetchJson<SkilledBet[]>(
-      apiUrl(
-        apiBase,
-        "/signals/skilled-bets?min_skill=0.8&min_resolved=20&min_independent_events=20&max_bet_age_days=90&require_positive_edge=true&limit=50",
+      fetchJson<SkilledBet[]>(
+        apiUrl(
+          apiBase,
+          "/signals/skilled-bets?min_skill=0.8&min_resolved=20&min_independent_events=20&max_bet_age_days=90&require_positive_edge=true&limit=50",
+        ),
+        "skilled-bets API",
       ),
-      "skilled-bets API",
-    ),
-    fetchJson<SkilledBetsSummary>(
-      apiUrl(apiBase, "/signals/skilled-bets/summary"),
-      "skilled-bets summary API",
-    ),
-  ]);
+      fetchJson<SkilledBetsSummary>(
+        apiUrl(apiBase, "/signals/skilled-bets/summary"),
+        "skilled-bets summary API",
+      ),
+      fetchJson<ExitSignal[]>(
+        apiUrl(apiBase, "/signals/exits?limit=10"),
+        "exit-signals API",
+      ),
+    ]);
 
-  return { polymarketLeaderboard, skilledBets, skilledBetsSummary };
+  return { polymarketLeaderboard, skilledBets, skilledBetsSummary, exitSignals };
 }
 
 function ErrorBanner({ errors }: { errors: string[] }) {
@@ -95,10 +102,12 @@ function formatSnapshotAge(unixSeconds: number): string {
 
 export default async function Home() {
   const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8080";
-  const { polymarketLeaderboard, skilledBets, skilledBetsSummary } = await getDashboardData(apiBase);
+  const { polymarketLeaderboard, skilledBets, skilledBetsSummary, exitSignals } =
+    await getDashboardData(apiBase);
   const polymarketLeaderboardRows = polymarketLeaderboard.data ?? [];
   const bets = skilledBets.data ?? [];
   const summary = skilledBetsSummary.data;
+  const exits = exitSignals.data ?? [];
   const errors = [polymarketLeaderboard.error, skilledBets.error, skilledBetsSummary.error].filter(
     (error): error is string => Boolean(error),
   );
@@ -213,6 +222,7 @@ export default async function Home() {
           </section>
 
           <aside className="space-y-4">
+            <ExitSignalsPanel exits={exits} />
             <PolymarketLeaderboardPanel rows={polymarketLeaderboardRows} />
           </aside>
         </div>

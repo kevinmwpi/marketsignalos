@@ -65,6 +65,7 @@ npm ci
 | `POLYMARKET_DATA_DIR` | Polymarket ingestor + API | Override JSONL directory (defaults to `services/ingestor/data/`) |
 | `POLYMARKET_WATCHLIST_PATH` | Polymarket ingestor | Wallet watchlist file (auto-seeded each pipeline run) |
 | `INGEST_POLYMARKET` | Polymarket ingestor | Kill switch for the legacy `all` CLI subcommand. The web button bypasses this |
+| `SIGNAL_WEBHOOK_URL` | API | When set, new skilled-bet signals and exit signals are POSTed here as JSON after each ingest (at-least-once; first pass after deploy never floods backlog) |
 
 ---
 
@@ -159,6 +160,11 @@ The pipeline runs JSONL-first. Postgres is opt-in via `DATABASE_URL` (`Dual*` st
 | `GET` | `/signals/ledger` | Paper-trade ledger: every surfaced signal with its surface-time prices and settlement status |
 | `GET` | `/signals/ledger/summary` | Hit rate + hypothetical $1-per-signal tail ROI (at surface price and at wallet entry) |
 | `POST` | `/signals/ledger/refresh` | Record newly surfaced signals + settle resolved ones (runs automatically after API-triggered ingests) |
+| `GET` | `/signals/market-consensus` | Markets grouped by skilled-wallet confluence: wallets per side, capital-weighted entries, contested flag |
+| `GET` | `/signals/exits` | Exit signals: skilled wallets that closed/trimmed ≥50% of a still-open position (un-tail alerts) |
+| `POST` | `/signals/exits/refresh` | Diff latest position snapshots and record new exits (runs automatically after API-triggered ingests) |
+| `GET` | `/signals/notifications/status` | Webhook configuration + delivery watermarks |
+| `POST` | `/signals/notifications/run` | Deliver new signals/exits to the `SIGNAL_WEBHOOK_URL` webhook (runs automatically after API-triggered ingests) |
 | `GET` | `/docs` | Auto-generated Swagger UI |
 
 ---
@@ -179,6 +185,8 @@ The pipeline runs JSONL-first. Postgres is opt-in via `DATABASE_URL` (`Dual*` st
 | `recent_*` (per wallet) | Recency-weighted edge fit (180-day half-life, anchored to the newest bet in the dataset). Wallets with <5 recent independent events, or a negative recent edge, lose tailability |
 | `tradability` (per bet) | `poly_direct` \| `kalshi_mirror` \| `on_chain_only` \| `closed` — execution path classification |
 | `move_captured_pct` (per bet) | Fraction of the entry→$1 move already made: `(current − entry) / (1 − entry)`. Drives `remaining_edge_status` (`discounted`/`fresh`/`partial`/`late`/`unknown`) and feed ordering |
+| `consensus_wallets` (per bet) | Distinct skilled wallets holding the same (condition, outcome) side; `consensus_contested` flags markets where skilled wallets hold BOTH sides |
+| exit signals | Snapshot-diff detection of skilled wallets closing (`closed`) or trimming ≥50% (`trimmed`) a position while the market is still active in Gamma — redemptions on resolved markets are never exits |
 | `kalshi_match_confidence` | TF-IDF cosine similarity between Polymarket and Kalshi market titles (±3-day date window) |
 
 ---
@@ -196,6 +204,9 @@ The pipeline runs JSONL-first. Postgres is opt-in via `DATABASE_URL` (`Dual*` st
 - **Recency-weighted edge (`forecast-v3`)** — a second Bayesian fit with each bet's likelihood weight decayed at a 180-day half-life; `recent_*` enrichment fields plus two new tailability gates (recent independent events ≥ 5; recent edge not negative)
 - **Remaining-edge gate** — each feed row carries `move_captured_pct` + `remaining_edge_status`; the feed sorts fresh/discounted entries above partial ones with late last, and `max_move_captured` can drop converged signals entirely
 - **Signal outcome ledger** — `signal_ledger.jsonl` records every surfaced signal once (at its surface-time prices) and settles it when the market resolves; `/signals/ledger*` endpoints expose rows, hit rate, and hypothetical tail ROI
+- **Market consensus** — feed rows carry `consensus_wallets`/`consensus_contested`; `/signals/market-consensus` groups markets by skilled-wallet confluence with capital-weighted average entries
+- **Exit signals** — `exit_signals.jsonl` + `exit_state.json` watermark; diffs each skilled wallet's latest two complete position snapshots, suppressing resolved-market redemptions; surfaced via `/signals/exits` and an ExitSignalsPanel on the dashboard
+- **Webhook notifier** — `SIGNAL_WEBHOOK_URL` receives one JSON POST per ingest with new signals + exits; watermark state in `notifications_state.json`, at-least-once delivery, failed posts retry the same batch next pass
 
 ### Pending / in progress
 - `/positions` pagination (currently caps at ~100 per wallet)

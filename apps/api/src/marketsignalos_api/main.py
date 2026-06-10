@@ -7,8 +7,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, PlainTextResponse
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
+from marketsignalos_api.api.routes.exit_signals import router as exit_signals_router
 from marketsignalos_api.api.routes.health import router as health_router
 from marketsignalos_api.api.routes.ingestor import router as ingestor_router
+from marketsignalos_api.api.routes.market_consensus import router as market_consensus_router
+from marketsignalos_api.api.routes.notifications import router as notifications_router
 from marketsignalos_api.api.routes.polymarket import router as polymarket_router
 from marketsignalos_api.api.routes.signal_ledger import router as signal_ledger_router
 from marketsignalos_api.api.routes.skilled_bets import router as skilled_bets_router
@@ -98,8 +101,11 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
+    app.include_router(exit_signals_router)
     app.include_router(health_router)
     app.include_router(ingestor_router)
+    app.include_router(market_consensus_router)
+    app.include_router(notifications_router)
     app.include_router(polymarket_router)
     app.include_router(signal_ledger_router)
     app.include_router(skilled_bets_router)

@@ -117,5 +117,5 @@ def classify_tradability(
     return "on_chain_only", reasons
 
 
-def is_actionable(status: TradabilityStatus) -> bool:
+def is_actionable(status: TradabilityStatus | str) -> bool:
     return status in ("poly_direct", "kalshi_mirror")

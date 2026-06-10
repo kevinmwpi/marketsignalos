@@ -85,3 +85,15 @@ def market_links_path() -> Path:
 
 def signal_ledger_path() -> Path:
     return _polymarket_dir() / "signal_ledger.jsonl"
+
+
+def exit_signals_path() -> Path:
+    return _polymarket_dir() / "exit_signals.jsonl"
+
+
+def exit_state_path() -> Path:
+    return _polymarket_dir() / "exit_state.json"
+
+
+def notifications_state_path() -> Path:
+    return _polymarket_dir() / "notifications_state.json"
