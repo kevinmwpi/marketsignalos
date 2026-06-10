@@ -74,6 +74,9 @@ class SkilledBetOut(BaseModel):
     move_captured_pct: float
     remaining_edge_status: str
 
+    consensus_wallets: int
+    consensus_contested: bool
+
 
 @router.get("/skilled-bets", response_model=list[SkilledBetOut])
 def skilled_bets(

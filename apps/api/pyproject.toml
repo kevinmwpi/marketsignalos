@@ -9,6 +9,7 @@ description = "MarketSignalOS FastAPI service"
 requires-python = ">=3.12"
 dependencies = [
   "fastapi",
+  "httpx",
   "prometheus-client",
   "psycopg2-binary>=2.9",
   "uvicorn",

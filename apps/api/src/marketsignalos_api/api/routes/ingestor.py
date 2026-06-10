@@ -161,11 +161,14 @@ def _execute_pipeline_sync(pipeline_callable: Any) -> None:
         except Exception:  # noqa: BLE001
             log.warning("could not invalidate skilled_bets cache", exc_info=True)
 
-        # Paper-trade ledger pass: record any newly surfaced signals at their
-        # current prices and settle open ones whose market has resolved. Must
-        # run after cache invalidation so it sees the fresh data. Best effort
-        # — a missed pass self-heals on the next run or via
-        # POST /signals/ledger/refresh.
+        # Post-ingest signal passes, in dependency order:
+        #   1. ledger    — record newly surfaced signals + settle resolved ones
+        #   2. exits     — diff position snapshots (reads the ledger for
+        #                  was_surfaced flags)
+        #   3. notifier  — webhook-deliver whatever the first two produced
+        # All run after cache invalidation so they see fresh data. Each is
+        # best effort — a missed pass self-heals on the next run or via its
+        # /signals/*/refresh|run endpoint.
         if exit_code == 0:
             try:
                 from marketsignalos_api.services.signal_ledger import (  # noqa: PLC0415
@@ -175,6 +178,22 @@ def _execute_pipeline_sync(pipeline_callable: Any) -> None:
                 update_signal_ledger()
             except Exception:  # noqa: BLE001
                 log.warning("could not update signal ledger", exc_info=True)
+            try:
+                from marketsignalos_api.services.exit_signals import (  # noqa: PLC0415
+                    update_exit_signals,
+                )
+
+                update_exit_signals()
+            except Exception:  # noqa: BLE001
+                log.warning("could not update exit signals", exc_info=True)
+            try:
+                from marketsignalos_api.services.notifications import (  # noqa: PLC0415
+                    run_notification_pass,
+                )
+
+                run_notification_pass()
+            except Exception:  # noqa: BLE001
+                log.warning("could not run notification pass", exc_info=True)
     finally:
         _detach_log_capture(handler)
 

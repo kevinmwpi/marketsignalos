@@ -24,7 +24,7 @@ from __future__ import annotations
 import json
 import logging
 import time
-from collections import Counter
+from collections import Counter, defaultdict
 from collections.abc import Iterator
 from dataclasses import dataclass
 from functools import lru_cache
@@ -138,6 +138,14 @@ class SkilledBetSignal:
     #   remaining_edge_status "discounted" | "fresh" | "partial" | "late" | "unknown"
     move_captured_pct: float
     remaining_edge_status: str
+
+    # Smart-money confluence on this market.
+    #   consensus_wallets    distinct skilled wallets holding this same
+    #                        (condition, outcome) side — including this one.
+    #   consensus_contested  True when skilled wallets hold BOTH sides of
+    #                        this market.
+    consensus_wallets: int = 1
+    consensus_contested: bool = False
 
 
 # ── Remaining-edge classification ─────────────────────────────────────────────
@@ -692,10 +700,12 @@ def _compute_skilled_bets(
     kalshi_mirrors = _load_best_kalshi_mirror_by_cond()
     now_ts = int(time.time())
 
-    out: list[SkilledBetSignal] = []
+    # Pass 1: build every candidate row that clears the WALLET-level gates and
+    # has an observed BUY entry. Per-bet filters (value, age, move captured,
+    # tradability) are deferred to pass 2 so consensus counts reflect every
+    # skilled position on the market, not just the rows that survive filters.
+    candidates: list[SkilledBetSignal] = []
     for key, pos in held.items():
-        if pos.current_value_usdc < min_position_value_usdc:
-            continue
         wallet = skilled[pos.proxy_wallet]
         if wallet.independent_settled_events < min_independent_events:
             continue
@@ -708,8 +718,6 @@ def _compute_skilled_bets(
             continue
         bought_at = _i(buy.get("timestamp"))
         signal_age_days = max(0, (now_ts - bought_at) // 86400) if bought_at else 0
-        if max_bet_age_days > 0 and signal_age_days > max_bet_age_days:
-            continue
         market_rec = markets.get(pos.condition_id)
         mirror = kalshi_mirrors.get(pos.condition_id)
         event_slug = resolve_event_slug(
@@ -738,8 +746,6 @@ def _compute_skilled_bets(
             title=title,
             mirror=mirror_input,
         )
-        if not include_untradable and not is_actionable(tradability):
-            continue
         entry_price = round(_f(buy.get("price")), 4)
         # Live price of the PICKED outcome: prefer the position snapshot's
         # outcome price; fall back to the Gamma market YES price (inverted
@@ -754,19 +760,13 @@ def _compute_skilled_bets(
         move_captured, remaining_edge_status = _remaining_edge(
             entry_price, current_outcome
         )
-        if (
-            max_move_captured < 1.0
-            and remaining_edge_status != "unknown"
-            and move_captured >= max_move_captured
-        ):
-            continue
         kalshi_yes = round(mirror.yes_price, 4) if mirror else 0.0
         kalshi_vs_entry_cents = (
             round((kalshi_yes - entry_price) * 100.0, 2)
             if kalshi_yes > 0 and entry_price > 0
             else 0.0
         )
-        out.append(
+        candidates.append(
             SkilledBetSignal(
                 proxy_wallet=pos.proxy_wallet,
                 wallet_name=wallet.name,
@@ -832,6 +832,38 @@ def _compute_skilled_bets(
                 remaining_edge_status=remaining_edge_status,
             )
         )
+
+    # Consensus maps over ALL candidates: distinct skilled wallets per
+    # (condition, outcome) side, and which sides of each market are held.
+    wallets_by_side: dict[tuple[str, int], set[str]] = defaultdict(set)
+    for signal in candidates:
+        wallets_by_side[(signal.condition_id, signal.outcome_index)].add(
+            signal.proxy_wallet
+        )
+    sides_by_cond: dict[str, set[int]] = defaultdict(set)
+    for cond, outcome_idx in wallets_by_side:
+        sides_by_cond[cond].add(outcome_idx)
+
+    # Pass 2: per-bet filters + consensus annotation.
+    out: list[SkilledBetSignal] = []
+    for signal in candidates:
+        if signal.current_position_value_usdc < min_position_value_usdc:
+            continue
+        if max_bet_age_days > 0 and signal.signal_age_days > max_bet_age_days:
+            continue
+        if (
+            max_move_captured < 1.0
+            and signal.remaining_edge_status != "unknown"
+            and signal.move_captured_pct >= max_move_captured
+        ):
+            continue
+        if not include_untradable and not is_actionable(signal.tradability):
+            continue
+        signal.consensus_wallets = len(
+            wallets_by_side[(signal.condition_id, signal.outcome_index)]
+        )
+        signal.consensus_contested = len(sides_by_cond[signal.condition_id]) > 1
+        out.append(signal)
 
     # Down-rank converged signals: a stale entry is worse than no entry for a
     # tailing user. Within each remaining-edge rank, newest BUY first.

@@ -62,6 +62,9 @@ export type SkilledBet = {
 
   move_captured_pct: number;
   remaining_edge_status: string;
+
+  consensus_wallets: number;
+  consensus_contested: boolean;
 };
 
 const usdFormatter = new Intl.NumberFormat("en-US", {
@@ -209,6 +212,22 @@ export default function SkilledBetsPanel({
                             : ""}
                         </span>
                       )}
+                    {bet.consensus_wallets >= 2 && (
+                      <span
+                        className="rounded bg-violet-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-violet-700"
+                        title="Distinct skilled wallets holding this same side"
+                      >
+                        {bet.consensus_wallets} skilled wallets
+                      </span>
+                    )}
+                    {bet.consensus_contested && (
+                      <span
+                        className="rounded bg-orange-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-orange-700"
+                        title="Skilled wallets hold BOTH sides of this market"
+                      >
+                        Contested
+                      </span>
+                    )}
                     {bet.category && (
                       <span className="rounded bg-zinc-100 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-zinc-500">
                         {bet.category}
