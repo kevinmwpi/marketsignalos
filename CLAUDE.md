@@ -154,8 +154,11 @@ The pipeline runs JSONL-first. Postgres is opt-in via `DATABASE_URL` (`Dual*` st
 | `GET` | `/metrics` | Prometheus text exposition |
 | `POST` | `/ingestor/run` | Triggers one pass of `run_pipeline()`; returns 202 + started_at |
 | `GET` | `/ingestor/status` | Live state: running flag, last_exit_code, last_error, log_tail, last_summary |
-| `GET` | `/signals/skilled-bets` | Still-held BUY entries by skilled wallets, joined with the Kalshi mirror (headline endpoint — drives the `/` dashboard) |
+| `GET` | `/signals/skilled-bets` | Still-held BUY entries by skilled wallets, joined with the Kalshi mirror (headline endpoint — drives the `/` dashboard). Fresh entries rank above priced-in ("late") ones |
 | `GET` | `/signals/polymarket-leaderboard` | Skilled wallets ranked by on-chain win rate |
+| `GET` | `/signals/ledger` | Paper-trade ledger: every surfaced signal with its surface-time prices and settlement status |
+| `GET` | `/signals/ledger/summary` | Hit rate + hypothetical $1-per-signal tail ROI (at surface price and at wallet entry) |
+| `POST` | `/signals/ledger/refresh` | Record newly surfaced signals + settle resolved ones (runs automatically after API-triggered ingests) |
 | `GET` | `/docs` | Auto-generated Swagger UI |
 
 ---
@@ -173,7 +176,9 @@ The pipeline runs JSONL-first. Postgres is opt-in via `DATABASE_URL` (`Dual*` st
 |---|---|
 | `skill_likelihood` | Bayesian forecast edge: P(edge > 0 \| data) vs market-implied entry prices |
 | `independent_settled_events` | Effective sample size penalizing correlated bets within the same event |
+| `recent_*` (per wallet) | Recency-weighted edge fit (180-day half-life, anchored to the newest bet in the dataset). Wallets with <5 recent independent events, or a negative recent edge, lose tailability |
 | `tradability` (per bet) | `poly_direct` \| `kalshi_mirror` \| `on_chain_only` \| `closed` — execution path classification |
+| `move_captured_pct` (per bet) | Fraction of the entry→$1 move already made: `(current − entry) / (1 − entry)`. Drives `remaining_edge_status` (`discounted`/`fresh`/`partial`/`late`/`unknown`) and feed ordering |
 | `kalshi_match_confidence` | TF-IDF cosine similarity between Polymarket and Kalshi market titles (±3-day date window) |
 
 ---
@@ -188,6 +193,9 @@ The pipeline runs JSONL-first. Postgres is opt-in via `DATABASE_URL` (`Dual*` st
 - **Ingest button** — pre-flight-free (no required env vars); log capture surfaces a `log_tail` and counts summary back to the UI
 - **Polymarket Postgres write path** — Alembic schema (`services/polymarket-ingestor/alembic/`) covers 8 tables; `Dual*` store wrappers fan every write out to JSONL and Postgres when `DATABASE_URL` is set; API reads remain JSONL-only
 - **Kalshi parlay-ticker filter** — `_is_kalshi_parlay()` excludes `KXMVE*` multi-leg tickers from the matcher
+- **Recency-weighted edge (`forecast-v3`)** — a second Bayesian fit with each bet's likelihood weight decayed at a 180-day half-life; `recent_*` enrichment fields plus two new tailability gates (recent independent events ≥ 5; recent edge not negative)
+- **Remaining-edge gate** — each feed row carries `move_captured_pct` + `remaining_edge_status`; the feed sorts fresh/discounted entries above partial ones with late last, and `max_move_captured` can drop converged signals entirely
+- **Signal outcome ledger** — `signal_ledger.jsonl` records every surfaced signal once (at its surface-time prices) and settles it when the market resolves; `/signals/ledger*` endpoints expose rows, hit rate, and hypothetical tail ROI
 
 ### Pending / in progress
 - `/positions` pagination (currently caps at ~100 per wallet)

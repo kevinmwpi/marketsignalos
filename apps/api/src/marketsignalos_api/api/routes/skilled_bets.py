@@ -71,6 +71,9 @@ class SkilledBetOut(BaseModel):
     tradability: str
     tradability_reasons: list[str] = Field(default_factory=list)
 
+    move_captured_pct: float
+    remaining_edge_status: str
+
 
 @router.get("/skilled-bets", response_model=list[SkilledBetOut])
 def skilled_bets(
@@ -92,12 +95,24 @@ def skilled_bets(
         default=False,
         description="When true, include closed/on-chain-only bets with no execution path.",
     ),
+    max_move_captured: float = Query(
+        default=1.0,
+        ge=0.0,
+        le=1.0,
+        description=(
+            "When <1, drop signals whose picked outcome has already captured at "
+            "least this fraction of the entry→$1 move (the thesis is priced in)."
+        ),
+    ),
     limit: int = Query(default=50, ge=1, le=500),
 ) -> list[SkilledBetOut]:
     """
-    Recent BUY entries from skilled Polymarket wallets that are STILL HELD,
-    sorted by entry timestamp (newest first). By default only actionable bets
-    (`tradability` of poly_direct or kalshi_mirror) are returned.
+    Recent BUY entries from skilled Polymarket wallets that are STILL HELD.
+    Fresh/discounted entries (price still near or below the wallet's entry)
+    rank above partially-priced ones; fully-converged "late" signals sort
+    last. Within each remaining-edge rank, newest BUY first. By default only
+    actionable bets (`tradability` of poly_direct or kalshi_mirror) are
+    returned.
     """
     signals = compute_skilled_bets(
         min_skill=min_skill,
@@ -107,6 +122,7 @@ def skilled_bets(
         max_bet_age_days=max_bet_age_days,
         require_positive_edge=require_positive_edge,
         include_untradable=include_untradable,
+        max_move_captured=max_move_captured,
         limit=limit,
     )
     return [SkilledBetOut(**asdict(s)) for s in signals]

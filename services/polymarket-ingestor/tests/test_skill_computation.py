@@ -5,6 +5,7 @@ import math
 from marketsignalos_polymarket.bayesian_skill import (
     Bet,
     PopulationPrior,
+    apply_recency_weights,
     effective_sample_size,
     fit_population_prior,
     fit_wallet_posterior,
@@ -209,6 +210,88 @@ def test_event_weighting_caps_event_and_allocates_by_capital() -> None:
     weighted = _apply_event_weights(bets)
     assert [bet.weight for bet in weighted] == [0.9, 0.1]
     assert effective_sample_size(weighted) == 1.0
+
+
+# ── recency weighting ────────────────────────────────────────────────────────
+
+_DAY = 86_400
+
+
+def test_recency_weight_full_at_reference_time() -> None:
+    now = 1_700_000_000
+    bets = [Bet(entry_price=0.5, won=True, ts=now)]
+    weighted = apply_recency_weights(bets, now_ts=now)
+    assert weighted[0].weight == 1.0
+
+
+def test_recency_weight_halves_at_one_half_life() -> None:
+    now = 1_700_000_000
+    bets = [Bet(entry_price=0.5, won=True, ts=now - 180 * _DAY)]
+    weighted = apply_recency_weights(bets, now_ts=now)
+    assert abs(weighted[0].weight - 0.5) < 1e-9
+
+
+def test_recency_weight_composes_with_event_weight() -> None:
+    now = 1_700_000_000
+    bets = [Bet(entry_price=0.5, won=True, weight=0.4, ts=now - 180 * _DAY)]
+    weighted = apply_recency_weights(bets, now_ts=now)
+    assert abs(weighted[0].weight - 0.2) < 1e-9
+
+
+def test_stale_wallet_blocked_by_recent_events_floor() -> None:
+    """Two wallets with identical lifetime records — but one's bets are two
+    years older than the population's newest bet. The stale wallet must lose
+    tailability with the recent-events reason; the fresh one keeps its
+    recent fit roughly equal to its lifetime fit."""
+    old_ts = 1_600_000_000
+    fresh_ts = old_ts + 730 * _DAY
+
+    def wallet_trades(wallet: str, base_ts: int) -> list[PolymarketActivity]:
+        return [
+            PolymarketActivity(
+                proxy_wallet=wallet, timestamp=base_ts + i,
+                condition_id=f"0x{wallet}{i}", type="TRADE", side="BUY",
+                size=10, usdc_size=5, price=0.5,
+                outcome_index=0, outcome="Yes", slug="", title="",
+                event_slug=f"event-{wallet}-{i}",
+                transaction_hash=f"0x{wallet}{i}",
+            )
+            for i in range(10)
+        ]
+
+    activity = wallet_trades("stale", old_ts) + wallet_trades("fresh", fresh_ts)
+    markets = [
+        _market(f"0x{wallet}{i}", closed=True, winning_outcome=0)
+        for wallet in ("stale", "fresh")
+        for i in range(10)
+    ]
+    out = compute_all_enrichment(activity=activity, markets=markets, leaderboard=[])
+    by_wallet = {e.proxy_wallet: e for e in out}
+
+    stale = by_wallet["stale"]
+    fresh = by_wallet["fresh"]
+    # 730 days at a 180-day half-life leaves ~6% of each vote.
+    assert stale.recent_independent_events < 5.0
+    assert "fewer than 5 recent independent settled events" in stale.tailability_reasons
+    assert fresh.recent_independent_events > 9.0
+    assert (
+        "fewer than 5 recent independent settled events"
+        not in fresh.tailability_reasons
+    )
+    # Fresh wallet: recent fit ≈ lifetime fit (no meaningful decay).
+    assert abs(fresh.recent_edge_mean - fresh.edge_mean) < 0.05
+
+
+def test_enrichment_carries_recent_fields_and_v3_version() -> None:
+    activity = [_trade("0xc1", outcome=0, side="BUY", size=100, price=0.4, ts=1_700_000_000)]
+    markets = {"0xc1": _market("0xc1", closed=True, winning_outcome=0)}
+    e = compute_wallet_enrichment("0xabc", activity=activity, markets_by_condition=markets)
+    assert e.score_version == "forecast-v3"
+    # Single recent bet anchored at its own timestamp — zero decay.
+    assert e.recent_independent_events == 1.0
+    assert math.isfinite(e.recent_edge_mean)
+    assert math.isfinite(e.recent_edge_lower_bound)
+    assert 0.0 <= e.recent_skill_likelihood <= 1.0
 
 
 # ── rank_score ───────────────────────────────────────────────────────────────

@@ -59,6 +59,9 @@ export type SkilledBet = {
 
   tradability: string;
   tradability_reasons: string[];
+
+  move_captured_pct: number;
+  remaining_edge_status: string;
 };
 
 const usdFormatter = new Intl.NumberFormat("en-US", {
@@ -102,6 +105,27 @@ function driftColor(drift: number | null): string {
   if (drift > 0) return "text-emerald-700";
   if (drift < 0) return "text-red-700";
   return "text-zinc-500";
+}
+
+const REMAINING_EDGE_LABELS: Record<string, string> = {
+  discounted: "Below entry",
+  fresh: "Fresh entry",
+  partial: "Partially priced",
+  late: "Late",
+};
+
+function remainingEdgeBadgeClass(status: string): string {
+  switch (status) {
+    case "discounted":
+    case "fresh":
+      return "bg-emerald-50 text-emerald-700";
+    case "partial":
+      return "bg-amber-50 text-amber-800";
+    case "late":
+      return "bg-red-50 text-red-700";
+    default:
+      return "bg-zinc-100 text-zinc-500";
+  }
 }
 
 function tradabilityBadgeClass(status: string): string {
@@ -173,6 +197,18 @@ export default function SkilledBetsPanel({
                     >
                       {TRADABILITY_LABELS[bet.tradability] ?? bet.tradability}
                     </span>
+                    {bet.remaining_edge_status !== "unknown" &&
+                      REMAINING_EDGE_LABELS[bet.remaining_edge_status] && (
+                        <span
+                          className={`rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${remainingEdgeBadgeClass(bet.remaining_edge_status)}`}
+                          title="Fraction of the entry-to-$1 move the market has already made since the wallet bought"
+                        >
+                          {REMAINING_EDGE_LABELS[bet.remaining_edge_status]}
+                          {bet.move_captured_pct > 0
+                            ? ` · ${(bet.move_captured_pct * 100).toFixed(0)}% captured`
+                            : ""}
+                        </span>
+                      )}
                     {bet.category && (
                       <span className="rounded bg-zinc-100 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-zinc-500">
                         {bet.category}

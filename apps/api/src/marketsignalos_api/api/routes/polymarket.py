@@ -39,6 +39,10 @@ class PolymarketWalletSkill(BaseModel):
     pnl_30d_usdc: float = 0.0
     active_pnl_usdc: float = 0.0
     max_drawdown_usdc: float = 0.0
+    recent_skill_likelihood: float = 0.0
+    recent_edge_mean: float = 0.0
+    recent_edge_lower_bound: float = 0.0
+    recent_independent_events: float = 0.0
     data_quality_status: str = "untrusted"
     data_quality_reasons: list[str] = Field(default_factory=list)
     economic_qualified: bool = False
