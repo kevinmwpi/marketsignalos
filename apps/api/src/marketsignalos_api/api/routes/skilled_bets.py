@@ -77,6 +77,14 @@ class SkilledBetOut(BaseModel):
     consensus_wallets: int
     consensus_contested: bool
 
+    conviction: str
+    conviction_z: float
+    entry_pct_of_bankroll: float
+
+    clv_mean: float
+    clv_lower_bound: float
+    clv_sample_size: float
+
 
 @router.get("/skilled-bets", response_model=list[SkilledBetOut])
 def skilled_bets(

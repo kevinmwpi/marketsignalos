@@ -29,6 +29,8 @@ from .models import (
     PolymarketMarket,
     PolymarketPosition,
     PolymarketPositionSnapshot,
+    PolymarketPriceSnapshot,
+    PolymarketWalletBet,
     PolymarketWalletEnrichment,
     PolymarketWalletHydration,
     PolymarketWalletValue,
@@ -78,6 +80,14 @@ class WalletCheckpointStore(Protocol):
 
 class EnrichmentStore(Protocol):
     def write_enrichment(self, enrichments: list[PolymarketWalletEnrichment]) -> int: ...
+
+
+class WalletBetStore(Protocol):
+    def write_bets(self, bets: list[PolymarketWalletBet]) -> int: ...
+
+
+class PriceSnapshotStore(Protocol):
+    def write_snapshots(self, snapshots: list[PolymarketPriceSnapshot]) -> int: ...
 
 
 class MarketLinkStore(Protocol):
@@ -413,6 +423,47 @@ class JsonlEnrichmentStore:
             for e in enrichments:
                 fh.write(json.dumps(asdict(e), separators=(",", ":")) + "\n")
         return len(enrichments)
+
+
+class JsonlWalletBetStore:
+    """Overwrite semantics: bet records are recomputed wholesale per pass."""
+
+    def __init__(self, path: Path) -> None:
+        self._path = path
+        self._path.parent.mkdir(parents=True, exist_ok=True)
+
+    def write_bets(self, bets: list[PolymarketWalletBet]) -> int:
+        with self._path.open("w", encoding="utf-8") as fh:
+            for bet in bets:
+                fh.write(json.dumps(asdict(bet), separators=(",", ":")) + "\n")
+        return len(bets)
+
+
+class JsonlPriceSnapshotStore:
+    """
+    Append-only price history, deduped on (condition_id, fetched_at) so a
+    market fetched on overlapping pages within one run records one point.
+    """
+
+    def __init__(self, path: Path) -> None:
+        self._path = path
+        self._path.parent.mkdir(parents=True, exist_ok=True)
+        self._seen: set[tuple[str, str]] = {
+            (str(row.get("condition_id", "")), str(row.get("fetched_at", "")))
+            for row in _read_jsonl_rows(self._path)
+        }
+
+    def write_snapshots(self, snapshots: list[PolymarketPriceSnapshot]) -> int:
+        written = 0
+        with self._path.open("a", encoding="utf-8") as fh:
+            for snap in snapshots:
+                key = (snap.condition_id, snap.fetched_at)
+                if not snap.condition_id or key in self._seen:
+                    continue
+                self._seen.add(key)
+                fh.write(json.dumps(asdict(snap), separators=(",", ":")) + "\n")
+                written += 1
+        return written
 
 
 class JsonWalletCheckpointStore:
@@ -850,6 +901,7 @@ class PostgresEnrichmentStore:
                          pnl_30d_usdc, active_pnl_usdc, max_drawdown_usdc,
                          recent_skill_likelihood, recent_edge_mean,
                          recent_edge_lower_bound, recent_independent_events,
+                         clv_mean, clv_lower_bound, clv_sample_size,
                          data_quality_status, data_quality_reasons,
                          economic_qualified, tailability_status,
                          tailability_reasons, score_version, computed_at)
@@ -859,6 +911,7 @@ class PostgresEnrichmentStore:
                             %s, %s, %s, %s,
                             %s, %s, %s, %s, %s, %s,
                             %s, %s, %s, %s,
+                            %s, %s, %s,
                             %s, %s::jsonb, %s, %s, %s::jsonb, %s, %s::timestamptz)
                     ON CONFLICT (proxy_wallet) DO UPDATE SET
                         name                   = EXCLUDED.name,
@@ -893,6 +946,9 @@ class PostgresEnrichmentStore:
                         recent_edge_mean = EXCLUDED.recent_edge_mean,
                         recent_edge_lower_bound = EXCLUDED.recent_edge_lower_bound,
                         recent_independent_events = EXCLUDED.recent_independent_events,
+                        clv_mean = EXCLUDED.clv_mean,
+                        clv_lower_bound = EXCLUDED.clv_lower_bound,
+                        clv_sample_size = EXCLUDED.clv_sample_size,
                         data_quality_status = EXCLUDED.data_quality_status,
                         data_quality_reasons = EXCLUDED.data_quality_reasons,
                         economic_qualified = EXCLUDED.economic_qualified,
@@ -916,6 +972,7 @@ class PostgresEnrichmentStore:
                          e.pnl_30d_usdc, e.active_pnl_usdc, e.max_drawdown_usdc,
                          e.recent_skill_likelihood, e.recent_edge_mean,
                          e.recent_edge_lower_bound, e.recent_independent_events,
+                         e.clv_mean, e.clv_lower_bound, e.clv_sample_size,
                          e.data_quality_status, json.dumps(e.data_quality_reasons),
                          e.economic_qualified, e.tailability_status,
                          json.dumps(e.tailability_reasons), e.score_version, e.computed_at)
@@ -929,6 +986,93 @@ class PostgresEnrichmentStore:
         finally:
             conn.close()
         return len(enrichments)
+
+
+class PostgresWalletBetStore:
+    """Upsert on (proxy_wallet, condition_id, outcome_index)."""
+
+    def __init__(self, database_url: str) -> None:
+        self._dsn = database_url
+
+    def write_bets(self, bets: list[PolymarketWalletBet]) -> int:
+        if not bets:
+            return 0
+        conn = _pg_connect(self._dsn)
+        try:
+            with conn.cursor() as cur:
+                cur.executemany(
+                    """
+                    INSERT INTO polymarket_wallet_bets
+                        (proxy_wallet, condition_id, outcome_index, outcome,
+                         event_slug, category, title, status, entry_price,
+                         cost_usdc, net_size, realized_pnl_usdc, total_pnl_usdc,
+                         clv, last_trade_ts, computed_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s,
+                            %s, %s, %s, %s, %s, %s, %s::timestamptz)
+                    ON CONFLICT (proxy_wallet, condition_id, outcome_index)
+                    DO UPDATE SET
+                        outcome           = EXCLUDED.outcome,
+                        event_slug        = EXCLUDED.event_slug,
+                        category          = EXCLUDED.category,
+                        title             = EXCLUDED.title,
+                        status            = EXCLUDED.status,
+                        entry_price       = EXCLUDED.entry_price,
+                        cost_usdc         = EXCLUDED.cost_usdc,
+                        net_size          = EXCLUDED.net_size,
+                        realized_pnl_usdc = EXCLUDED.realized_pnl_usdc,
+                        total_pnl_usdc    = EXCLUDED.total_pnl_usdc,
+                        clv               = EXCLUDED.clv,
+                        last_trade_ts     = EXCLUDED.last_trade_ts,
+                        computed_at       = EXCLUDED.computed_at
+                    """,
+                    [
+                        (b.proxy_wallet, b.condition_id, b.outcome_index, b.outcome,
+                         b.event_slug, b.category, b.title, b.status, b.entry_price,
+                         b.cost_usdc, b.net_size, b.realized_pnl_usdc, b.total_pnl_usdc,
+                         b.clv, b.last_trade_ts, b.computed_at)
+                        for b in bets
+                    ],
+                )
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+        return len(bets)
+
+
+class PostgresPriceSnapshotStore:
+    """Append-only; duplicate (condition_id, fetched_at) points are ignored."""
+
+    def __init__(self, database_url: str) -> None:
+        self._dsn = database_url
+
+    def write_snapshots(self, snapshots: list[PolymarketPriceSnapshot]) -> int:
+        if not snapshots:
+            return 0
+        conn = _pg_connect(self._dsn)
+        try:
+            with conn.cursor() as cur:
+                cur.executemany(
+                    """
+                    INSERT INTO polymarket_price_snapshots
+                        (condition_id, yes_price, active, closed, fetched_at)
+                    VALUES (%s, %s, %s, %s, %s::timestamptz)
+                    ON CONFLICT (condition_id, fetched_at) DO NOTHING
+                    """,
+                    [
+                        (s.condition_id, s.yes_price, s.active, s.closed, s.fetched_at)
+                        for s in snapshots
+                    ],
+                )
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+        return len(snapshots)
 
 
 class PostgresMarketLinkStore:
@@ -1189,6 +1333,30 @@ class DualWalletValueStore:
     def write_values(self, values: list[PolymarketWalletValue]) -> int:
         written = self._primary.write_values(values)
         self._secondary.write_values(values)
+        return written
+
+
+class DualWalletBetStore:
+    def __init__(self, primary: WalletBetStore, secondary: WalletBetStore) -> None:
+        self._primary = primary
+        self._secondary = secondary
+
+    def write_bets(self, bets: list[PolymarketWalletBet]) -> int:
+        written = self._primary.write_bets(bets)
+        self._secondary.write_bets(bets)
+        return written
+
+
+class DualPriceSnapshotStore:
+    def __init__(
+        self, primary: PriceSnapshotStore, secondary: PriceSnapshotStore
+    ) -> None:
+        self._primary = primary
+        self._secondary = secondary
+
+    def write_snapshots(self, snapshots: list[PolymarketPriceSnapshot]) -> int:
+        written = self._primary.write_snapshots(snapshots)
+        self._secondary.write_snapshots(snapshots)
         return written
 
 

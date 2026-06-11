@@ -165,6 +165,7 @@ The pipeline runs JSONL-first. Postgres is opt-in via `DATABASE_URL` (`Dual*` st
 | `POST` | `/signals/exits/refresh` | Diff latest position snapshots and record new exits (runs automatically after API-triggered ingests) |
 | `GET` | `/signals/notifications/status` | Webhook configuration + delivery watermarks |
 | `POST` | `/signals/notifications/run` | Deliver new signals/exits to the `SIGNAL_WEBHOOK_URL` webhook (runs automatically after API-triggered ingests) |
+| `GET` | `/signals/wallets/{proxy_wallet}` | Wallet dossier: enrichment scores, open positions, bet history with CLV, equity curve, category breakdown, ledger + exit rows (drives the `/wallet/[address]` page) |
 | `GET` | `/docs` | Auto-generated Swagger UI |
 
 ---
@@ -187,6 +188,8 @@ The pipeline runs JSONL-first. Postgres is opt-in via `DATABASE_URL` (`Dual*` st
 | `move_captured_pct` (per bet) | Fraction of the entry→$1 move already made: `(current − entry) / (1 − entry)`. Drives `remaining_edge_status` (`discounted`/`fresh`/`partial`/`late`/`unknown`) and feed ordering |
 | `consensus_wallets` (per bet) | Distinct skilled wallets holding the same (condition, outcome) side; `consensus_contested` flags markets where skilled wallets hold BOTH sides |
 | exit signals | Snapshot-diff detection of skilled wallets closing (`closed`) or trimming ≥50% (`trimmed`) a position while the market is still active in Gamma — redemptions on resolved markets are never exits |
+| `clv_*` (per wallet) | Closing-line value: event-capped, capital-weighted average of (closing/current line − buys-only entry VWAP). Scores open and exited-early positions without needing resolution. Resolved markets only count when a pre-close price observation exists |
+| `conviction` (per bet) | Entry USDC z-scored against the wallet's own BUY-size history (≥5 buys required): `high` (z≥2) boosts feed rank within the same remaining-edge tier; `entry_pct_of_bankroll` divides by the latest wallet portfolio value |
 | `kalshi_match_confidence` | TF-IDF cosine similarity between Polymarket and Kalshi market titles (±3-day date window) |
 
 ---
@@ -207,6 +210,10 @@ The pipeline runs JSONL-first. Postgres is opt-in via `DATABASE_URL` (`Dual*` st
 - **Market consensus** — feed rows carry `consensus_wallets`/`consensus_contested`; `/signals/market-consensus` groups markets by skilled-wallet confluence with capital-weighted average entries
 - **Exit signals** — `exit_signals.jsonl` + `exit_state.json` watermark; diffs each skilled wallet's latest two complete position snapshots, suppressing resolved-market redemptions; surfaced via `/signals/exits` and an ExitSignalsPanel on the dashboard
 - **Webhook notifier** — `SIGNAL_WEBHOOK_URL` receives one JSON POST per ingest with new signals + exits; watermark state in `notifications_state.json`, at-least-once delivery, failed posts retry the same batch next pass
+- **CLV (closing-line value)** — `polymarket_price_snapshots.jsonl` appends one price point per market per fetch (the deduplicating markets store discards history); enrichment carries `clv_mean`/`clv_lower_bound`/`clv_sample_size`; Alembic migration `0005`
+- **Wallet bet records** — `polymarket_wallet_bets.jsonl` rewritten each enrichment pass with one row per (wallet, condition, outcome): status (`won`/`lost`/`exited`/`open`), buys-only entry VWAP, PnL, per-bet CLV
+- **Conviction score** — per-bet sizing z-score computed in the same single activity-file stream the feed already does; high-conviction entries badge ("Sized up") and rank above same-tier rows
+- **Wallet detail page** — `/wallet/[address]` (Next.js) renders the dossier from `/signals/wallets/{wallet}`: stat strip, SVG equity curve, bet history with CLV, category breakdown, open positions, recent exits; dashboard wallet names link to it
 
 ### Pending / in progress
 - `/positions` pagination (currently caps at ~100 per wallet)

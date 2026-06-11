@@ -53,13 +53,14 @@ from .models import (
     PolymarketMarket,
     PolymarketPosition,
     PolymarketPositionSnapshot,
+    PolymarketPriceSnapshot,
     PolymarketWalletHydration,
     PolymarketWalletReviewState,
     PolymarketWalletValue,
 )
 from .polymarket_client import PolymarketClient, PolymarketClientConfig
 from .rate_limiter import HostRateLimiter
-from .skill_computation import compute_all_enrichment
+from .skill_computation import compute_enrichment_outputs
 from .storage import (
     ActivityStore,
     ClosedPositionStore,
@@ -71,6 +72,8 @@ from .storage import (
     DualMarketStore,
     DualPositionStore,
     DualPositionSnapshotStore,
+    DualPriceSnapshotStore,
+    DualWalletBetStore,
     DualWalletHydrationStore,
     DualWalletCheckpointStore,
     DualWalletValueStore,
@@ -83,6 +86,8 @@ from .storage import (
     JsonlMarketStore,
     JsonlPositionStore,
     JsonlPositionSnapshotStore,
+    JsonlPriceSnapshotStore,
+    JsonlWalletBetStore,
     JsonlWalletHydrationStore,
     JsonlWalletValueStore,
     JsonWalletCheckpointStore,
@@ -99,9 +104,13 @@ from .storage import (
     PostgresMarketStore,
     PostgresPositionStore,
     PostgresPositionSnapshotStore,
+    PostgresPriceSnapshotStore,
+    PostgresWalletBetStore,
     PostgresWalletHydrationStore,
     PostgresWalletCheckpointStore,
     PostgresWalletValueStore,
+    PriceSnapshotStore,
+    WalletBetStore,
     WalletCheckpointStore,
     WalletHydrationStore,
     WalletValueStore,
@@ -299,6 +308,8 @@ class _Stores:
     values: WalletValueStore
     checkpoints: WalletCheckpointStore
     enrichment: EnrichmentStore
+    wallet_bets: WalletBetStore
+    price_snapshots: PriceSnapshotStore
     market_links: MarketLinkStore
 
     # Paths exposed so reading-only steps can re-read the JSONL files.
@@ -307,6 +318,7 @@ class _Stores:
     leaderboard_path: Path
     kalshi_markets_path: Path
     hydration_path: Path
+    price_snapshots_path: Path
 
 
 def _build_stores(data_dir: Path) -> _Stores:
@@ -333,6 +345,9 @@ def _build_stores(data_dir: Path) -> _Stores:
         data_dir / "polymarket_wallet_checkpoints.json"
     )
     jsonl_enrichment = JsonlEnrichmentStore(data_dir / "polymarket_wallet_enrichment.jsonl")
+    jsonl_wallet_bets = JsonlWalletBetStore(data_dir / "polymarket_wallet_bets.jsonl")
+    price_snapshots_path = data_dir / "polymarket_price_snapshots.jsonl"
+    jsonl_price_snapshots = JsonlPriceSnapshotStore(price_snapshots_path)
     jsonl_market_links = JsonlMarketLinkStore(data_dir / "market_links.jsonl")
 
     # When DATABASE_URL is set, fan every write out to Postgres as well. The
@@ -350,6 +365,8 @@ def _build_stores(data_dir: Path) -> _Stores:
     values: WalletValueStore = jsonl_values
     checkpoints: WalletCheckpointStore = jsonl_checkpoints
     enrichment: EnrichmentStore = jsonl_enrichment
+    wallet_bets: WalletBetStore = jsonl_wallet_bets
+    price_snapshots: PriceSnapshotStore = jsonl_price_snapshots
     market_links: MarketLinkStore = jsonl_market_links
     if database_url:
         log.info("dual-write enabled (DATABASE_URL set)")
@@ -375,6 +392,11 @@ def _build_stores(data_dir: Path) -> _Stores:
                                                PostgresWalletCheckpointStore(database_url))
         enrichment = DualEnrichmentStore(jsonl_enrichment,
                                         PostgresEnrichmentStore(database_url))
+        wallet_bets = DualWalletBetStore(jsonl_wallet_bets,
+                                        PostgresWalletBetStore(database_url))
+        price_snapshots = DualPriceSnapshotStore(
+            jsonl_price_snapshots, PostgresPriceSnapshotStore(database_url)
+        )
         market_links = DualMarketLinkStore(jsonl_market_links,
                                           PostgresMarketLinkStore(database_url))
 
@@ -389,12 +411,15 @@ def _build_stores(data_dir: Path) -> _Stores:
         values=values,
         checkpoints=checkpoints,
         enrichment=enrichment,
+        wallet_bets=wallet_bets,
+        price_snapshots=price_snapshots,
         market_links=market_links,
         activity_path=activity_path,
         markets_path=markets_path,
         leaderboard_path=leaderboard_path,
         kalshi_markets_path=kalshi_markets_path,
         hydration_path=hydration_path,
+        price_snapshots_path=price_snapshots_path,
     )
 
 
@@ -1292,6 +1317,37 @@ def seed_watchlist_from_leaderboard(
     return merged
 
 
+def _price_snapshots_from_markets(
+    markets: list[PolymarketMarket],
+) -> list[PolymarketPriceSnapshot]:
+    """One price-history point per fetched market. The markets store dedupes
+    to the latest row per condition; this append-only stream is what keeps
+    the closing line observable after the market closes."""
+    out: list[PolymarketPriceSnapshot] = []
+    for market in markets:
+        if market.last_trade_price is not None and market.last_trade_price > 0.0:
+            price = market.last_trade_price
+        elif (
+            market.best_bid is not None
+            and market.best_ask is not None
+            and market.best_bid > 0.0
+            and market.best_ask > 0.0
+        ):
+            price = (market.best_bid + market.best_ask) / 2.0
+        else:
+            continue
+        out.append(
+            PolymarketPriceSnapshot(
+                condition_id=market.condition_id,
+                yes_price=round(price, 6),
+                active=market.active,
+                closed=market.closed,
+                fetched_at=market.fetched_at,
+            )
+        )
+    return out
+
+
 def run_markets(
     client: PolymarketClient,
     stores: _Stores,
@@ -1315,6 +1371,7 @@ def run_markets(
             break
         parsed = [parse_market_row(r) for r in raw]
         total += stores.markets.write_markets(parsed)
+        stores.price_snapshots.write_snapshots(_price_snapshots_from_markets(parsed))
         log.info("markets page=%d fetched=%d total_new=%d", page, len(raw), total)
         if len(raw) < page_size:
             break
@@ -1374,6 +1431,8 @@ def run_markets_backfill_from_activity(
 
     parsed = [parse_market_row(r) for r in raw]
     written = stores.markets.write_markets(parsed) if parsed else 0
+    if parsed:
+        stores.price_snapshots.write_snapshots(_price_snapshots_from_markets(parsed))
     _refresh_metadata_coverage(stores)
     known_conds = {
         str(row.get("condition_id", ""))
@@ -1683,20 +1742,41 @@ def run_review_matches(stores: _Stores, *, limit: int) -> int:
     return decisions
 
 
+def _load_price_snapshot_records(path: Path) -> list[PolymarketPriceSnapshot]:
+    out: list[PolymarketPriceSnapshot] = []
+    for row in _read_jsonl(path):
+        cond = str(row.get("condition_id", ""))
+        if not cond:
+            continue
+        out.append(
+            PolymarketPriceSnapshot(
+                condition_id=cond,
+                yes_price=_as_float(row.get("yes_price")),
+                active=bool(row.get("active", False)),
+                closed=bool(row.get("closed", False)),
+                fetched_at=str(row.get("fetched_at", "")),
+            )
+        )
+    return out
+
+
 def run_enrichment(stores: _Stores) -> int:
     """Recompute and overwrite wallet enrichment from the local JSONL stores."""
     activity = _load_activity_records(stores.activity_path)
     markets = _load_market_records(stores.markets_path)
     leaderboard = _load_leaderboard_records(stores.leaderboard_path)
     hydration = stores.hydration.load_hydration()
-    enrichments = compute_all_enrichment(
+    price_snapshots = _load_price_snapshot_records(stores.price_snapshots_path)
+    enrichments, wallet_bets = compute_enrichment_outputs(
         activity=activity,
         markets=markets,
         leaderboard=leaderboard,
         hydration_by_wallet=hydration,
+        price_snapshots=price_snapshots,
     )
     written = stores.enrichment.write_enrichment(enrichments)
-    log.info("enrichment_written wallets=%d", written)
+    bets_written = stores.wallet_bets.write_bets(wallet_bets)
+    log.info("enrichment_written wallets=%d bet_records=%d", written, bets_written)
     return written
 
 

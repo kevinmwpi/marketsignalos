@@ -33,6 +33,7 @@ derivation.
 from __future__ import annotations
 
 import logging
+import math
 from collections import defaultdict
 from dataclasses import dataclass, replace
 
@@ -50,6 +51,8 @@ from .models import (
     PolymarketActivity,
     PolymarketLeaderboardEntry,
     PolymarketMarket,
+    PolymarketPriceSnapshot,
+    PolymarketWalletBet,
     PolymarketWalletEnrichment,
     PolymarketWalletHydration,
 )
@@ -76,6 +79,10 @@ class _Position:
     realized_pnl_usdc: float = 0.0  # locked-in PnL from sells before resolution
     last_ts: int = 0
     event_slug: str = ""          # captured from the first matching TRADE event
+    # Buys-only accumulators — never reduced by sells, so the original
+    # volume-weighted entry price survives a full exit (CLV needs it).
+    bought_size: float = 0.0
+    bought_cost_usdc: float = 0.0
 
 
 def _aggregate_positions(activity: list[PolymarketActivity]) -> dict[tuple[str, int], _Position]:
@@ -113,6 +120,8 @@ def _aggregate_positions(activity: list[PolymarketActivity]) -> dict[tuple[str, 
         if side == "BUY":
             pos.net_size += event.size
             pos.total_cost_usdc += event.usdc_size
+            pos.bought_size += event.size
+            pos.bought_cost_usdc += event.usdc_size
         elif side == "SELL":
             if pos.net_size > 0:
                 # Proportional cost-basis removal.
@@ -153,25 +162,141 @@ def _market_winning_outcome(market: PolymarketMarket) -> int | None:
     return winners[0] if len(winners) == 1 else None
 
 
+def _event_capped_weights(items: list[tuple[str, float]]) -> list[float]:
+    """
+    One total vote per event, split across that event's legs by at-risk
+    capital. `items` is (event_slug, cost_usdc) per observation; blank slugs
+    are treated as independent events.
+    """
+    grouped: dict[str, list[int]] = defaultdict(list)
+    for index, (event_slug, _cost) in enumerate(items):
+        grouped[event_slug or f"__blank_event_{index}"].append(index)
+
+    weights = [0.0] * len(items)
+    for indexes in grouped.values():
+        total_cost = sum(max(0.0, items[i][1]) for i in indexes)
+        even_weight = 1.0 / len(indexes)
+        for i in indexes:
+            weights[i] = (
+                max(0.0, items[i][1]) / total_cost if total_cost > 0.0 else even_weight
+            )
+    return weights
+
+
 def _apply_event_weights(bets: list[Bet]) -> list[Bet]:
     """Cap each event at one likelihood vote, split across legs by capital."""
-    grouped: dict[str, list[tuple[int, Bet]]] = defaultdict(list)
-    for index, bet in enumerate(bets):
-        key = bet.event_slug or f"__blank_event_{index}"
-        grouped[key].append((index, bet))
+    weights = _event_capped_weights([(b.event_slug, b.cost_usdc) for b in bets])
+    return [replace(bet, weight=weight) for bet, weight in zip(bets, weights)]
 
-    weighted: list[Bet | None] = [None] * len(bets)
-    for rows in grouped.values():
-        total_cost = sum(max(0.0, bet.cost_usdc) for _, bet in rows)
-        even_weight = 1.0 / len(rows)
-        for index, bet in rows:
-            weight = (
-                max(0.0, bet.cost_usdc) / total_cost
-                if total_cost > 0.0
-                else even_weight
+
+# ── Price history & closing-line value ───────────────────────────────────────
+
+# condition_id -> [(fetched_at, yes_price, closed)] sorted by fetched_at.
+_PriceHistory = dict[str, list[tuple[str, float, bool]]]
+
+
+def _market_price(market: PolymarketMarket) -> float:
+    """Best available YES price for one market row: last trade, else mid."""
+    if market.last_trade_price is not None and market.last_trade_price > 0.0:
+        return market.last_trade_price
+    if (
+        market.best_bid is not None
+        and market.best_ask is not None
+        and market.best_bid > 0.0
+        and market.best_ask > 0.0
+    ):
+        return (market.best_bid + market.best_ask) / 2.0
+    return 0.0
+
+
+def build_price_history(
+    markets: list[PolymarketMarket],
+    snapshots: list[PolymarketPriceSnapshot] | None = None,
+) -> _PriceHistory:
+    """
+    Merge the appended price-snapshot stream with the (deduplicated) market
+    rows into one per-condition price series. Zero-price points are dropped —
+    they mean "no price observed", not "price is zero".
+    """
+    history: _PriceHistory = defaultdict(list)
+    for snap in snapshots or []:
+        if snap.yes_price > 0.0:
+            history[snap.condition_id].append(
+                (snap.fetched_at, snap.yes_price, snap.closed)
             )
-            weighted[index] = replace(bet, weight=weight)
-    return [bet for bet in weighted if bet is not None]
+    for market in markets:
+        price = _market_price(market)
+        if price > 0.0:
+            history[market.condition_id].append(
+                (market.fetched_at, price, market.closed)
+            )
+    for series in history.values():
+        series.sort()
+    return dict(history)
+
+
+def _closing_line(
+    history: _PriceHistory, condition_id: str, *, resolved: bool
+) -> float | None:
+    """
+    Reference YES price a bet's entry is compared against.
+
+    Resolved markets: the last price observed while the market was still
+    open — the closing line. (Post-close prices are resolution payoffs, not
+    market opinion.) Unresolved markets: the latest observed price.
+    Returns None when no usable observation exists.
+    """
+    series = history.get(condition_id)
+    if not series:
+        return None
+    if resolved:
+        for fetched_at, price, closed in reversed(series):
+            if not closed:
+                return price
+        return None
+    return series[-1][1]
+
+
+def _weighted_clv_stats(
+    observations: list[tuple[float, str, float]],
+) -> tuple[float, float, float]:
+    """
+    (clv_mean, clv_lower_bound, clv_sample_size) from (clv, event_slug,
+    cost_usdc) observations. Event-capped weights; the lower bound is the
+    normal-approximation 5th percentile of the weighted mean.
+    """
+    if not observations:
+        return 0.0, 0.0, 0.0
+    weights = _event_capped_weights([(slug, cost) for _, slug, cost in observations])
+    total_weight = sum(weights)
+    if total_weight <= 0.0:
+        return 0.0, 0.0, 0.0
+    mean = sum(w * clv for w, (clv, _, _) in zip(weights, observations)) / total_weight
+    variance = (
+        sum(w * (clv - mean) ** 2 for w, (clv, _, _) in zip(weights, observations))
+        / total_weight
+    )
+    sum_sq = sum(w * w for w in weights)
+    n_eff = (total_weight * total_weight) / sum_sq if sum_sq > 0.0 else 0.0
+    se = math.sqrt(variance / n_eff) if n_eff > 0.0 else 0.0
+    return mean, mean - 1.6448536269514722 * se, total_weight
+
+
+@dataclass(slots=True)
+class _PositionRecord:
+    """One (condition, outcome) betting record — open, exited, or resolved."""
+
+    condition_id: str
+    outcome_index: int
+    event_slug: str
+    status: str  # "won" | "lost" | "exited" | "open"
+    entry_price: float        # buys-only VWAP
+    cost_usdc: float          # total USDC bought into the position
+    net_size: float
+    realized_pnl_usdc: float
+    total_pnl_usdc: float
+    market_resolved: bool
+    last_ts: int
 
 
 @dataclass(slots=True)
@@ -194,6 +319,7 @@ class _WalletRollup:
     trade_count: int
     last_activity_ts: int
     position_sizes: list[float]
+    records: list[_PositionRecord]
 
 
 def _roll_up_wallet(
@@ -228,6 +354,30 @@ def _roll_up_wallet(
         if event.timestamp > last_activity_ts:
             last_activity_ts = event.timestamp
 
+    records: list[_PositionRecord] = []
+
+    def _record(pos: _Position, outcome_idx: int, status: str, pnl: float,
+                *, market_resolved: bool) -> None:
+        records.append(
+            _PositionRecord(
+                condition_id=pos.condition_id,
+                outcome_index=outcome_idx,
+                event_slug=pos.event_slug,
+                status=status,
+                entry_price=(
+                    pos.bought_cost_usdc / pos.bought_size
+                    if pos.bought_size > 0
+                    else 0.0
+                ),
+                cost_usdc=pos.bought_cost_usdc,
+                net_size=pos.net_size,
+                realized_pnl_usdc=pos.realized_pnl_usdc,
+                total_pnl_usdc=pnl,
+                market_resolved=market_resolved,
+                last_ts=pos.last_ts,
+            )
+        )
+
     for (_cond, outcome_idx), pos in positions.items():
         market = markets_by_condition.get(pos.condition_id)
         if market is None:
@@ -238,11 +388,16 @@ def _roll_up_wallet(
         if winner is None:
             # Market hasn't resolved yet, or was canceled — exclude from win/loss.
             total_pnl += pos.realized_pnl_usdc
+            status = "exited" if pos.net_size <= 1e-9 else "open"
+            _record(pos, outcome_idx, status, pos.realized_pnl_usdc,
+                    market_resolved=False)
             continue
 
         if pos.net_size <= 1e-9:
             # Fully exited before resolution — count only realized PnL, no win/loss.
             total_pnl += pos.realized_pnl_usdc
+            _record(pos, outcome_idx, "exited", pos.realized_pnl_usdc,
+                    market_resolved=True)
             continue
 
         # This is a resolved bet.
@@ -270,6 +425,8 @@ def _roll_up_wallet(
             losses += 1
             unrealized = -pos.total_cost_usdc
         total_pnl += pos.realized_pnl_usdc + unrealized
+        _record(pos, outcome_idx, "won" if won else "lost",
+                pos.realized_pnl_usdc + unrealized, market_resolved=True)
 
     return _WalletRollup(
         wallet=wallet.lower(),
@@ -284,6 +441,7 @@ def _roll_up_wallet(
         trade_count=trade_count,
         last_activity_ts=last_activity_ts,
         position_sizes=position_sizes,
+        records=records,
     )
 
 
@@ -294,6 +452,7 @@ def _enrichment_from_rollup(
     ess: float,
     recent_fit: PosteriorFit,
     recent_ess: float,
+    clv_stats: tuple[float, float, float] = (0.0, 0.0, 0.0),
     hydration: PolymarketWalletHydration | None = None,
 ) -> PolymarketWalletEnrichment:
     resolved_trades = rollup.wins + rollup.losses
@@ -393,12 +552,77 @@ def _enrichment_from_rollup(
         recent_edge_mean=round(recent_fit.edge_mean, 6),
         recent_edge_lower_bound=round(recent_fit.edge_lower_bound, 6),
         recent_independent_events=round(recent_ess, 4),
+        clv_mean=round(clv_stats[0], 6),
+        clv_lower_bound=round(clv_stats[1], 6),
+        clv_sample_size=round(clv_stats[2], 4),
         data_quality_status=data_status,
         data_quality_reasons=data_reasons,
         economic_qualified=economic_qualified,
         tailability_status=tailability_status,
         tailability_reasons=tailability_reasons,
     )
+
+
+def _records_clv(
+    records: list[_PositionRecord], history: _PriceHistory
+) -> tuple[tuple[float, float, float], list[float | None]]:
+    """
+    Per-record CLV plus the wallet-level (mean, lower_bound, sample_size).
+
+    CLV_i = reference price of the picked outcome − buys-only entry VWAP,
+    where the reference is the closing line for resolved markets and the
+    latest observed line otherwise. Records without a usable reference (or
+    entry) get None and are excluded from the aggregate.
+    """
+    observations: list[tuple[float, str, float]] = []
+    per_record: list[float | None] = []
+    for rec in records:
+        if rec.entry_price <= 0.0:
+            per_record.append(None)
+            continue
+        ref = _closing_line(history, rec.condition_id, resolved=rec.market_resolved)
+        if ref is None or ref <= 0.0:
+            per_record.append(None)
+            continue
+        picked_ref = ref if rec.outcome_index == 0 else 1.0 - ref
+        clv = picked_ref - rec.entry_price
+        per_record.append(clv)
+        observations.append((clv, rec.event_slug, rec.cost_usdc))
+    return _weighted_clv_stats(observations), per_record
+
+
+def _wallet_bets_from_rollup(
+    rollup: _WalletRollup,
+    per_record_clv: list[float | None],
+    markets_by_condition: dict[str, PolymarketMarket],
+) -> list[PolymarketWalletBet]:
+    out: list[PolymarketWalletBet] = []
+    for rec, clv in zip(rollup.records, per_record_clv):
+        market = markets_by_condition.get(rec.condition_id)
+        outcome_label = ""
+        if market and 0 <= rec.outcome_index < len(market.outcomes):
+            outcome_label = market.outcomes[rec.outcome_index]
+        out.append(
+            PolymarketWalletBet(
+                proxy_wallet=rollup.wallet,
+                condition_id=rec.condition_id,
+                outcome_index=rec.outcome_index,
+                outcome=outcome_label
+                or ("Yes" if rec.outcome_index == 0 else "No"),
+                event_slug=rec.event_slug,
+                category=market.category if market else "",
+                title=market.question if market else "",
+                status=rec.status,
+                entry_price=round(rec.entry_price, 6),
+                cost_usdc=round(rec.cost_usdc, 2),
+                net_size=round(rec.net_size, 4),
+                realized_pnl_usdc=round(rec.realized_pnl_usdc, 2),
+                total_pnl_usdc=round(rec.total_pnl_usdc, 2),
+                clv=round(clv, 6) if clv is not None else None,
+                last_trade_ts=rec.last_ts,
+            )
+        )
+    return out
 
 
 # ── Public API ───────────────────────────────────────────────────────────────
@@ -412,6 +636,7 @@ def compute_wallet_enrichment(
     pseudonym: str = "",
     population_prior: PopulationPrior | None = None,
     hydration: PolymarketWalletHydration | None = None,
+    price_snapshots: list[PolymarketPriceSnapshot] | None = None,
 ) -> PolymarketWalletEnrichment:
     """
     Compute one wallet's enrichment row.
@@ -442,25 +667,32 @@ def compute_wallet_enrichment(
         recent_bets, mu_prior=prior.mu, sigma2_prior=prior.sigma2
     )
     recent_ess = effective_sample_size(recent_bets)
+    history = build_price_history(
+        list(markets_by_condition.values()), price_snapshots
+    )
+    clv_stats, _ = _records_clv(rollup.records, history)
     return _enrichment_from_rollup(
         rollup,
         fit,
         ess=ess,
         recent_fit=recent_fit,
         recent_ess=recent_ess,
+        clv_stats=clv_stats,
         hydration=hydration,
     )
 
 
-def compute_all_enrichment(
+def compute_enrichment_outputs(
     *,
     activity: list[PolymarketActivity],
     markets: list[PolymarketMarket],
     leaderboard: list[PolymarketLeaderboardEntry],
     hydration_by_wallet: dict[str, PolymarketWalletHydration] | None = None,
-) -> list[PolymarketWalletEnrichment]:
+    price_snapshots: list[PolymarketPriceSnapshot] | None = None,
+) -> tuple[list[PolymarketWalletEnrichment], list[PolymarketWalletBet]]:
     """
-    Compute enrichment for every wallet present in the activity stream.
+    Compute enrichment for every wallet present in the activity stream,
+    plus the per-position betting records behind those aggregates.
 
     The leaderboard list is used purely to look up display names /
     pseudonyms (since the data-api uses the pseudonymized
@@ -511,8 +743,11 @@ def compute_all_enrichment(
         (bet.ts for rollup in rollups for bet in rollup.bets), default=0
     )
 
+    history = build_price_history(markets, price_snapshots)
+
     # Pass 2: fit each wallet under the empirical prior.
     out: list[PolymarketWalletEnrichment] = []
+    all_bets: list[PolymarketWalletBet] = []
     for rollup in rollups:
         fit = fit_wallet_posterior(
             rollup.bets, mu_prior=prior.mu, sigma2_prior=prior.sigma2
@@ -523,6 +758,7 @@ def compute_all_enrichment(
             recent_bets, mu_prior=prior.mu, sigma2_prior=prior.sigma2
         )
         recent_ess = effective_sample_size(recent_bets)
+        clv_stats, per_record_clv = _records_clv(rollup.records, history)
         hydration = (hydration_by_wallet or {}).get(rollup.wallet)
         out.append(
             _enrichment_from_rollup(
@@ -531,8 +767,12 @@ def compute_all_enrichment(
                 ess=ess,
                 recent_fit=recent_fit,
                 recent_ess=recent_ess,
+                clv_stats=clv_stats,
                 hydration=hydration,
             )
+        )
+        all_bets.extend(
+            _wallet_bets_from_rollup(rollup, per_record_clv, markets_by_condition)
         )
 
     # Default order: best-ranked first. Tiebreak by skill_likelihood then
@@ -542,11 +782,31 @@ def compute_all_enrichment(
     )
     log.info(
         "enrichment_computed wallets=%d markets=%d resolved_bets=%d "
-        "prior=(mu=%.3f, sigma2=%.3f)",
+        "bet_records=%d prior=(mu=%.3f, sigma2=%.3f)",
         len(out),
         len(markets_by_condition),
         sum(e.resolved_trades for e in out),
+        len(all_bets),
         prior.mu,
         prior.sigma2,
     )
-    return out
+    return out, all_bets
+
+
+def compute_all_enrichment(
+    *,
+    activity: list[PolymarketActivity],
+    markets: list[PolymarketMarket],
+    leaderboard: list[PolymarketLeaderboardEntry],
+    hydration_by_wallet: dict[str, PolymarketWalletHydration] | None = None,
+    price_snapshots: list[PolymarketPriceSnapshot] | None = None,
+) -> list[PolymarketWalletEnrichment]:
+    """Back-compat wrapper around compute_enrichment_outputs (enrichment only)."""
+    enrichments, _ = compute_enrichment_outputs(
+        activity=activity,
+        markets=markets,
+        leaderboard=leaderboard,
+        hydration_by_wallet=hydration_by_wallet,
+        price_snapshots=price_snapshots,
+    )
+    return enrichments

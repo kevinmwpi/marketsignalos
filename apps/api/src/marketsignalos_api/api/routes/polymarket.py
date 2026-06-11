@@ -43,6 +43,9 @@ class PolymarketWalletSkill(BaseModel):
     recent_edge_mean: float = 0.0
     recent_edge_lower_bound: float = 0.0
     recent_independent_events: float = 0.0
+    clv_mean: float = 0.0
+    clv_lower_bound: float = 0.0
+    clv_sample_size: float = 0.0
     data_quality_status: str = "untrusted"
     data_quality_reasons: list[str] = Field(default_factory=list)
     economic_qualified: bool = False

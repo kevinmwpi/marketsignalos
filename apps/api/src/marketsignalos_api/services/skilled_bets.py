@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import time
 from collections import Counter, defaultdict
 from collections.abc import Iterator
@@ -39,6 +40,7 @@ from marketsignalos_api._paths import (
     polymarket_markets_path,
     polymarket_position_snapshots_path,
     polymarket_positions_path,
+    polymarket_wallet_values_path,
 )
 
 from marketsignalos_api.services.external_urls import (
@@ -147,6 +149,20 @@ class SkilledBetSignal:
     consensus_wallets: int = 1
     consensus_contested: bool = False
 
+    # Position-sizing conviction: skilled traders size up when conviction is
+    # high. conviction_z is this entry's USDC size z-scored against the
+    # wallet's OWN historical BUY sizes; the label requires >= 5 prior buys.
+    #   conviction              "high" (z>=2) | "low" (z<=-1) | "normal" | "unknown"
+    #   entry_pct_of_bankroll   entry USDC / latest wallet portfolio value; 0 unknown
+    conviction: str = "unknown"
+    conviction_z: float = 0.0
+    entry_pct_of_bankroll: float = 0.0
+
+    # Wallet-level closing-line value (from enrichment; see ingestor docs).
+    clv_mean: float = 0.0
+    clv_lower_bound: float = 0.0
+    clv_sample_size: float = 0.0
+
 
 # ── Remaining-edge classification ─────────────────────────────────────────────
 #
@@ -250,6 +266,9 @@ class _SkilledWallet:
     tailability_status: str
     tailability_reasons: list[str]
     score_version: str
+    clv_mean: float = 0.0
+    clv_lower_bound: float = 0.0
+    clv_sample_size: float = 0.0
 
 
 @dataclass(slots=True)
@@ -325,6 +344,9 @@ def _load_skilled_wallets(
                 str(reason) for reason in (row.get("tailability_reasons") or [])
             ],
             score_version=str(row.get("score_version", "legacy")),
+            clv_mean=_f(row.get("clv_mean")),
+            clv_lower_bound=_f(row.get("clv_lower_bound")),
+            clv_sample_size=_f(row.get("clv_sample_size")),
         )
     return out
 
@@ -488,16 +510,59 @@ def _load_best_kalshi_mirror_by_cond() -> dict[str, _KalshiMirror]:
     return best
 
 
+@dataclass(slots=True)
+class _BuySizeStats:
+    """Streaming accumulator for one wallet's historical BUY sizes (USDC)."""
+
+    count: int = 0
+    total: float = 0.0
+    total_sq: float = 0.0
+
+    def add(self, usdc: float) -> None:
+        self.count += 1
+        self.total += usdc
+        self.total_sq += usdc * usdc
+
+    def zscore(self, usdc: float) -> float | None:
+        """None when the history is too thin to standardize against."""
+        if self.count < _MIN_BUYS_FOR_CONVICTION:
+            return None
+        mean = self.total / self.count
+        variance = max(0.0, self.total_sq / self.count - mean * mean)
+        std = math.sqrt(variance)
+        if std < 1e-9:
+            return None
+        return (usdc - mean) / std
+
+
+_MIN_BUYS_FOR_CONVICTION = 5
+_CONVICTION_HIGH_Z = 2.0
+_CONVICTION_LOW_Z = -1.0
+
+
+def _conviction_label(z: float | None) -> str:
+    if z is None:
+        return "unknown"
+    if z >= _CONVICTION_HIGH_Z:
+        return "high"
+    if z <= _CONVICTION_LOW_Z:
+        return "low"
+    return "normal"
+
+
 def _latest_buy_per_position(
     *,
     keys: set[tuple[str, str, int]],
-) -> dict[tuple[str, str, int], dict[str, Any]]:
+    stat_wallets: set[str],
+) -> tuple[dict[tuple[str, str, int], dict[str, Any]], dict[str, _BuySizeStats]]:
     """
     Single pass over the activity file: keep the highest-timestamp BUY event
-    per (wallet, condition, outcome) key. We only care about keys that have
-    a still-held position — anything else is dead weight.
+    per (wallet, condition, outcome) key, and accumulate each skilled
+    wallet's full BUY-size history (for conviction z-scores) in the same
+    stream so the >1GB file is still only read once.
     """
     out: dict[tuple[str, str, int], dict[str, Any]] = {}
+    stats: dict[str, _BuySizeStats] = {}
     # Stream + filter inline: the activity file can be >1GB, so we must never
     # materialize all rows. We retain only the (small) set of rows whose key
     # matches a still-held position — at most one row per key.
@@ -509,13 +574,29 @@ def _latest_buy_per_position(
         wallet = str(row.get("proxy_wallet", "")).lower()
         cond = str(row.get("condition_id", ""))
         outcome_idx = _i(row.get("outcome_index"))
+        if wallet in stat_wallets:
+            stats.setdefault(wallet, _BuySizeStats()).add(_f(row.get("usdc_size")))
         key = (wallet, cond, outcome_idx)
         if key not in keys:
             continue
         prior = out.get(key)
         if prior is None or _i(row.get("timestamp")) > _i(prior.get("timestamp")):
             out[key] = row
-    return out
+    return out, stats
+
+
+def _load_wallet_values() -> dict[str, float]:
+    """Latest portfolio value per wallet (the values file is append-only)."""
+    out: dict[str, tuple[str, float]] = {}
+    for row in _read_jsonl(polymarket_wallet_values_path()):
+        wallet = str(row.get("proxy_wallet", "")).lower()
+        if not wallet:
+            continue
+        snapshot_at = str(row.get("snapshot_at", "") or "")
+        prior = out.get(wallet)
+        if prior is None or snapshot_at >= prior[0]:
+            out[wallet] = (snapshot_at, _f(row.get("value_usdc")))
+    return {wallet: value for wallet, (_, value) in out.items()}
 
 
 # ── Caching ─────────────────────────────────────────────────────────────────
@@ -541,6 +622,7 @@ def _input_paths() -> tuple[Path, ...]:
         polymarket_activity_path(),
         kalshi_markets_path(),
         market_links_path(),
+        polymarket_wallet_values_path(),
     )
 
 
@@ -696,8 +778,11 @@ def _compute_skilled_bets(
         return []
 
     markets = _load_polymarket_markets()
-    latest_buys = _latest_buy_per_position(keys=set(held.keys()))
+    latest_buys, buy_stats = _latest_buy_per_position(
+        keys=set(held.keys()), stat_wallets=set(skilled.keys())
+    )
     kalshi_mirrors = _load_best_kalshi_mirror_by_cond()
+    wallet_values = _load_wallet_values()
     now_ts = int(time.time())
 
     # Pass 1: build every candidate row that clears the WALLET-level gates and
@@ -759,6 +844,16 @@ def _compute_skilled_bets(
             )
         move_captured, remaining_edge_status = _remaining_edge(
             entry_price, current_outcome
+        )
+        entry_usdc = _f(buy.get("usdc_size"))
+        conviction_z = (
+            stats.zscore(entry_usdc)
+            if (stats := buy_stats.get(pos.proxy_wallet)) is not None
+            else None
+        )
+        bankroll = wallet_values.get(pos.proxy_wallet, 0.0)
+        entry_pct_of_bankroll = (
+            round(entry_usdc / bankroll, 6) if bankroll > 0 and entry_usdc > 0 else 0.0
         )
         kalshi_yes = round(mirror.yes_price, 4) if mirror else 0.0
         kalshi_vs_entry_cents = (
@@ -830,6 +925,12 @@ def _compute_skilled_bets(
                 tradability_reasons=tradability_reasons,
                 move_captured_pct=move_captured,
                 remaining_edge_status=remaining_edge_status,
+                conviction=_conviction_label(conviction_z),
+                conviction_z=round(conviction_z, 4) if conviction_z is not None else 0.0,
+                entry_pct_of_bankroll=entry_pct_of_bankroll,
+                clv_mean=round(wallet.clv_mean, 6),
+                clv_lower_bound=round(wallet.clv_lower_bound, 6),
+                clv_sample_size=round(wallet.clv_sample_size, 4),
             )
         )
 
@@ -866,10 +967,12 @@ def _compute_skilled_bets(
         out.append(signal)
 
     # Down-rank converged signals: a stale entry is worse than no entry for a
-    # tailing user. Within each remaining-edge rank, newest BUY first.
+    # tailing user. Within each remaining-edge rank, unusually-large
+    # ("high conviction") entries first, then newest BUY.
     out.sort(
         key=lambda s: (
             _REMAINING_EDGE_SORT_RANK.get(s.remaining_edge_status, 1),
+            0 if s.conviction == "high" else 1,
             -s.bought_at,
         )
     )

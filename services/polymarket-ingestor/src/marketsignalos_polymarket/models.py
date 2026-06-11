@@ -137,6 +137,54 @@ class PolymarketWalletValue:
 
 
 @dataclass(frozen=True, slots=True)
+class PolymarketPriceSnapshot:
+    """
+    One observed price point for one market — appended every time the
+    pipeline fetches the market from Gamma. This is the price HISTORY the
+    deduplicating markets store deliberately discards, retained for
+    closing-line-value: the last snapshot where the market was still open is
+    the "closing line" a resolved bet is scored against.
+    """
+
+    condition_id: str
+    yes_price: float  # last trade, else bid/ask mid; 0.0 when unknown
+    active: bool
+    closed: bool
+    fetched_at: str = field(default_factory=_utcnow_iso)
+
+
+@dataclass(frozen=True, slots=True)
+class PolymarketWalletBet:
+    """
+    One (wallet, condition, outcome) betting record — the per-position detail
+    behind the enrichment aggregates, rewritten each enrichment pass. Powers
+    the wallet detail page (bet history, equity curve, category breakdown).
+
+    status:
+      - "won" / "lost":  held through resolution
+      - "exited":        fully sold before resolution
+      - "open":          still held on an unresolved market
+    """
+
+    proxy_wallet: str
+    condition_id: str
+    outcome_index: int
+    outcome: str
+    event_slug: str
+    category: str
+    title: str
+    status: str
+    entry_price: float          # buys-only VWAP (sells don't distort it)
+    cost_usdc: float            # total USDC put into the position (buys)
+    net_size: float             # shares still held at the latest activity
+    realized_pnl_usdc: float    # locked in by sells before resolution
+    total_pnl_usdc: float       # realized + resolution payoff where settled
+    clv: float | None           # closing/current line minus entry; None if no price history
+    last_trade_ts: int
+    computed_at: str = field(default_factory=_utcnow_iso)
+
+
+@dataclass(frozen=True, slots=True)
 class MarketLink:
     """
     A candidate Polymarket → Kalshi market identifier mapping.
@@ -250,6 +298,14 @@ class PolymarketWalletEnrichment:
     recent_edge_mean: float = 0.0
     recent_edge_lower_bound: float = 0.0
     recent_independent_events: float = 0.0
+    # Closing-line value: average (closing/current price − entry price) of the
+    # picked outcome, event-capped and capital-weighted. Positive CLV means
+    # the wallet consistently buys before the market moves its way — measured
+    # without needing resolution, so it also scores open and exited-early
+    # positions the resolution fit can't see.
+    clv_mean: float = 0.0
+    clv_lower_bound: float = 0.0   # mean − 1.645·SE (5th-percentile, normal approx)
+    clv_sample_size: float = 0.0   # event-capped effective observations
     data_quality_status: str = "untrusted"
     data_quality_reasons: list[str] = field(default_factory=list)
     economic_qualified: bool = False

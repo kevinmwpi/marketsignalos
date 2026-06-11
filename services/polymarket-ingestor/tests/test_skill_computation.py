@@ -15,12 +15,15 @@ from marketsignalos_polymarket.models import (
     PolymarketActivity,
     PolymarketLeaderboardEntry,
     PolymarketMarket,
+    PolymarketPriceSnapshot,
     PolymarketWalletHydration,
 )
 from marketsignalos_polymarket.skill_computation import (
     _apply_event_weights,
     _market_winning_outcome,
+    build_price_history,
     compute_all_enrichment,
+    compute_enrichment_outputs,
     compute_wallet_enrichment,
 )
 
@@ -513,6 +516,134 @@ def test_favorites_only_wallet_has_near_zero_edge() -> None:
     # The raw 90% win rate would have made the old skill_likelihood ~ 1.0.
     # The Bayesian model says: 9/10 at 90¢ markets is exactly expected; edge ≈ 0.
     assert abs(e.edge_mean) < 0.3, f"edge_mean was {e.edge_mean}, expected near zero"
+
+
+# ── closing-line value ───────────────────────────────────────────────────────
+
+def _open_market(cond: str, *, last_trade: float) -> PolymarketMarket:
+    return PolymarketMarket(
+        gamma_id=cond, condition_id=cond, slug=f"m-{cond}", question="?",
+        category="", end_date="2026-01-01T00:00:00Z", outcomes=["Yes", "No"],
+        outcome_prices=[last_trade, 1 - last_trade],
+        volume_usdc=1000, liquidity_usdc=100, closed=False, active=True,
+        last_trade_price=last_trade, best_bid=None, best_ask=None,
+    )
+
+
+def test_clv_open_market_uses_latest_price() -> None:
+    """Bought YES at 40¢; the market now trades 55¢ → CLV = +0.15 with no
+    resolution needed."""
+    activity = [_trade("0xc1", outcome=0, side="BUY", size=100, price=0.4)]
+    markets = {"0xc1": _open_market("0xc1", last_trade=0.55)}
+    e = compute_wallet_enrichment("0xabc", activity=activity, markets_by_condition=markets)
+    assert e.resolved_trades == 0  # nothing resolved...
+    assert abs(e.clv_mean - 0.15) < 1e-9  # ...but CLV already scores the pick
+    assert e.clv_sample_size == 1.0
+
+
+def test_clv_includes_exited_positions() -> None:
+    """Full exit before resolution is invisible to the resolution fit but
+    still scored by CLV — entry uses the buys-only VWAP, not the
+    sell-adjusted cost basis."""
+    activity = [
+        _trade("0xc1", outcome=0, side="BUY", size=100, price=0.4, ts=1000),
+        _trade("0xc1", outcome=0, side="SELL", size=100, price=0.6, ts=2000),
+    ]
+    markets = {"0xc1": _open_market("0xc1", last_trade=0.55)}
+    e = compute_wallet_enrichment("0xabc", activity=activity, markets_by_condition=markets)
+    assert e.resolved_trades == 0
+    assert abs(e.clv_mean - 0.15) < 1e-9
+    assert e.clv_sample_size == 1.0
+
+
+def test_clv_resolved_market_needs_preclose_observation() -> None:
+    """A resolved market's own row is post-close (outcome prices 0/1), so
+    without a pre-close snapshot there is no honest closing line — the bet
+    must be EXCLUDED from CLV rather than scored against the payoff."""
+    activity = [_trade("0xc1", outcome=0, side="BUY", size=100, price=0.4)]
+    markets = {"0xc1": _market("0xc1", closed=True, winning_outcome=0)}
+    e = compute_wallet_enrichment("0xabc", activity=activity, markets_by_condition=markets)
+    assert e.clv_sample_size == 0.0
+    assert e.clv_mean == 0.0
+
+
+def test_clv_resolved_market_uses_preclose_snapshot() -> None:
+    activity = [_trade("0xc1", outcome=0, side="BUY", size=100, price=0.4)]
+    markets = {"0xc1": _market("0xc1", closed=True, winning_outcome=0)}
+    snapshots = [
+        PolymarketPriceSnapshot(
+            condition_id="0xc1", yes_price=0.52, active=True, closed=False,
+            fetched_at="2025-12-30T00:00:00+00:00",
+        ),
+    ]
+    e = compute_wallet_enrichment(
+        "0xabc", activity=activity, markets_by_condition=markets,
+        price_snapshots=snapshots,
+    )
+    assert abs(e.clv_mean - 0.12) < 1e-9
+    assert e.clv_sample_size == 1.0
+
+
+def test_clv_no_side_bet_uses_complement_price() -> None:
+    """NO-side entry at 30¢ with YES trading 55¢ → picked ref 45¢ → +0.15."""
+    activity = [_trade("0xc1", outcome=1, side="BUY", size=100, price=0.3)]
+    markets = {"0xc1": _open_market("0xc1", last_trade=0.55)}
+    e = compute_wallet_enrichment("0xabc", activity=activity, markets_by_condition=markets)
+    assert abs(e.clv_mean - 0.15) < 1e-9
+
+
+def test_build_price_history_drops_zero_prices_and_sorts() -> None:
+    snapshots = [
+        PolymarketPriceSnapshot(
+            condition_id="0xc1", yes_price=0.5, active=True, closed=False,
+            fetched_at="2025-12-02T00:00:00+00:00",
+        ),
+        PolymarketPriceSnapshot(
+            condition_id="0xc1", yes_price=0.0, active=True, closed=False,
+            fetched_at="2025-12-03T00:00:00+00:00",
+        ),
+        PolymarketPriceSnapshot(
+            condition_id="0xc1", yes_price=0.4, active=True, closed=False,
+            fetched_at="2025-12-01T00:00:00+00:00",
+        ),
+    ]
+    history = build_price_history([], snapshots)
+    assert [price for _, price, _ in history["0xc1"]] == [0.4, 0.5]
+
+
+# ── wallet bet records ───────────────────────────────────────────────────────
+
+def test_enrichment_outputs_emit_bet_records_for_every_position() -> None:
+    activity = [
+        # won (resolved YES, held)
+        _trade("0xwin", outcome=0, side="BUY", size=100, price=0.4, ts=1),
+        # exited before resolution
+        _trade("0xexit", outcome=0, side="BUY", size=100, price=0.4, ts=2),
+        _trade("0xexit", outcome=0, side="SELL", size=100, price=0.6, ts=3),
+        # open
+        _trade("0xopen", outcome=0, side="BUY", size=100, price=0.4, ts=4),
+    ]
+    markets = [
+        _market("0xwin", closed=True, winning_outcome=0),
+        _open_market("0xexit", last_trade=0.55),
+        _open_market("0xopen", last_trade=0.55),
+    ]
+    _, bets = compute_enrichment_outputs(
+        activity=activity, markets=markets, leaderboard=[],
+    )
+    by_cond = {b.condition_id: b for b in bets}
+    assert set(by_cond) == {"0xwin", "0xexit", "0xopen"}
+    assert by_cond["0xwin"].status == "won"
+    # Resolved market with no pre-close price history → CLV honestly absent.
+    assert by_cond["0xwin"].clv is None
+    assert by_cond["0xwin"].total_pnl_usdc == 60.0
+    assert by_cond["0xexit"].status == "exited"
+    assert by_cond["0xexit"].realized_pnl_usdc == 20.0
+    assert by_cond["0xexit"].clv is not None
+    assert abs(by_cond["0xexit"].clv - 0.15) < 1e-9
+    assert by_cond["0xopen"].status == "open"
+    assert by_cond["0xopen"].entry_price == 0.4
+    assert by_cond["0xopen"].net_size == 100.0
 
 
 # ── compute_all_enrichment ────────────────────────────────────────────────────
