@@ -1,3 +1,4 @@
+import Link from "next/link";
 import type { ReactElement } from "react";
 
 export type PolymarketWalletSkill = {
@@ -142,45 +143,30 @@ export default function PolymarketLeaderboardPanel({
               rows.map((row) => (
                 <tr className="hover:bg-zinc-50" key={row.proxy_wallet}>
                   <td className="px-4 py-2.5">
-                    {row.polymarket_profile_url ? (
-                      <a
-                        className="group block focus:outline-none focus:ring-2 focus:ring-emerald-400"
-                        href={row.polymarket_profile_url}
-                        rel="noopener noreferrer"
-                        target="_blank"
-                        title="Open on Polymarket"
+                    <Link
+                      className="group block focus:outline-none focus:ring-2 focus:ring-emerald-400"
+                      href={`/wallet/${row.proxy_wallet}`}
+                      title="Open wallet detail"
+                    >
+                      <span className="block font-mono text-xs font-medium text-zinc-900 group-hover:underline">
+                        {row.name || shortWallet(row.proxy_wallet)}
+                      </span>
+                      {row.name && (
+                        <span className="block font-mono text-[10px] text-zinc-400">
+                          {shortWallet(row.proxy_wallet)}
+                        </span>
+                      )}
+                      <span
+                        className={`mt-1 inline-block rounded px-1 py-0.5 text-[9px] font-semibold uppercase tracking-wide ${
+                          row.tailability_status === "tailable"
+                            ? "bg-emerald-50 text-emerald-700"
+                            : "bg-amber-50 text-amber-700"
+                        }`}
+                        title={row.tailability_reasons.join(", ")}
                       >
-                        <span className="block font-mono text-xs font-medium text-zinc-900 group-hover:underline">
-                          {row.name || shortWallet(row.proxy_wallet)}
-                        </span>
-                        {row.name && (
-                          <span className="block font-mono text-[10px] text-zinc-400">
-                            {shortWallet(row.proxy_wallet)}
-                          </span>
-                        )}
-                        <span
-                          className={`mt-1 inline-block rounded px-1 py-0.5 text-[9px] font-semibold uppercase tracking-wide ${
-                            row.tailability_status === "tailable"
-                              ? "bg-emerald-50 text-emerald-700"
-                              : "bg-amber-50 text-amber-700"
-                          }`}
-                          title={row.tailability_reasons.join(", ")}
-                        >
-                          {row.tailability_status}
-                        </span>
-                      </a>
-                    ) : (
-                      <>
-                        <span className="block font-mono text-xs font-medium text-zinc-900">
-                          {row.name || shortWallet(row.proxy_wallet)}
-                        </span>
-                        {row.name && (
-                          <span className="block font-mono text-[10px] text-zinc-400">
-                            {shortWallet(row.proxy_wallet)}
-                          </span>
-                        )}
-                      </>
-                    )}
+                        {row.tailability_status}
+                      </span>
+                    </Link>
                   </td>
                   <td className="px-4 py-2.5 text-right font-mono text-xs text-zinc-700">
                     {formatPct(row.forecast_skill_likelihood || row.skill_likelihood)}

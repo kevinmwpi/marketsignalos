@@ -15,6 +15,7 @@ from marketsignalos_api.api.routes.notifications import router as notifications_
 from marketsignalos_api.api.routes.polymarket import router as polymarket_router
 from marketsignalos_api.api.routes.signal_ledger import router as signal_ledger_router
 from marketsignalos_api.api.routes.skilled_bets import router as skilled_bets_router
+from marketsignalos_api.api.routes.wallets import router as wallets_router
 
 
 def _landing_page_html() -> str:
@@ -109,6 +110,7 @@ def create_app() -> FastAPI:
     app.include_router(polymarket_router)
     app.include_router(signal_ledger_router)
     app.include_router(skilled_bets_router)
+    app.include_router(wallets_router)
 
     @app.get("/", response_class=HTMLResponse, include_in_schema=False)
     def root() -> HTMLResponse:

@@ -97,3 +97,11 @@ def exit_state_path() -> Path:
 
 def notifications_state_path() -> Path:
     return _polymarket_dir() / "notifications_state.json"
+
+
+def polymarket_wallet_bets_path() -> Path:
+    return _polymarket_dir() / "polymarket_wallet_bets.jsonl"
+
+
+def polymarket_wallet_values_path() -> Path:
+    return _polymarket_dir() / "polymarket_wallet_values.jsonl"

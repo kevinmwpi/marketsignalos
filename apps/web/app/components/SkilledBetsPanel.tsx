@@ -1,3 +1,4 @@
+import Link from "next/link";
 import type { ReactElement } from "react";
 
 export type SkilledBet = {
@@ -65,6 +66,14 @@ export type SkilledBet = {
 
   consensus_wallets: number;
   consensus_contested: boolean;
+
+  conviction: string;
+  conviction_z: number;
+  entry_pct_of_bankroll: number;
+
+  clv_mean: number;
+  clv_lower_bound: number;
+  clv_sample_size: number;
 };
 
 const usdFormatter = new Intl.NumberFormat("en-US", {
@@ -228,6 +237,14 @@ export default function SkilledBetsPanel({
                         Contested
                       </span>
                     )}
+                    {bet.conviction === "high" && (
+                      <span
+                        className="rounded bg-indigo-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-indigo-700"
+                        title={`This entry is ${bet.conviction_z.toFixed(1)} standard deviations above the wallet's usual BUY size`}
+                      >
+                        Sized up {bet.conviction_z > 0 ? `${bet.conviction_z.toFixed(1)}σ` : ""}
+                      </span>
+                    )}
                     {bet.category && (
                       <span className="rounded bg-zinc-100 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-zinc-500">
                         {bet.category}
@@ -358,6 +375,13 @@ export default function SkilledBetsPanel({
                   <span className="font-mono text-zinc-400">
                     ({shortWallet(bet.proxy_wallet)})
                   </span>
+                  <Link
+                    className="font-semibold text-emerald-700 hover:text-emerald-900 hover:underline"
+                    href={`/wallet/${bet.proxy_wallet}`}
+                    title="Open wallet detail"
+                  >
+                    details
+                  </Link>
                   <span className="text-zinc-300">·</span>
                   <span>
                     Forecast confidence{" "}

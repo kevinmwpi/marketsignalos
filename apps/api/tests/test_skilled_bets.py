@@ -579,6 +579,83 @@ def test_skilled_bets_max_move_captured_filters_late_signals(
     assert [r["condition_id"] for r in rows] == ["0xcond_btc"]
 
 
+def test_skilled_bets_flags_high_conviction_and_boosts_rank(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A BUY that is >=2 standard deviations above the wallet's own historical
+    sizing is "high" conviction and sorts above NEWER normal-sized entries
+    within the same remaining-edge rank. Wallets with <5 prior buys stay
+    "unknown" (alpha's seed history has only 4 buys)."""
+    pm_dir = _seed(tmp_path)
+    activity_path = pm_dir / "polymarket_activity.jsonl"
+    rows = [
+        json.loads(line)
+        for line in activity_path.read_text(encoding="utf-8").splitlines()
+        if line
+    ]
+    # Six small historical buys on an unrelated market plus one huge buy on
+    # the held BTC position: mean≈757, std≈1732 → z≈2.45 for the $5000 buy.
+    for i in range(6):
+        rows.append(
+            {
+                "proxy_wallet": "0xalpha", "timestamp": 1729000000 + i,
+                "condition_id": "0xcond_hist", "type": "TRADE", "side": "BUY",
+                "size": 100.0, "usdc_size": 50.0, "price": 0.5,
+                "outcome_index": 0, "outcome": "Yes", "slug": "hist",
+                "title": "History", "event_slug": f"hist-{i}",
+                "transaction_hash": f"0xtx_hist_{i}",
+            }
+        )
+    rows.append(
+        {
+            "proxy_wallet": "0xalpha", "timestamp": 1731000001,  # OLDER than fed buy
+            "condition_id": "0xcond_btc", "type": "TRADE", "side": "BUY",
+            "size": 10000.0, "usdc_size": 5000.0, "price": 0.50,
+            "outcome_index": 0, "outcome": "Yes", "slug": "btc-100k-eoy",
+            "title": "Bitcoin closes 2026 above $100k", "event_slug": "btc-eoy-2026",
+            "transaction_hash": "0xtx_btc_huge",
+        }
+    )
+    _write_jsonl(activity_path, rows)
+    _write_jsonl(
+        pm_dir / "polymarket_wallet_values.jsonl",
+        [{"proxy_wallet": "0xalpha", "value_usdc": 20000.0,
+          "snapshot_at": "2026-05-12T08:00:00Z"}],
+    )
+    monkeypatch.setenv("POLYMARKET_DATA_DIR", str(pm_dir))
+
+    rows_out = TestClient(app).get(
+        "/signals/skilled-bets?min_skill=0.9&min_resolved=20"
+    ).json()
+    btc = next(r for r in rows_out if r["condition_id"] == "0xcond_btc")
+    fed = next(r for r in rows_out if r["condition_id"] == "0xcond_fed")
+
+    assert btc["conviction"] == "high"
+    assert btc["conviction_z"] >= 2.0
+    # $5000 entry against a $20k bankroll.
+    assert btc["entry_pct_of_bankroll"] == 0.25
+    # Both rows are "fresh", and the fed BUY is newer — but high conviction
+    # outranks recency within the same remaining-edge rank.
+    assert [r["condition_id"] for r in rows_out].index("0xcond_btc") < [
+        r["condition_id"] for r in rows_out
+    ].index("0xcond_fed")
+    # Fed entry is normal-sized for this wallet (now 11 observed buys).
+    assert fed["conviction"] in ("normal", "low")
+
+
+def test_skilled_bets_conviction_unknown_with_thin_history(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Alpha's base seed has only 4 BUYs — too thin to standardize against."""
+    pm_dir = _seed(tmp_path)
+    monkeypatch.setenv("POLYMARKET_DATA_DIR", str(pm_dir))
+    rows = TestClient(app).get(
+        "/signals/skilled-bets?min_skill=0.9&min_resolved=20"
+    ).json()
+    assert all(r["conviction"] == "unknown" for r in rows)
+    assert all(r["conviction_z"] == 0.0 for r in rows)
+
+
 def test_legacy_enrichment_is_quarantined_from_active_feed(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
