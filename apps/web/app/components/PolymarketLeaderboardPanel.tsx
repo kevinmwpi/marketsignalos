@@ -32,6 +32,9 @@ export type PolymarketWalletSkill = {
   tailability_status: string;
   tailability_reasons: string[];
   score_version: string;
+  style_archetype: string;
+  automation_score: number;
+  style_drivers: string[];
   total_volume_usdc: number;
   total_pnl_usdc: number;
   avg_position_size_usdc: number;
@@ -166,6 +169,19 @@ export default function PolymarketLeaderboardPanel({
                       >
                         {row.tailability_status}
                       </span>
+                      {(row.style_archetype === "systematic" ||
+                        row.style_archetype === "mixed") && (
+                        <span
+                          className={`ml-1 mt-1 inline-block rounded px-1 py-0.5 text-[9px] font-semibold uppercase tracking-wide ${
+                            row.style_archetype === "systematic"
+                              ? "bg-cyan-50 text-cyan-700"
+                              : "bg-sky-50 text-sky-700"
+                          }`}
+                          title={(row.style_drivers ?? []).join(", ")}
+                        >
+                          {row.style_archetype}
+                        </span>
+                      )}
                     </Link>
                   </td>
                   <td className="px-4 py-2.5 text-right font-mono text-xs text-zinc-700">

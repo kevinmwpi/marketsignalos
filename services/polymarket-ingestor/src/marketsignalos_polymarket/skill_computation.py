@@ -56,6 +56,7 @@ from .models import (
     PolymarketWalletEnrichment,
     PolymarketWalletHydration,
 )
+from .trader_style import TraderStyle, compute_trader_style, unclassified_style
 
 log = logging.getLogger("marketsignalos.polymarket.skill")
 
@@ -454,7 +455,9 @@ def _enrichment_from_rollup(
     recent_ess: float,
     clv_stats: tuple[float, float, float] = (0.0, 0.0, 0.0),
     hydration: PolymarketWalletHydration | None = None,
+    style: TraderStyle | None = None,
 ) -> PolymarketWalletEnrichment:
+    style = style or unclassified_style("style not computed")
     resolved_trades = rollup.wins + rollup.losses
     win_rate = rollup.wins / resolved_trades if resolved_trades > 0 else 0.0
     avg_size = (
@@ -555,6 +558,18 @@ def _enrichment_from_rollup(
         clv_mean=round(clv_stats[0], 6),
         clv_lower_bound=round(clv_stats[1], 6),
         clv_sample_size=round(clv_stats[2], 4),
+        style_archetype=style.archetype,
+        automation_score=style.automation_score,
+        style_drivers=list(style.drivers),
+        trades_per_active_day=style.trades_per_active_day,
+        median_intertrade_gap_seconds=style.median_intertrade_gap_seconds,
+        active_utc_hours=style.active_utc_hours,
+        buy_size_uniformity=style.buy_size_uniformity,
+        markets_per_active_day=style.markets_per_active_day,
+        top_category=style.top_category,
+        top_category_share=style.top_category_share,
+        exited_position_share=style.exited_position_share,
+        median_exit_hold_hours=style.median_exit_hold_hours,
         data_quality_status=data_status,
         data_quality_reasons=data_reasons,
         economic_qualified=economic_qualified,
@@ -627,6 +642,16 @@ def _wallet_bets_from_rollup(
 
 # ── Public API ───────────────────────────────────────────────────────────────
 
+def _categories_index(
+    markets_by_condition: dict[str, PolymarketMarket],
+) -> dict[str, str]:
+    return {
+        cond: market.category
+        for cond, market in markets_by_condition.items()
+        if market.category
+    }
+
+
 def compute_wallet_enrichment(
     wallet: str,
     *,
@@ -671,6 +696,9 @@ def compute_wallet_enrichment(
         list(markets_by_condition.values()), price_snapshots
     )
     clv_stats, _ = _records_clv(rollup.records, history)
+    style = compute_trader_style(
+        activity, categories_by_condition=_categories_index(markets_by_condition)
+    )
     return _enrichment_from_rollup(
         rollup,
         fit,
@@ -679,6 +707,7 @@ def compute_wallet_enrichment(
         recent_ess=recent_ess,
         clv_stats=clv_stats,
         hydration=hydration,
+        style=style,
     )
 
 
@@ -744,6 +773,7 @@ def compute_enrichment_outputs(
     )
 
     history = build_price_history(markets, price_snapshots)
+    categories_by_condition = _categories_index(markets_by_condition)
 
     # Pass 2: fit each wallet under the empirical prior.
     out: list[PolymarketWalletEnrichment] = []
@@ -760,6 +790,10 @@ def compute_enrichment_outputs(
         recent_ess = effective_sample_size(recent_bets)
         clv_stats, per_record_clv = _records_clv(rollup.records, history)
         hydration = (hydration_by_wallet or {}).get(rollup.wallet)
+        style = compute_trader_style(
+            by_wallet.get(rollup.wallet, []),
+            categories_by_condition=categories_by_condition,
+        )
         out.append(
             _enrichment_from_rollup(
                 rollup,
@@ -769,6 +803,7 @@ def compute_enrichment_outputs(
                 recent_ess=recent_ess,
                 clv_stats=clv_stats,
                 hydration=hydration,
+                style=style,
             )
         )
         all_bets.extend(

@@ -11,6 +11,8 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
+from marketsignalos_api.services.ingest_scheduler import get_schedule_status
+
 log = logging.getLogger("marketsignalos.api.ingestor")
 router = APIRouter(prefix="/ingestor", tags=["ingestor"])
 
@@ -46,6 +48,8 @@ class IngestorStatus(BaseModel):
     log_tail: list[str]
     last_summary: dict[str, Any] | None
     progress: dict[str, Any] | None
+    # Background-scheduler state; None when INGEST_EVERY_MINUTES is unset.
+    schedule: dict[str, Any] | None
 
 
 class _BufferHandler(logging.Handler):
@@ -242,6 +246,37 @@ def _run_deep_ingestor_sync() -> None:
     _execute_pipeline_sync(run_deep_pipeline)
 
 
+def start_pipeline_run(kind: str) -> str | None:
+    """Dispatch one pipeline run ("shallow" | "deep") on the event loop's
+    default executor.
+
+    Shared by the HTTP handlers and the background ingest scheduler so a
+    scheduled run is indistinguishable from a clicked one: same single
+    running flag, same log capture, same post-ingest hook chain. Returns
+    the started_at timestamp, or None when a run of either kind is already
+    in flight.
+    """
+    runner = _run_ingestor_sync if kind == "shallow" else _run_deep_ingestor_sync
+    with _lock:
+        if _state["running"]:
+            return None
+        _state["running"] = True
+        _state["kind"] = kind
+        started_at = _now()
+        _state["last_started_at"] = started_at
+        _state["last_finished_at"] = None
+        _state["last_exit_code"] = None
+        _state["last_error"] = None
+        _state["last_summary"] = None
+        _state["progress"] = None
+        _log_buffer.clear()
+        _state["log_tail"] = []
+
+    loop = asyncio.get_event_loop()
+    loop.run_in_executor(None, runner)
+    return started_at
+
+
 @router.get("/status", response_model=IngestorStatus)
 def get_ingestor_status() -> IngestorStatus:
     with _lock:
@@ -255,6 +290,7 @@ def get_ingestor_status() -> IngestorStatus:
             log_tail=list(cast("list[str]", _state["log_tail"])),
             last_summary=cast("dict[str, Any] | None", _state["last_summary"]),
             progress=cast("dict[str, Any] | None", _state["progress"]),
+            schedule=get_schedule_status(),
         )
 
 
@@ -275,24 +311,11 @@ async def trigger_ingestor_run() -> JSONResponse:
             detail=f"Polymarket pipeline not importable: {exc}",
         ) from exc
 
-    with _lock:
-        if _state["running"]:
-            raise HTTPException(status_code=409, detail="Ingestion already running")
-        _state["running"] = True
-        _state["kind"] = "shallow"
-        started_at = _now()
-        _state["last_started_at"] = started_at
-        _state["last_finished_at"] = None
-        _state["last_exit_code"] = None
-        _state["last_error"] = None
-        _state["last_summary"] = None
-        _state["progress"] = None
-        _log_buffer.clear()
-        _state["log_tail"] = []
+    started_at = start_pipeline_run("shallow")
+    if started_at is None:
+        raise HTTPException(status_code=409, detail="Ingestion already running")
 
     log.info("ingestor run triggered started_at=%s", started_at)
-    loop = asyncio.get_event_loop()
-    loop.run_in_executor(None, _run_ingestor_sync)
     return JSONResponse(
         status_code=202,
         content={"status": "started", "started_at": started_at},
@@ -317,24 +340,11 @@ async def trigger_deep_ingestor_run() -> JSONResponse:
             detail=f"Polymarket pipeline not importable: {exc}",
         ) from exc
 
-    with _lock:
-        if _state["running"]:
-            raise HTTPException(status_code=409, detail="Ingestion already running")
-        _state["running"] = True
-        _state["kind"] = "deep"
-        started_at = _now()
-        _state["last_started_at"] = started_at
-        _state["last_finished_at"] = None
-        _state["last_exit_code"] = None
-        _state["last_error"] = None
-        _state["last_summary"] = None
-        _state["progress"] = None
-        _log_buffer.clear()
-        _state["log_tail"] = []
+    started_at = start_pipeline_run("deep")
+    if started_at is None:
+        raise HTTPException(status_code=409, detail="Ingestion already running")
 
     log.info("deep ingestor run triggered started_at=%s", started_at)
-    loop = asyncio.get_event_loop()
-    loop.run_in_executor(None, _run_deep_ingestor_sync)
     return JSONResponse(
         status_code=202,
         content={"status": "started", "started_at": started_at, "kind": "deep"},

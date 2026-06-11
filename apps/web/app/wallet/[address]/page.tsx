@@ -56,6 +56,20 @@ type Enrichment = {
   tailability_status: string;
   tailability_reasons: string[];
   computed_at: string;
+  // Trading-style fields are absent on enrichment rows written before they
+  // existed, hence optional.
+  style_archetype?: string;
+  automation_score?: number;
+  style_drivers?: string[];
+  trades_per_active_day?: number;
+  median_intertrade_gap_seconds?: number;
+  active_utc_hours?: number;
+  buy_size_uniformity?: number;
+  markets_per_active_day?: number;
+  top_category?: string;
+  top_category_share?: number;
+  exited_position_share?: number;
+  median_exit_hold_hours?: number;
 };
 
 type ExitRow = {
@@ -172,6 +186,107 @@ function statusBadge(status: string): string {
   }
 }
 
+function archetypeBadge(archetype: string): string {
+  switch (archetype) {
+    case "systematic":
+      return "bg-cyan-50 text-cyan-700";
+    case "mixed":
+      return "bg-sky-50 text-sky-700";
+    case "discretionary":
+      return "bg-violet-50 text-violet-700";
+    default:
+      return "bg-zinc-100 text-zinc-500";
+  }
+}
+
+function formatGapSeconds(seconds: number): string {
+  if (seconds <= 0) return "—";
+  if (seconds < 120) return `${seconds.toFixed(0)}s`;
+  if (seconds < 7200) return `${(seconds / 60).toFixed(0)}m`;
+  return `${(seconds / 3600).toFixed(1)}h`;
+}
+
+function TradingStyleCard({ e }: { e: Enrichment }): ReactElement | null {
+  const archetype = e.style_archetype ?? "unclassified";
+  const drivers = e.style_drivers ?? [];
+  if (archetype === "unclassified" && drivers.length === 0) return null;
+
+  const metrics: Array<{ label: string; value: string }> = [
+    {
+      label: "Trades / active day",
+      value: (e.trades_per_active_day ?? 0).toFixed(1),
+    },
+    {
+      label: "Median trade gap",
+      value: formatGapSeconds(e.median_intertrade_gap_seconds ?? 0),
+    },
+    { label: "UTC hours active", value: `${e.active_utc_hours ?? 0}/24` },
+    {
+      label: "Repeated-size buys",
+      value: `${((e.buy_size_uniformity ?? 0) * 100).toFixed(0)}%`,
+    },
+    {
+      label: "Markets / active day",
+      value: (e.markets_per_active_day ?? 0).toFixed(1),
+    },
+    {
+      label: "Top category",
+      value: e.top_category
+        ? `${e.top_category} (${((e.top_category_share ?? 0) * 100).toFixed(0)}%)`
+        : "—",
+    },
+    {
+      label: "Positions exited early",
+      value: `${((e.exited_position_share ?? 0) * 100).toFixed(0)}%`,
+    },
+    {
+      label: "Median exit hold",
+      value:
+        (e.median_exit_hold_hours ?? 0) > 0
+          ? `${(e.median_exit_hold_hours ?? 0).toFixed(1)}h`
+          : "—",
+    },
+  ];
+
+  return (
+    <div className="rounded-lg border border-zinc-200 bg-white">
+      <div className="flex items-center justify-between border-b border-zinc-100 px-4 py-3">
+        <h2 className="text-sm font-semibold text-zinc-900">Trading style</h2>
+        <span
+          className={`rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${archetypeBadge(archetype)}`}
+          title="Descriptive only — labels the wallet's operational footprint, never gates tailability"
+        >
+          {archetype}
+          {archetype !== "unclassified"
+            ? ` · ${((e.automation_score ?? 0) * 100).toFixed(0)}%`
+            : ""}
+        </span>
+      </div>
+      {drivers.length > 0 && (
+        <ul className="space-y-1 border-b border-zinc-100 px-4 py-3">
+          {drivers.map((driver) => (
+            <li className="text-[11px] text-zinc-600" key={driver}>
+              · {driver}
+            </li>
+          ))}
+        </ul>
+      )}
+      <dl className="grid grid-cols-2 gap-x-4 gap-y-2 px-4 py-3">
+        {metrics.map((metric) => (
+          <div key={metric.label}>
+            <dt className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">
+              {metric.label}
+            </dt>
+            <dd className="mt-0.5 font-mono text-xs font-semibold text-zinc-900">
+              {metric.value}
+            </dd>
+          </div>
+        ))}
+      </dl>
+    </div>
+  );
+}
+
 async function getWalletDetail(address: string): Promise<WalletDetail | null> {
   const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8080";
   try {
@@ -283,6 +398,14 @@ export default async function WalletPage({
             >
               {e.tailability_status}
             </span>
+            {(e.style_archetype ?? "unclassified") !== "unclassified" && (
+              <span
+                className={`rounded px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide ${archetypeBadge(e.style_archetype ?? "")}`}
+                title={(e.style_drivers ?? []).join(", ")}
+              >
+                {e.style_archetype}
+              </span>
+            )}
           </div>
           <p className="mt-1 font-mono text-xs text-zinc-400">{detail.proxy_wallet}</p>
           {e.tailability_reasons.length > 0 && (
@@ -402,6 +525,8 @@ export default async function WalletPage({
           </section>
 
           <aside className="space-y-4">
+            <TradingStyleCard e={e} />
+
             {detail.open_positions.length > 0 && (
               <div className="rounded-lg border border-zinc-200 bg-white">
                 <div className="border-b border-zinc-100 px-4 py-3">

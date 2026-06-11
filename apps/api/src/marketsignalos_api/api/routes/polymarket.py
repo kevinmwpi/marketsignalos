@@ -46,6 +46,18 @@ class PolymarketWalletSkill(BaseModel):
     clv_mean: float = 0.0
     clv_lower_bound: float = 0.0
     clv_sample_size: float = 0.0
+    style_archetype: str = "unclassified"
+    automation_score: float = 0.0
+    style_drivers: list[str] = Field(default_factory=list)
+    trades_per_active_day: float = 0.0
+    median_intertrade_gap_seconds: float = 0.0
+    active_utc_hours: int = 0
+    buy_size_uniformity: float = 0.0
+    markets_per_active_day: float = 0.0
+    top_category: str = ""
+    top_category_share: float = 0.0
+    exited_position_share: float = 0.0
+    median_exit_hold_hours: float = 0.0
     data_quality_status: str = "untrusted"
     data_quality_reasons: list[str] = Field(default_factory=list)
     economic_qualified: bool = False
@@ -84,6 +96,15 @@ def polymarket_leaderboard(
     limit: int = Query(default=50, ge=1, le=500),
     min_skill: float = Query(default=0.0, ge=0.0, le=1.0),
     tailability: Literal["all", "tailable", "blocked"] = Query(default="all"),
+    archetype: Literal[
+        "all", "systematic", "mixed", "discretionary", "unclassified"
+    ] = Query(
+        default="all",
+        description=(
+            "Filter by trading-style archetype, e.g. archetype=systematic for "
+            "automation-shaped wallets."
+        ),
+    ),
 ) -> list[PolymarketWalletSkill]:
     """
     Skill-ranked Polymarket wallets, computed from on-chain activity vs.
@@ -101,6 +122,9 @@ def polymarket_leaderboard(
             continue
         status = str(row.get("tailability_status", "blocked"))
         if tailability != "all" and status != tailability:
+            continue
+        style = str(row.get("style_archetype", "") or "unclassified")
+        if archetype != "all" and style != archetype:
             continue
         try:
             eligible.append(

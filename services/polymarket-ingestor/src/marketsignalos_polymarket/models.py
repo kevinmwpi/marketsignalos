@@ -306,6 +306,21 @@ class PolymarketWalletEnrichment:
     clv_mean: float = 0.0
     clv_lower_bound: float = 0.0   # mean − 1.645·SE (5th-percentile, normal approx)
     clv_sample_size: float = 0.0   # event-capped effective observations
+    # Trader-style classification (see trader_style.py): deterministic,
+    # non-accusatory descriptors of HOW the wallet trades. Never gates
+    # tailability — it labels operational footprint, not edge.
+    style_archetype: str = "unclassified"  # systematic | mixed | discretionary | unclassified
+    automation_score: float = 0.0          # 0..1 mean of available style sub-scores
+    style_drivers: list[str] = field(default_factory=list)
+    trades_per_active_day: float = 0.0
+    median_intertrade_gap_seconds: float = 0.0  # 0 = too few trades to measure
+    active_utc_hours: int = 0                   # distinct UTC hours-of-day traded
+    buy_size_uniformity: float = 0.0            # share of buys at a top-3 modal size
+    markets_per_active_day: float = 0.0
+    top_category: str = ""
+    top_category_share: float = 0.0
+    exited_position_share: float = 0.0
+    median_exit_hold_hours: float = 0.0
     data_quality_status: str = "untrusted"
     data_quality_reasons: list[str] = field(default_factory=list)
     economic_qualified: bool = False

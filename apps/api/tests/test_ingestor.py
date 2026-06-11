@@ -40,6 +40,7 @@ def test_status_default_state_includes_log_tail_and_summary() -> None:
         "log_tail": [],
         "last_summary": None,
         "progress": None,
+        "schedule": None,
     }
 
 

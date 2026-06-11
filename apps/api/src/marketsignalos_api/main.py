@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import os
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -16,6 +18,21 @@ from marketsignalos_api.api.routes.polymarket import router as polymarket_router
 from marketsignalos_api.api.routes.signal_ledger import router as signal_ledger_router
 from marketsignalos_api.api.routes.skilled_bets import router as skilled_bets_router
 from marketsignalos_api.api.routes.wallets import router as wallets_router
+from marketsignalos_api.services.ingest_scheduler import (
+    start_scheduler_from_env,
+    stop_scheduler,
+)
+
+
+@asynccontextmanager
+async def _lifespan(_app: FastAPI) -> AsyncIterator[None]:
+    """Start the optional background ingest scheduler with the server and
+    cancel it cleanly on shutdown. No-op unless INGEST_EVERY_MINUTES is set."""
+    start_scheduler_from_env()
+    try:
+        yield
+    finally:
+        await stop_scheduler()
 
 
 def _landing_page_html() -> str:
@@ -93,6 +110,7 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title="MarketSignalOS API",
         version="0.1.0",
+        lifespan=_lifespan,
     )
 
     app.add_middleware(
