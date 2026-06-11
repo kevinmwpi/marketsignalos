@@ -66,6 +66,8 @@ npm ci
 | `POLYMARKET_WATCHLIST_PATH` | Polymarket ingestor | Wallet watchlist file (auto-seeded each pipeline run) |
 | `INGEST_POLYMARKET` | Polymarket ingestor | Kill switch for the legacy `all` CLI subcommand. The web button bypasses this |
 | `SIGNAL_WEBHOOK_URL` | API | When set, new skilled-bet signals and exit signals are POSTed here as JSON after each ingest (at-least-once; first pass after deploy never floods backlog) |
+| `INGEST_EVERY_MINUTES` | API | When >0, an in-process scheduler dispatches the same pipeline run as the "Run ingest" button on this interval (first run ~60s after boot; busy ticks skip) |
+| `INGEST_DEEP_EVERY_N_RUNS` | API | With the scheduler on, every Nth scheduled run is a **deep** discovery pass instead of a shallow refresh (0/unset = never deep) |
 
 ---
 
@@ -154,9 +156,10 @@ The pipeline runs JSONL-first. Postgres is opt-in via `DATABASE_URL` (`Dual*` st
 | `GET` | `/health` | Health check (used by Railway) |
 | `GET` | `/metrics` | Prometheus text exposition |
 | `POST` | `/ingestor/run` | Triggers one pass of `run_pipeline()`; returns 202 + started_at |
-| `GET` | `/ingestor/status` | Live state: running flag, last_exit_code, last_error, log_tail, last_summary |
+| `POST` | `/ingestor/run/deep` | Triggers one deep discovery pass (categorized leaderboard sweep + recent-trader discovery); shares the single running flag with `/ingestor/run` |
+| `GET` | `/ingestor/status` | Live state: running flag, last_exit_code, last_error, log_tail, last_summary, schedule (background-scheduler state; null when off) |
 | `GET` | `/signals/skilled-bets` | Still-held BUY entries by skilled wallets, joined with the Kalshi mirror (headline endpoint — drives the `/` dashboard). Fresh entries rank above priced-in ("late") ones |
-| `GET` | `/signals/polymarket-leaderboard` | Skilled wallets ranked by on-chain win rate |
+| `GET` | `/signals/polymarket-leaderboard` | Skilled wallets ranked by on-chain win rate; `archetype=systematic` filters to automation-shaped wallets |
 | `GET` | `/signals/ledger` | Paper-trade ledger: every surfaced signal with its surface-time prices and settlement status |
 | `GET` | `/signals/ledger/summary` | Hit rate + hypothetical $1-per-signal tail ROI (at surface price and at wallet entry) |
 | `POST` | `/signals/ledger/refresh` | Record newly surfaced signals + settle resolved ones (runs automatically after API-triggered ingests) |
@@ -190,6 +193,7 @@ The pipeline runs JSONL-first. Postgres is opt-in via `DATABASE_URL` (`Dual*` st
 | exit signals | Snapshot-diff detection of skilled wallets closing (`closed`) or trimming ≥50% (`trimmed`) a position while the market is still active in Gamma — redemptions on resolved markets are never exits |
 | `clv_*` (per wallet) | Closing-line value: event-capped, capital-weighted average of (closing/current line − buys-only entry VWAP). Scores open and exited-early positions without needing resolution. Resolved markets only count when a pre-close price observation exists |
 | `conviction` (per bet) | Entry USDC z-scored against the wallet's own BUY-size history (≥5 buys required): `high` (z≥2) boosts feed rank within the same remaining-edge tier; `entry_pct_of_bankroll` divides by the latest wallet portfolio value |
+| `style_archetype` / `automation_score` (per wallet) | Deterministic trading-style classification — `systematic` / `mixed` / `discretionary` / `unclassified` — averaged from five explainable sub-signals (trades/active day, median inter-trade gap, 24h UTC coverage, repeated-size buys, markets/active day), each contributing a driver string. Descriptive only; never gates tailability |
 | `kalshi_match_confidence` | TF-IDF cosine similarity between Polymarket and Kalshi market titles (±3-day date window) |
 
 ---
@@ -214,6 +218,8 @@ The pipeline runs JSONL-first. Postgres is opt-in via `DATABASE_URL` (`Dual*` st
 - **Wallet bet records** — `polymarket_wallet_bets.jsonl` rewritten each enrichment pass with one row per (wallet, condition, outcome): status (`won`/`lost`/`exited`/`open`), buys-only entry VWAP, PnL, per-bet CLV
 - **Conviction score** — per-bet sizing z-score computed in the same single activity-file stream the feed already does; high-conviction entries badge ("Sized up") and rank above same-tier rows
 - **Wallet detail page** — `/wallet/[address]` (Next.js) renders the dossier from `/signals/wallets/{wallet}`: stat strip, SVG equity curve, bet history with CLV, category breakdown, open positions, recent exits; dashboard wallet names link to it
+- **Trader-style (archetype) scoring** — `trader_style.py` classifies each wallet's operational footprint (`systematic`/`mixed`/`discretionary`/`unclassified`) from five explainable sub-signals computed in the enrichment pass; surfaced on the leaderboard (`archetype` filter + chips), feed rows (`wallet_archetype`, "Systematic" badge), and the wallet page (Trading style card with drivers + raw metrics). Alembic migration `0006`
+- **Scheduled ingest** — `INGEST_EVERY_MINUTES` starts an in-process asyncio scheduler (FastAPI lifespan) dispatching the exact run path the dashboard buttons use (same running flag, log capture, and post-ingest hooks); `INGEST_DEEP_EVERY_N_RUNS` makes every Nth run a deep discovery sweep; schedule state surfaces in `/ingestor/status`
 
 ### Pending / in progress
 - `/positions` pagination (currently caps at ~100 per wallet)
@@ -255,5 +261,6 @@ Deployed on **Railway** via Railpack builder.
 | `docs/0002-cross-exchange-decision.md` | ADR for the Polymarket pivot (with the 2026-05-23 correction reversing the cross-exchange framing) |
 | `docs/polymarket-pipeline.md` | Full Polymarket data-flow reference |
 | `docs/polymarket-api-discovery.md` | Validated public Polymarket endpoint shapes |
+| `docs/phase4-roadmap.md` | Prioritized Phase 4+ roadmap (bot discovery + insight-trader tailing) |
 | `docs/runbook.md` | Operational runbook (WIP) |
 | `docs/fix-lessons-learned.md` | Post-mortems and lessons |

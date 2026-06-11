@@ -85,6 +85,9 @@ class SkilledBetOut(BaseModel):
     clv_lower_bound: float
     clv_sample_size: float
 
+    wallet_archetype: str
+    wallet_automation_score: float
+
 
 @router.get("/skilled-bets", response_model=list[SkilledBetOut])
 def skilled_bets(

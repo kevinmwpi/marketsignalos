@@ -74,6 +74,9 @@ export type SkilledBet = {
   clv_mean: number;
   clv_lower_bound: number;
   clv_sample_size: number;
+
+  wallet_archetype: string;
+  wallet_automation_score: number;
 };
 
 const usdFormatter = new Intl.NumberFormat("en-US", {
@@ -243,6 +246,14 @@ export default function SkilledBetsPanel({
                         title={`This entry is ${bet.conviction_z.toFixed(1)} standard deviations above the wallet's usual BUY size`}
                       >
                         Sized up {bet.conviction_z > 0 ? `${bet.conviction_z.toFixed(1)}σ` : ""}
+                      </span>
+                    )}
+                    {bet.wallet_archetype === "systematic" && (
+                      <span
+                        className="rounded bg-cyan-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-cyan-700"
+                        title={`This wallet's trading footprint looks automated (automation score ${(bet.wallet_automation_score * 100).toFixed(0)}%)`}
+                      >
+                        Systematic
                       </span>
                     )}
                     {bet.category && (

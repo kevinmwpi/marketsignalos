@@ -163,6 +163,12 @@ class SkilledBetSignal:
     clv_lower_bound: float = 0.0
     clv_sample_size: float = 0.0
 
+    # Wallet trading style (from enrichment; see ingestor trader_style.py).
+    # Descriptive only — "systematic" wallets are automation-shaped operations,
+    # "discretionary" are human-paced. Never gates inclusion in the feed.
+    wallet_archetype: str = "unclassified"
+    wallet_automation_score: float = 0.0
+
 
 # ── Remaining-edge classification ─────────────────────────────────────────────
 #
@@ -269,6 +275,8 @@ class _SkilledWallet:
     clv_mean: float = 0.0
     clv_lower_bound: float = 0.0
     clv_sample_size: float = 0.0
+    style_archetype: str = "unclassified"
+    automation_score: float = 0.0
 
 
 @dataclass(slots=True)
@@ -347,6 +355,8 @@ def _load_skilled_wallets(
             clv_mean=_f(row.get("clv_mean")),
             clv_lower_bound=_f(row.get("clv_lower_bound")),
             clv_sample_size=_f(row.get("clv_sample_size")),
+            style_archetype=str(row.get("style_archetype", "") or "unclassified"),
+            automation_score=_f(row.get("automation_score")),
         )
     return out
 
@@ -931,6 +941,8 @@ def _compute_skilled_bets(
                 clv_mean=round(wallet.clv_mean, 6),
                 clv_lower_bound=round(wallet.clv_lower_bound, 6),
                 clv_sample_size=round(wallet.clv_sample_size, 4),
+                wallet_archetype=wallet.style_archetype,
+                wallet_automation_score=round(wallet.automation_score, 4),
             )
         )
 

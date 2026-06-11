@@ -671,3 +671,60 @@ def test_legacy_enrichment_is_quarantined_from_active_feed(
     monkeypatch.setenv("POLYMARKET_DATA_DIR", str(pm_dir))
     signals = TestClient(app).get("/signals/skilled-bets?min_skill=0.9&min_resolved=20").json()
     assert signals == []
+
+
+def _set_alpha_style(pm_dir: Path) -> None:
+    """Mark alpha's enrichment row as a systematic wallet."""
+    enrichment = pm_dir / "polymarket_wallet_enrichment.jsonl"
+    rows = [
+        json.loads(line)
+        for line in enrichment.read_text(encoding="utf-8").splitlines()
+        if line
+    ]
+    for row in rows:
+        if row["proxy_wallet"] == "0xalpha":
+            row["style_archetype"] = "systematic"
+            row["automation_score"] = 0.91
+            row["style_drivers"] = ["112.0 trades per active day"]
+    _write_jsonl(enrichment, rows)
+
+
+def test_skilled_bets_carries_wallet_archetype(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Feed rows carry the wallet's trading-style archetype; enrichment rows
+    written before the field existed default to 'unclassified'."""
+    pm_dir = _seed(tmp_path)
+    monkeypatch.setenv("POLYMARKET_DATA_DIR", str(pm_dir))
+    client = TestClient(app)
+
+    rows = client.get("/signals/skilled-bets?min_skill=0.9&min_resolved=20").json()
+    assert all(r["wallet_archetype"] == "unclassified" for r in rows)
+    assert all(r["wallet_automation_score"] == 0.0 for r in rows)
+
+    _set_alpha_style(pm_dir)
+    rows = client.get("/signals/skilled-bets?min_skill=0.9&min_resolved=20").json()
+    assert rows and all(r["wallet_archetype"] == "systematic" for r in rows)
+    assert all(r["wallet_automation_score"] == 0.91 for r in rows)
+
+
+def test_leaderboard_filters_by_archetype(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    pm_dir = _seed(tmp_path)
+    _set_alpha_style(pm_dir)
+    monkeypatch.setenv("POLYMARKET_DATA_DIR", str(pm_dir))
+    client = TestClient(app)
+
+    systematic = client.get(
+        "/signals/polymarket-leaderboard?min_resolved=1&archetype=systematic"
+    ).json()
+    assert [row["proxy_wallet"] for row in systematic] == ["0xalpha"]
+    assert systematic[0]["automation_score"] == 0.91
+    assert systematic[0]["style_drivers"] == ["112.0 trades per active day"]
+
+    unclassified = client.get(
+        "/signals/polymarket-leaderboard?min_resolved=1&archetype=unclassified"
+    ).json()
+    assert "0xalpha" not in {row["proxy_wallet"] for row in unclassified}
+    assert {row["style_archetype"] for row in unclassified} == {"unclassified"}
