@@ -88,6 +88,11 @@ class SkilledBetOut(BaseModel):
     wallet_archetype: str
     wallet_automation_score: float
 
+    tail_edge_used: float
+    tail_fair_price: float
+    tail_ev: float
+    tail_ev_status: str
+
 
 @router.get("/skilled-bets", response_model=list[SkilledBetOut])
 def skilled_bets(
@@ -118,13 +123,24 @@ def skilled_bets(
             "least this fraction of the entry→$1 move (the thesis is priced in)."
         ),
     ),
+    min_tail_ev: float | None = Query(
+        default=None,
+        ge=-1.0,
+        le=1.0,
+        description=(
+            "When set, only include signals whose tail EV at today's price is "
+            "at least this many dollars per share; signals without a live "
+            "price (tail_ev_status=unknown) are dropped."
+        ),
+    ),
     limit: int = Query(default=50, ge=1, le=500),
 ) -> list[SkilledBetOut]:
     """
     Recent BUY entries from skilled Polymarket wallets that are STILL HELD.
     Fresh/discounted entries (price still near or below the wallet's entry)
     rank above partially-priced ones; fully-converged "late" signals sort
-    last. Within each remaining-edge rank, newest BUY first. By default only
+    last. Within each remaining-edge rank: high-conviction entries first,
+    then best tail EV at today's price, then newest BUY. By default only
     actionable bets (`tradability` of poly_direct or kalshi_mirror) are
     returned.
     """
@@ -137,8 +153,14 @@ def skilled_bets(
         require_positive_edge=require_positive_edge,
         include_untradable=include_untradable,
         max_move_captured=max_move_captured,
-        limit=limit,
+        limit=None if min_tail_ev is not None else limit,
     )
+    if min_tail_ev is not None:
+        signals = [
+            s
+            for s in signals
+            if s.tail_ev_status != "unknown" and s.tail_ev >= min_tail_ev
+        ][:limit]
     return [SkilledBetOut(**asdict(s)) for s in signals]
 
 

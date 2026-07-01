@@ -77,6 +77,11 @@ export type SkilledBet = {
 
   wallet_archetype: string;
   wallet_automation_score: number;
+
+  tail_edge_used: number;
+  tail_fair_price: number;
+  tail_ev: number;
+  tail_ev_status: string;
 };
 
 const usdFormatter = new Intl.NumberFormat("en-US", {
@@ -137,6 +142,19 @@ function remainingEdgeBadgeClass(status: string): string {
     case "partial":
       return "bg-amber-50 text-amber-800";
     case "late":
+      return "bg-red-50 text-red-700";
+    default:
+      return "bg-zinc-100 text-zinc-500";
+  }
+}
+
+function tailEvBadgeClass(status: string): string {
+  switch (status) {
+    case "positive":
+      return "bg-emerald-50 text-emerald-700";
+    case "marginal":
+      return "bg-amber-50 text-amber-800";
+    case "negative":
       return "bg-red-50 text-red-700";
     default:
       return "bg-zinc-100 text-zinc-500";
@@ -224,6 +242,15 @@ export default function SkilledBetsPanel({
                             : ""}
                         </span>
                       )}
+                    {bet.tail_ev_status !== "unknown" && (
+                      <span
+                        className={`rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${tailEvBadgeClass(bet.tail_ev_status)}`}
+                        title={`Expected value of tailing at today's price: the wallet's conservative edge implies a fair price of $${bet.tail_fair_price.toFixed(3)} vs $${bet.current_outcome_price.toFixed(3)} now`}
+                      >
+                        EV {bet.tail_ev >= 0 ? "+" : "−"}
+                        {Math.abs(bet.tail_ev * 100).toFixed(1)}¢
+                      </span>
+                    )}
                     {bet.consensus_wallets >= 2 && (
                       <span
                         className="rounded bg-violet-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-violet-700"

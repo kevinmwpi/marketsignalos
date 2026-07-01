@@ -169,6 +169,18 @@ class SkilledBetSignal:
     wallet_archetype: str = "unclassified"
     wallet_automation_score: float = 0.0
 
+    # Tail expected value at TODAY's price (see the tail-EV section above).
+    #   tail_edge_used   conservative log-odds edge applied (lifetime lower
+    #                    bound, capped by the recent-form bound when available)
+    #   tail_fair_price  sigmoid(logit(entry) + tail_edge_used); 0 when the
+    #                    entry price is unusable
+    #   tail_ev          tail_fair_price − current price, $/share; 0 unknown
+    #   tail_ev_status   "positive" | "marginal" | "negative" | "unknown"
+    tail_edge_used: float = 0.0
+    tail_fair_price: float = 0.0
+    tail_ev: float = 0.0
+    tail_ev_status: str = "unknown"
+
 
 # ── Remaining-edge classification ─────────────────────────────────────────────
 #
@@ -201,6 +213,74 @@ def _remaining_edge(entry_price: float, current_price: float) -> tuple[float, st
     else:
         status = "late"
     return round(captured, 4), status
+
+
+# ── Tail expected value ───────────────────────────────────────────────────────
+#
+# The Bayesian skill model (ingestor's bayesian_skill.py) estimates a per-wallet
+# log-odds edge: the wallet's picked outcomes win at rate
+# sigmoid(logit(entry_price) + edge). Applying the CONSERVATIVE edge bound to
+# the wallet's entry-implied probability gives an explainable fair-price
+# estimate for the picked outcome; subtracting the live price gives the
+# expected value — in probability units, i.e. dollars per share — of tailing
+# at TODAY's price rather than the wallet's. This is the number that answers
+# "does buying now still beat the odds the market is quoting?".
+
+# EV inside this buffer is within typical spread + fees — call it marginal
+# rather than positive so the feed doesn't oversell paper-thin edges.
+_TAIL_EV_MARGINAL_BUFFER = 0.02
+# Mirrors the ingestor's MIN_RECENT_INDEPENDENT_EVENTS: below this the recency
+# fit mostly echoes the population prior, so it can't tighten the bound.
+_MIN_RECENT_EVENTS_FOR_TAIL_EDGE = 5.0
+_PRICE_EPS = 1e-3
+
+
+def _safe_logit(p: float) -> float:
+    clamped = min(max(p, _PRICE_EPS), 1.0 - _PRICE_EPS)
+    return math.log(clamped / (1.0 - clamped))
+
+
+def _sigmoid(x: float) -> float:
+    if x >= 0:
+        return 1.0 / (1.0 + math.exp(-x))
+    ex = math.exp(x)
+    return ex / (1.0 + ex)
+
+
+def _tail_edge_for(wallet: _SkilledWallet) -> float:
+    """Conservative log-odds edge for EV: the lifetime 5th-percentile bound,
+    further capped by the recency-weighted bound when the wallet has enough
+    recent independent events for that fit to mean anything."""
+    edge = wallet.edge_lower_bound
+    if wallet.recent_independent_events >= _MIN_RECENT_EVENTS_FOR_TAIL_EDGE:
+        edge = min(edge, wallet.recent_edge_lower_bound)
+    return edge
+
+
+def _tail_ev(
+    entry_price: float, current_price: float, tail_edge: float
+) -> tuple[float, float, str]:
+    """(fair_price, ev, status) of tailing this bet at current_price.
+
+    fair_price = sigmoid(logit(entry_price) + tail_edge) — the win probability
+    the wallet's conservative edge implies for the picked outcome. ev is
+    fair_price − current_price. Status is "unknown" when either price is
+    unobserved, else "positive" / "marginal" (inside the spread buffer) /
+    "negative".
+    """
+    if entry_price <= 0.0 or entry_price >= 1.0:
+        return 0.0, 0.0, "unknown"
+    fair = _sigmoid(_safe_logit(entry_price) + tail_edge)
+    if current_price <= 0.0 or current_price >= 1.0:
+        return round(fair, 4), 0.0, "unknown"
+    ev = fair - current_price
+    if ev >= _TAIL_EV_MARGINAL_BUFFER:
+        status = "positive"
+    elif ev > 0.0:
+        status = "marginal"
+    else:
+        status = "negative"
+    return round(fair, 4), round(ev, 4), status
 
 
 # ── Internal helpers ──────────────────────────────────────────────────────────
@@ -277,6 +357,8 @@ class _SkilledWallet:
     clv_sample_size: float = 0.0
     style_archetype: str = "unclassified"
     automation_score: float = 0.0
+    recent_edge_lower_bound: float = 0.0
+    recent_independent_events: float = 0.0
 
 
 @dataclass(slots=True)
@@ -333,8 +415,12 @@ def _load_skilled_wallets(
             skill_likelihood=skill,
             resolved_trades=resolved,
             win_rate=_f(row.get("win_rate")),
-            edge_mean=_f(row.get("edge_mean")),
-            edge_lower_bound=_f(row.get("edge_lower_bound")),
+            # forecast_* duplicates edge_* in current enrichment rows; the
+            # fallback covers older rows that only carry the forecast_ names.
+            edge_mean=_f(row.get("edge_mean", row.get("forecast_edge_mean"))),
+            edge_lower_bound=_f(
+                row.get("edge_lower_bound", row.get("forecast_edge_lower_bound"))
+            ),
             independent_settled_events=_f(row.get("independent_settled_events")),
             all_time_pnl_usdc=_f(row.get("all_time_pnl_usdc")),
             all_time_volume_usdc=_f(row.get("all_time_volume_usdc")),
@@ -357,6 +443,8 @@ def _load_skilled_wallets(
             clv_sample_size=_f(row.get("clv_sample_size")),
             style_archetype=str(row.get("style_archetype", "") or "unclassified"),
             automation_score=_f(row.get("automation_score")),
+            recent_edge_lower_bound=_f(row.get("recent_edge_lower_bound")),
+            recent_independent_events=_f(row.get("recent_independent_events")),
         )
     return out
 
@@ -743,9 +831,10 @@ def compute_skilled_bets(
     Returns recent BUY entries from skilled wallets that are STILL HELD.
 
     Ordering: remaining-edge rank first (fresh/discounted entries before
-    partially-priced ones, fully-converged "late" signals last), then entry
-    timestamp (newest first) within each rank. When `max_move_captured` < 1,
-    signals whose move_captured_pct meets or exceeds it are dropped entirely.
+    partially-priced ones, fully-converged "late" signals last), then
+    high-conviction entries, then tail EV at today's price (best first), then
+    entry timestamp (newest first). When `max_move_captured` < 1, signals
+    whose move_captured_pct meets or exceeds it are dropped entirely.
     Memoized on input-file fingerprint + params; see the caching note above.
     """
     cached = _compute_skilled_bets_cached(
@@ -855,6 +944,10 @@ def _compute_skilled_bets(
         move_captured, remaining_edge_status = _remaining_edge(
             entry_price, current_outcome
         )
+        tail_edge = _tail_edge_for(wallet)
+        tail_fair_price, tail_ev, tail_ev_status = _tail_ev(
+            entry_price, current_outcome, tail_edge
+        )
         entry_usdc = _f(buy.get("usdc_size"))
         conviction_z = (
             stats.zscore(entry_usdc)
@@ -943,6 +1036,10 @@ def _compute_skilled_bets(
                 clv_sample_size=round(wallet.clv_sample_size, 4),
                 wallet_archetype=wallet.style_archetype,
                 wallet_automation_score=round(wallet.automation_score, 4),
+                tail_edge_used=round(tail_edge, 4),
+                tail_fair_price=tail_fair_price,
+                tail_ev=tail_ev,
+                tail_ev_status=tail_ev_status,
             )
         )
 
@@ -980,11 +1077,14 @@ def _compute_skilled_bets(
 
     # Down-rank converged signals: a stale entry is worse than no entry for a
     # tailing user. Within each remaining-edge rank, unusually-large
-    # ("high conviction") entries first, then newest BUY.
+    # ("high conviction") entries first, then best tail EV at today's price
+    # (unknown-EV rows sort as 0 — between positive and negative), then
+    # newest BUY.
     out.sort(
         key=lambda s: (
             _REMAINING_EDGE_SORT_RANK.get(s.remaining_edge_status, 1),
             0 if s.conviction == "high" else 1,
+            -s.tail_ev,
             -s.bought_at,
         )
     )

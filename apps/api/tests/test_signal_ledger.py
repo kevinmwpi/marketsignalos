@@ -154,6 +154,16 @@ def test_refresh_records_open_signals_once(
     assert fed["surface_price"] == 0.58
     assert fed["wallet_name"] == "AlphaWhale"
     assert fed["recorded_at"]
+    # Feed context frozen at record time, for the summary breakdowns.
+    assert fed["category"] == "economics"
+    assert fed["remaining_edge_status"] == "fresh"
+    assert fed["conviction"] == "unknown"
+    assert fed["consensus_wallets"] == 1
+    assert fed["wallet_archetype"] == "unclassified"
+    # Edge bound 0.2 on entry 0.45 → fair ≈ 0.4998, now 0.58 → EV −8.0¢.
+    assert fed["tail_fair_price"] == 0.4998
+    assert fed["tail_ev"] == -0.0802
+    assert fed["tail_ev_status"] == "negative"
 
 
 def test_refresh_settles_won_signal_with_both_roi_variants(
@@ -246,6 +256,56 @@ def test_ledger_summary_reports_hit_rate_and_roi(
     assert body["avg_roi_at_surface"] == 0.7241
     assert body["avg_roi_at_entry"] == 1.2222
 
+    # Calibration vs the market: the one settled signal surfaced at 0.58
+    # (market said 58% likely) and won — a +42pt edge over the quoted odds.
+    calibration = body["calibration"]
+    assert calibration["settled_priced"] == 1
+    assert calibration["avg_market_implied_prob"] == 0.58
+    assert calibration["hit_rate_priced"] == 1.0
+    assert calibration["edge_vs_market"] == 0.42
+
+    # Slice breakdowns keyed by the context frozen on each row.
+    by_category = body["breakdowns"]["category"]
+    assert by_category["economics"]["won"] == 1
+    assert by_category["economics"]["edge_vs_market"] == 0.42
+    assert by_category["crypto"]["signals"] == 1
+    assert by_category["crypto"]["won"] == 0
+    fresh = body["breakdowns"]["remaining_edge_status"]["fresh"]
+    assert fresh["signals"] == 2
+    assert fresh["won"] == 1
+    assert body["breakdowns"]["consensus"]["1 wallet"]["signals"] == 2
+
+    # The open btc row marks to its latest observed price (unchanged → 0).
+    mtm = body["open_mark_to_market"]
+    assert mtm["marked"] == 1
+    assert mtm["avg_unrealized_roi_at_surface"] == 0.0
+
+
+def test_ledger_summary_marks_open_rows_to_latest_price(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Open rows shouldn't have to wait for resolution to report: they mark
+    to the latest observed outcome price."""
+    pm_dir = _seed(tmp_path)
+    monkeypatch.setenv("POLYMARKET_DATA_DIR", str(pm_dir))
+    client = TestClient(app)
+    client.post("/signals/ledger/refresh")
+
+    # BTC (surfaced at 0.40) now trades at 0.50 — still open.
+    markets = _open_markets()
+    markets[1].update(
+        outcome_prices=[0.50, 0.50],
+        last_trade_price=0.50,
+        fetched_at="2026-06-10T08:00:00Z",
+    )
+    _write_jsonl(pm_dir / "polymarket_markets.jsonl", markets)
+
+    mtm = client.get("/signals/ledger/summary").json()["open_mark_to_market"]
+    assert mtm["marked"] == 2
+    # fed: unchanged at 0.58 → 0. btc: (0.50 − 0.40) / 0.40 = 0.25.
+    assert mtm["avg_unrealized_roi_at_surface"] == 0.125
+    assert mtm["total_unrealized_roi_at_surface"] == 0.25
+
 
 def test_ledger_summary_empty_without_data(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -254,3 +314,6 @@ def test_ledger_summary_empty_without_data(
     body = TestClient(app).get("/signals/ledger/summary").json()
     assert body["total_signals"] == 0
     assert body["hit_rate"] == 0.0
+    assert body["calibration"]["settled_priced"] == 0
+    assert body["open_mark_to_market"]["marked"] == 0
+    assert body["breakdowns"]["category"] == {}

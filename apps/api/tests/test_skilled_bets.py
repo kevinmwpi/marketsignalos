@@ -227,11 +227,12 @@ def _seed(tmp_path: Path) -> Path:
     return d
 
 
-def test_skilled_bets_orders_latest_buy_first(
+def test_skilled_bets_orders_best_tail_ev_first_within_tier(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Feed semantics: newest BUY entry on top; the latest of multiple buys
-    on the same position is what gets shown."""
+    """Feed semantics: within the same remaining-edge tier, the entry with
+    the best tail EV at today's price ranks first; the latest of multiple
+    buys on the same position is what gets shown."""
     pm_dir = _seed(tmp_path)
     monkeypatch.setenv("POLYMARKET_DATA_DIR", str(pm_dir))
 
@@ -242,13 +243,83 @@ def test_skilled_bets_orders_latest_buy_first(
     # alpha has TWO held positions with matching buys; both should appear.
     assert len(rows) == 2
 
-    # Newest first — the fed-50bp entry (ts=1731500000) ranks above btc (1730000000).
-    assert rows[0]["condition_id"] == "0xcond_fed"
-    assert rows[0]["bought_at"] == 1731500000
-    assert rows[0]["transaction_hash"] == "0xtx_new", \
+    # Both entries are "fresh"; btc has less of its move priced in relative
+    # to the wallet's implied fair price, so its tail EV (−5.6¢) beats
+    # fed's (−8.0¢) and it ranks first despite the older BUY timestamp.
+    assert rows[0]["condition_id"] == "0xcond_btc"
+    assert rows[0]["bought_at"] == 1730000000
+    assert rows[1]["condition_id"] == "0xcond_fed"
+    assert rows[1]["bought_at"] == 1731500000
+    assert rows[1]["transaction_hash"] == "0xtx_new", \
         "Should reflect the LATEST buy, not the older one"
-    assert rows[1]["condition_id"] == "0xcond_btc"
-    assert rows[1]["bought_at"] == 1730000000
+
+
+def test_skilled_bets_carries_tail_ev_fields(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Each row must carry the wallet-edge-implied fair price and the EV of
+    tailing at TODAY's price. Alpha's conservative edge bound is 0.2
+    log-odds; fed entry 0.45 → fair sigmoid(logit(0.45)+0.2) ≈ 0.4998,
+    now 0.58 → EV ≈ −8.0¢ (thesis already priced past fair)."""
+    pm_dir = _seed(tmp_path)
+    monkeypatch.setenv("POLYMARKET_DATA_DIR", str(pm_dir))
+
+    client = TestClient(app)
+    rows = client.get("/signals/skilled-bets?min_skill=0.9&min_resolved=20").json()
+    fed = next(r for r in rows if r["condition_id"] == "0xcond_fed")
+    assert fed["tail_edge_used"] == 0.2
+    assert fed["tail_fair_price"] == 0.4998
+    assert fed["tail_ev"] == -0.0802
+    assert fed["tail_ev_status"] == "negative"
+
+    btc = next(r for r in rows if r["condition_id"] == "0xcond_btc")
+    assert btc["tail_fair_price"] == 0.3436
+    assert btc["tail_ev"] == -0.0564
+    assert btc["tail_ev_status"] == "negative"
+
+
+def test_skilled_bets_min_tail_ev_filters_and_drops_unknown(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    pm_dir = _seed(tmp_path)
+    monkeypatch.setenv("POLYMARKET_DATA_DIR", str(pm_dir))
+
+    client = TestClient(app)
+    # Both fixture rows carry negative EV — a floor of 0 empties the feed.
+    rows = client.get(
+        "/signals/skilled-bets?min_skill=0.9&min_resolved=20&min_tail_ev=0"
+    ).json()
+    assert rows == []
+
+    # A floor between the two EVs (−5.6¢ and −8.0¢) keeps only btc.
+    rows = client.get(
+        "/signals/skilled-bets?min_skill=0.9&min_resolved=20&min_tail_ev=-0.06"
+    ).json()
+    assert [r["condition_id"] for r in rows] == ["0xcond_btc"]
+
+
+def test_tail_ev_math_statuses() -> None:
+    from marketsignalos_api.services.skilled_bets import _tail_ev
+
+    # Positive: fair well above the live price.
+    fair, ev, status = _tail_ev(0.30, 0.30, 0.2)
+    assert fair == 0.3436
+    assert ev == 0.0436
+    assert status == "positive"
+
+    # Marginal: inside the 2¢ spread/fee buffer.
+    fair, ev, status = _tail_ev(0.30, 0.33, 0.2)
+    assert ev == 0.0136
+    assert status == "marginal"
+
+    # Negative: priced past the wallet-implied fair price.
+    _, ev, status = _tail_ev(0.30, 0.40, 0.2)
+    assert ev == -0.0564
+    assert status == "negative"
+
+    # Unknown when either price is unobserved.
+    assert _tail_ev(0.0, 0.40, 0.2)[2] == "unknown"
+    assert _tail_ev(0.30, 0.0, 0.2)[2] == "unknown"
 
 
 def test_skilled_bets_excludes_low_skill_and_exited_and_unknown_entry(
