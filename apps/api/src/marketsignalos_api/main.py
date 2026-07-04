@@ -10,6 +10,7 @@ from fastapi.responses import HTMLResponse, PlainTextResponse
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
 from marketsignalos_api.api.routes.exit_signals import router as exit_signals_router
+from marketsignalos_api.api.routes.fastlane import router as fastlane_router
 from marketsignalos_api.api.routes.health import router as health_router
 from marketsignalos_api.api.routes.ingestor import router as ingestor_router
 from marketsignalos_api.api.routes.market_consensus import router as market_consensus_router
@@ -18,6 +19,7 @@ from marketsignalos_api.api.routes.polymarket import router as polymarket_router
 from marketsignalos_api.api.routes.signal_ledger import router as signal_ledger_router
 from marketsignalos_api.api.routes.skilled_bets import router as skilled_bets_router
 from marketsignalos_api.api.routes.wallets import router as wallets_router
+from marketsignalos_api.services.fastlane import start_fastlane_from_env, stop_fastlane
 from marketsignalos_api.services.ingest_scheduler import (
     start_scheduler_from_env,
     stop_scheduler,
@@ -26,13 +28,17 @@ from marketsignalos_api.services.ingest_scheduler import (
 
 @asynccontextmanager
 async def _lifespan(_app: FastAPI) -> AsyncIterator[None]:
-    """Start the optional background ingest scheduler with the server and
-    cancel it cleanly on shutdown. No-op unless INGEST_EVERY_MINUTES is set."""
+    """Start the optional background loops (ingest scheduler + fast-lane
+    poller) with the server and cancel them cleanly on shutdown. Both are
+    no-ops unless their env vars are set (INGEST_EVERY_MINUTES /
+    FASTLANE_EVERY_SECONDS)."""
     start_scheduler_from_env()
+    start_fastlane_from_env()
     try:
         yield
     finally:
         await stop_scheduler()
+        await stop_fastlane()
 
 
 def _landing_page_html() -> str:
@@ -121,6 +127,7 @@ def create_app() -> FastAPI:
     )
 
     app.include_router(exit_signals_router)
+    app.include_router(fastlane_router)
     app.include_router(health_router)
     app.include_router(ingestor_router)
     app.include_router(market_consensus_router)

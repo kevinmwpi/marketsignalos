@@ -68,6 +68,9 @@ npm ci
 | `SIGNAL_WEBHOOK_URL` | API | When set, new skilled-bet signals and exit signals are POSTed here as JSON after each ingest (at-least-once; first pass after deploy never floods backlog) |
 | `INGEST_EVERY_MINUTES` | API | When >0, an in-process scheduler dispatches the same pipeline run as the "Run ingest" button on this interval (first run ~60s after boot; busy ticks skip) |
 | `INGEST_DEEP_EVERY_N_RUNS` | API | With the scheduler on, every Nth scheduled run is a **deep** discovery pass instead of a shallow refresh (0/unset = never deep) |
+| `FASTLANE_EVERY_SECONDS` | API | When >0, an in-process fast-lane poller fetches ONLY the activity feed for the top tailable wallets on this interval and webhook-delivers new BUY/SELL trades immediately (clamped to ≥30s; alert-only — never writes the JSONL stores) |
+| `FASTLANE_WALLETS` | API | Wallets the fast lane polls per tick, ranked by `rank_score` (default 25, capped at 100) |
+| `FASTLANE_MIN_ENTRY_USDC` | API | Fast-lane alerts ignore trades below this USDC size (default 0 = all) |
 
 ---
 
@@ -168,6 +171,8 @@ The pipeline runs JSONL-first. Postgres is opt-in via `DATABASE_URL` (`Dual*` st
 | `POST` | `/signals/exits/refresh` | Diff latest position snapshots and record new exits (runs automatically after API-triggered ingests) |
 | `GET` | `/signals/notifications/status` | Webhook configuration + delivery watermarks |
 | `POST` | `/signals/notifications/run` | Deliver new signals/exits to the `SIGNAL_WEBHOOK_URL` webhook (runs automatically after API-triggered ingests) |
+| `GET` | `/signals/fastlane/status` | Fast-lane poller state: config, tracked-wallet watermark count, last tick outcome |
+| `POST` | `/signals/fastlane/run` | Run one fast-lane polling pass immediately (manual check or external-scheduler mode) |
 | `GET` | `/signals/wallets/{proxy_wallet}` | Wallet dossier: enrichment scores, open positions, bet history with CLV, equity curve, category breakdown, ledger + exit rows (drives the `/wallet/[address]` page) |
 | `GET` | `/docs` | Auto-generated Swagger UI |
 
@@ -220,6 +225,8 @@ The pipeline runs JSONL-first. Postgres is opt-in via `DATABASE_URL` (`Dual*` st
 - **Wallet detail page** — `/wallet/[address]` (Next.js) renders the dossier from `/signals/wallets/{wallet}`: stat strip, SVG equity curve, bet history with CLV, category breakdown, open positions, recent exits; dashboard wallet names link to it
 - **Trader-style (archetype) scoring** — `trader_style.py` classifies each wallet's operational footprint (`systematic`/`mixed`/`discretionary`/`unclassified`) from five explainable sub-signals computed in the enrichment pass; surfaced on the leaderboard (`archetype` filter + chips), feed rows (`wallet_archetype`, "Systematic" badge), and the wallet page (Trading style card with drivers + raw metrics). Alembic migration `0006`
 - **Scheduled ingest** — `INGEST_EVERY_MINUTES` starts an in-process asyncio scheduler (FastAPI lifespan) dispatching the exact run path the dashboard buttons use (same running flag, log capture, and post-ingest hooks); `INGEST_DEEP_EVERY_N_RUNS` makes every Nth run a deep discovery sweep; schedule state surfaces in `/ingestor/status`
+- **Tail-EV score** — every feed row carries `tail_fair_price` (the wallet's conservative log-odds edge bound applied to its entry-implied probability) and `tail_ev` (fair minus current price, $/share); rows rank by tail EV within each remaining-edge tier, `min_tail_ev` filters the feed, and `/signals/ledger/summary` adds `calibration` (realized win rate vs market-implied probability at surface time), `open_mark_to_market`, and per-dimension `breakdowns`
+- **Fast-lane poller** — `FASTLANE_EVERY_SECONDS` starts a second in-process loop that polls ONLY `/activity` for the top-N tailable wallets (by `rank_score`) and webhook-delivers new BUY/SELL trades within one interval. Alert-only by design: it never writes the JSONL stores (the pipeline stays the sole writer and re-fetches the same events with dedupe); watermarks live in `fastlane_state.json`, first sight of a wallet initializes silently, and failed webhook POSTs retry the same batch (at-least-once)
 
 ### Pending / in progress
 - `/positions` pagination (currently caps at ~100 per wallet)
