@@ -93,6 +93,11 @@ class SkilledBetOut(BaseModel):
     tail_ev: float
     tail_ev_status: str
 
+    category_skill_likelihood: float
+    category_edge_lower_bound: float
+    category_independent_events: float
+    category_skill_source: str
+
 
 @router.get("/skilled-bets", response_model=list[SkilledBetOut])
 def skilled_bets(

@@ -27,7 +27,7 @@ import math
 import time
 from collections import Counter, defaultdict
 from collections.abc import Iterator
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -171,7 +171,9 @@ class SkilledBetSignal:
 
     # Tail expected value at TODAY's price (see the tail-EV section above).
     #   tail_edge_used   conservative log-odds edge applied (lifetime lower
-    #                    bound, capped by the recent-form bound when available)
+    #                    bound, capped by the recent-form bound when available
+    #                    and by the entry-category bound when that category
+    #                    has enough independent events)
     #   tail_fair_price  sigmoid(logit(entry) + tail_edge_used); 0 when the
     #                    entry price is unusable
     #   tail_ev          tail_fair_price − current price, $/share; 0 unknown
@@ -180,6 +182,16 @@ class SkilledBetSignal:
     tail_fair_price: float = 0.0
     tail_ev: float = 0.0
     tail_ev_status: str = "unknown"
+
+    # Per-category skill for THIS entry's category (from the enrichment
+    # category_edges decomposition). When the category has fewer than 5
+    # independent settled events — or the market has no category — the
+    # wallet-level score is echoed and the source says so.
+    #   category_skill_source  "category" | "wallet_fallback"
+    category_skill_likelihood: float = 0.0
+    category_edge_lower_bound: float = 0.0
+    category_independent_events: float = 0.0
+    category_skill_source: str = "wallet_fallback"
 
 
 # ── Remaining-edge classification ─────────────────────────────────────────────
@@ -232,6 +244,10 @@ _TAIL_EV_MARGINAL_BUFFER = 0.02
 # Mirrors the ingestor's MIN_RECENT_INDEPENDENT_EVENTS: below this the recency
 # fit mostly echoes the population prior, so it can't tighten the bound.
 _MIN_RECENT_EVENTS_FOR_TAIL_EDGE = 5.0
+# Mirrors the ingestor's CATEGORY_MIN_INDEPENDENT_EVENTS: below this a
+# category fit is dominated by its prior (the wallet's lifetime posterior)
+# and adds nothing over the wallet-level score.
+_MIN_CATEGORY_EVENTS_FOR_TAIL_EDGE = 5.0
 _PRICE_EPS = 1e-3
 
 
@@ -359,6 +375,8 @@ class _SkilledWallet:
     automation_score: float = 0.0
     recent_edge_lower_bound: float = 0.0
     recent_independent_events: float = 0.0
+    # normalized category -> (skill_likelihood, edge_lower_bound, independent_events)
+    category_edges: dict[str, tuple[float, float, float]] = field(default_factory=dict)
 
 
 @dataclass(slots=True)
@@ -399,10 +417,24 @@ def _load_skilled_wallets(
             continue
         skill = _f(row.get("skill_likelihood"))
         resolved = _i(row.get("resolved_trades"))
+        category_edges: dict[str, tuple[float, float, float]] = {}
+        for edge_row in row.get("category_edges") or []:
+            if not isinstance(edge_row, dict):
+                continue
+            category_key = str(edge_row.get("category", "") or "").strip().lower()
+            if not category_key:
+                continue
+            category_edges[category_key] = (
+                _f(edge_row.get("skill_likelihood")),
+                _f(edge_row.get("edge_lower_bound")),
+                _f(edge_row.get("independent_events")),
+            )
         if (
-            # v2 rows (no recency fit) stay eligible so the feed survives a
-            # deploy until the next enrichment pass rewrites the file as v3.
-            str(row.get("score_version", "")) not in ("forecast-v2", "forecast-v3")
+            # Older rows (no recency fit / no category edges) stay eligible so
+            # the feed survives a deploy until the next enrichment pass
+            # rewrites the file at the current version.
+            str(row.get("score_version", ""))
+            not in ("forecast-v2", "forecast-v3", "forecast-v4")
             or str(row.get("data_quality_status", "untrusted")) != "trusted"
             or str(row.get("tailability_status", "blocked")) != "tailable"
             or skill < min_skill
@@ -445,6 +477,7 @@ def _load_skilled_wallets(
             automation_score=_f(row.get("automation_score")),
             recent_edge_lower_bound=_f(row.get("recent_edge_lower_bound")),
             recent_independent_events=_f(row.get("recent_independent_events")),
+            category_edges=category_edges,
         )
     return out
 
@@ -944,7 +977,25 @@ def _compute_skilled_bets(
         move_captured, remaining_edge_status = _remaining_edge(
             entry_price, current_outcome
         )
+        # Per-category skill for this entry's own category. A proven category
+        # fit caps the tail edge (a politics sharp's sports bets get priced
+        # at their sports edge, not their overall one); a thin or missing
+        # category falls back to the wallet-level score.
+        category_raw = market_rec.category if market_rec else ""
+        category_fit = wallet.category_edges.get(category_raw.strip().lower())
         tail_edge = _tail_edge_for(wallet)
+        if (
+            category_fit is not None
+            and category_fit[2] >= _MIN_CATEGORY_EVENTS_FOR_TAIL_EDGE
+        ):
+            category_skill, category_lb, category_events = category_fit
+            category_source = "category"
+            tail_edge = min(tail_edge, category_lb)
+        else:
+            category_skill = wallet.skill_likelihood
+            category_lb = wallet.edge_lower_bound
+            category_events = category_fit[2] if category_fit is not None else 0.0
+            category_source = "wallet_fallback"
         tail_fair_price, tail_ev, tail_ev_status = _tail_ev(
             entry_price, current_outcome, tail_edge
         )
@@ -1040,6 +1091,10 @@ def _compute_skilled_bets(
                 tail_fair_price=tail_fair_price,
                 tail_ev=tail_ev,
                 tail_ev_status=tail_ev_status,
+                category_skill_likelihood=round(category_skill, 6),
+                category_edge_lower_bound=round(category_lb, 4),
+                category_independent_events=round(category_events, 4),
+                category_skill_source=category_source,
             )
         )
 

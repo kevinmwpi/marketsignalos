@@ -298,6 +298,56 @@ def test_skilled_bets_min_tail_ev_filters_and_drops_unknown(
     assert [r["condition_id"] for r in rows] == ["0xcond_btc"]
 
 
+def test_skilled_bets_category_fit_caps_tail_edge(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A proven category fit (>=5 independent events) replaces the wallet
+    edge in the EV math when it is more conservative; a thin category falls
+    back to the wallet-level score. Category matching is case-insensitive."""
+    pm_dir = _seed(tmp_path)
+    enrichment_path = pm_dir / "polymarket_wallet_enrichment.jsonl"
+    rows = [
+        json.loads(line)
+        for line in enrichment_path.read_text(encoding="utf-8").splitlines()
+        if line
+    ]
+    for row in rows:
+        if row["proxy_wallet"] == "0xalpha":
+            row["category_edges"] = [
+                # Proven but weaker than the wallet's 0.2 lifetime bound.
+                {"category": "Economics", "skill_likelihood": 0.97,
+                 "edge_mean": 0.3, "edge_lower_bound": 0.1,
+                 "independent_events": 25.0},
+                # Too thin to trust despite a huge bound.
+                {"category": "crypto", "skill_likelihood": 0.9,
+                 "edge_mean": 0.5, "edge_lower_bound": 0.4,
+                 "independent_events": 2.0},
+            ]
+    _write_jsonl(enrichment_path, rows)
+    monkeypatch.setenv("POLYMARKET_DATA_DIR", str(pm_dir))
+
+    feed = TestClient(app).get(
+        "/signals/skilled-bets?min_skill=0.9&min_resolved=20"
+    ).json()
+
+    fed = next(r for r in feed if r["condition_id"] == "0xcond_fed")
+    assert fed["category_skill_source"] == "category"
+    assert fed["category_skill_likelihood"] == 0.97
+    assert fed["category_edge_lower_bound"] == 0.1
+    assert fed["category_independent_events"] == 25.0
+    # min(lifetime 0.2, economics 0.1) → fair sigmoid(logit(0.45)+0.1) ≈ 0.4749.
+    assert fed["tail_edge_used"] == 0.1
+    assert fed["tail_fair_price"] == 0.4749
+    assert fed["tail_ev"] == -0.1051
+
+    btc = next(r for r in feed if r["condition_id"] == "0xcond_btc")
+    assert btc["category_skill_source"] == "wallet_fallback"
+    # Echoes the wallet-level score; reports the thin category's sample size.
+    assert btc["category_skill_likelihood"] == btc["skill_likelihood"]
+    assert btc["category_independent_events"] == 2.0
+    assert btc["tail_edge_used"] == 0.2  # crypto fit too thin to cap
+
+
 def test_tail_ev_math_statuses() -> None:
     from marketsignalos_api.services.skilled_bets import _tail_ev
 

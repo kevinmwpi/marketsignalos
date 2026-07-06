@@ -82,6 +82,11 @@ export type SkilledBet = {
   tail_fair_price: number;
   tail_ev: number;
   tail_ev_status: string;
+
+  category_skill_likelihood: number;
+  category_edge_lower_bound: number;
+  category_independent_events: number;
+  category_skill_source: string;
 };
 
 const usdFormatter = new Intl.NumberFormat("en-US", {
@@ -283,8 +288,24 @@ export default function SkilledBetsPanel({
                         Systematic
                       </span>
                     )}
-                    {bet.category && (
-                      <span className="rounded bg-zinc-100 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-zinc-500">
+                    {bet.category && bet.category_skill_source === "category" && (
+                      <span
+                        className={`rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
+                          bet.category_edge_lower_bound > 0
+                            ? "bg-emerald-50 text-emerald-700"
+                            : "bg-amber-50 text-amber-800"
+                        }`}
+                        title={`Forecast confidence within ${bet.category}: ${(bet.category_skill_likelihood * 100).toFixed(0)}% over ${bet.category_independent_events.toFixed(0)} independent events — the category edge caps this row's EV estimate`}
+                      >
+                        {bet.category} fit{" "}
+                        {(bet.category_skill_likelihood * 100).toFixed(0)}%
+                      </span>
+                    )}
+                    {bet.category && bet.category_skill_source !== "category" && (
+                      <span
+                        className="rounded bg-zinc-100 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-zinc-500"
+                        title="Not enough settled bets in this category to score it separately — the wallet-level edge applies"
+                      >
                         {bet.category}
                       </span>
                     )}

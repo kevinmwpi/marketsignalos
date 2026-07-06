@@ -36,6 +36,7 @@ import logging
 import math
 from collections import defaultdict
 from dataclasses import dataclass, replace
+from typing import Any
 
 from .bayesian_skill import (
     Bet,
@@ -65,6 +66,11 @@ log = logging.getLogger("marketsignalos.polymarket.skill")
 # remain tailable. Protects against tailing a wallet whose record is entirely
 # stale — the lifetime gate (ESS >= 20) can't catch that.
 MIN_RECENT_INDEPENDENT_EVENTS = 5.0
+
+# Floor for trusting a per-category edge fit over the wallet-level score.
+# Below this the category posterior is dominated by its prior (the wallet's
+# lifetime fit), so it adds no information — consumers fall back.
+CATEGORY_MIN_INDEPENDENT_EVENTS = 5.0
 
 
 # ── Position aggregation ──────────────────────────────────────────────────────
@@ -188,6 +194,53 @@ def _apply_event_weights(bets: list[Bet]) -> list[Bet]:
     """Cap each event at one likelihood vote, split across legs by capital."""
     weights = _event_capped_weights([(b.event_slug, b.cost_usdc) for b in bets])
     return [replace(bet, weight=weight) for bet, weight in zip(bets, weights)]
+
+
+# ── Per-category edge decomposition ──────────────────────────────────────────
+
+def _normalize_category(raw: str) -> str:
+    """Gamma category strings vary in case; group on a canonical form."""
+    return raw.strip().lower()
+
+
+def _category_edges(
+    bets: list[Bet], lifetime_fit: PosteriorFit
+) -> list[dict[str, Any]]:
+    """
+    Partial-pooling per-category refit: the same Bayesian edge model run on
+    each category's bets with the wallet's OWN lifetime posterior as the
+    prior. A category with plenty of data moves away from the wallet-level
+    estimate; a thin one shrinks back to it (which is exactly the fallback
+    consumers want). Bets on markets without a Gamma category are skipped —
+    they still shape the lifetime fit that anchors every category prior.
+    """
+    grouped: dict[str, list[Bet]] = defaultdict(list)
+    for bet in bets:
+        if bet.category:
+            grouped[bet.category].append(bet)
+
+    out: list[dict[str, Any]] = []
+    for category, category_bets in grouped.items():
+        fit = fit_wallet_posterior(
+            category_bets,
+            mu_prior=lifetime_fit.edge_mean,
+            # Guard against a degenerate zero-variance prior; the lifetime
+            # Laplace variance is strictly positive in practice.
+            sigma2_prior=max(lifetime_fit.edge_var, 1e-6),
+        )
+        out.append(
+            {
+                "category": category,
+                "skill_likelihood": round(fit.posterior_skill, 6),
+                "edge_mean": round(fit.edge_mean, 6),
+                "edge_lower_bound": round(fit.edge_lower_bound, 6),
+                "independent_events": round(
+                    effective_sample_size(category_bets), 4
+                ),
+            }
+        )
+    out.sort(key=lambda row: (-float(row["independent_events"]), str(row["category"])))
+    return out
 
 
 # ── Price history & closing-line value ───────────────────────────────────────
@@ -414,6 +467,7 @@ def _roll_up_wallet(
                 event_slug=pos.event_slug,
                 cost_usdc=bet_cost,
                 ts=pos.last_ts,
+                category=_normalize_category(market.category),
             )
         )
         position_sizes.append(bet_cost)
@@ -555,6 +609,7 @@ def _enrichment_from_rollup(
         recent_edge_mean=round(recent_fit.edge_mean, 6),
         recent_edge_lower_bound=round(recent_fit.edge_lower_bound, 6),
         recent_independent_events=round(recent_ess, 4),
+        category_edges=_category_edges(rollup.bets, fit),
         clv_mean=round(clv_stats[0], 6),
         clv_lower_bound=round(clv_stats[1], 6),
         clv_sample_size=round(clv_stats[2], 4),
