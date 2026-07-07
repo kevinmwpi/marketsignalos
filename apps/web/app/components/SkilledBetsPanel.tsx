@@ -83,6 +83,13 @@ export type SkilledBet = {
   tail_fair_price: number;
   tail_ev: number;
   tail_ev_status: string;
+  tail_ev_source: string;
+
+  best_bid: number;
+  best_ask: number;
+  spread_cents: number;
+  book_status: string;
+  tail_ask_price: number;
 
   category_skill_likelihood: number;
   category_edge_lower_bound: number;
@@ -251,10 +258,22 @@ export default function SkilledBetsPanel({
                     {bet.tail_ev_status !== "unknown" && (
                       <span
                         className={`rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${tailEvBadgeClass(bet.tail_ev_status)}`}
-                        title={`Expected value of tailing at today's price: the wallet's conservative edge implies a fair price of $${bet.tail_fair_price.toFixed(3)} vs $${bet.current_outcome_price.toFixed(3)} now`}
+                        title={
+                          bet.tail_ev_source === "ask"
+                            ? `Expected value of tailing at the executable ask: the wallet's conservative edge implies a fair price of $${bet.tail_fair_price.toFixed(3)} vs $${bet.tail_ask_price.toFixed(3)} at the book top`
+                            : `Expected value of tailing at today's price: the wallet's conservative edge implies a fair price of $${bet.tail_fair_price.toFixed(3)} vs $${bet.current_outcome_price.toFixed(3)} now (no live book — mark price used)`
+                        }
                       >
                         EV {bet.tail_ev >= 0 ? "+" : "−"}
                         {Math.abs(bet.tail_ev * 100).toFixed(1)}¢
+                      </span>
+                    )}
+                    {bet.book_status === "wide" && (
+                      <span
+                        className="rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-800"
+                        title={`Thin order book: ${bet.spread_cents.toFixed(1)}¢ between best bid ($${bet.best_bid.toFixed(3)}) and best ask ($${bet.best_ask.toFixed(3)}) — the mark overstates what you can execute at`}
+                      >
+                        Wide book {bet.spread_cents.toFixed(0)}¢
                       </span>
                     )}
                     {bet.consensus_wallets >= 2 && (

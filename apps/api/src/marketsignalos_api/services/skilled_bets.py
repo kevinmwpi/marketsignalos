@@ -175,19 +175,34 @@ class SkilledBetSignal:
     # Descriptive only — never gates inclusion.
     wallet_price_lead_score: float = 0.0
 
-    # Tail expected value at TODAY's price (see the tail-EV section above).
+    # Tail expected value at TODAY's executable price (see the tail-EV
+    # section above).
     #   tail_edge_used   conservative log-odds edge applied (lifetime lower
     #                    bound, capped by the recent-form bound when available
     #                    and by the entry-category bound when that category
     #                    has enough independent events)
     #   tail_fair_price  sigmoid(logit(entry) + tail_edge_used); 0 when the
     #                    entry price is unusable
-    #   tail_ev          tail_fair_price − current price, $/share; 0 unknown
+    #   tail_ev          tail_fair_price − executable price, $/share; 0 unknown.
+    #                    Computed at the picked side's ASK when the book is
+    #                    known (tail_ev_source="ask"), else at the mark.
     #   tail_ev_status   "positive" | "marginal" | "negative" | "unknown"
     tail_edge_used: float = 0.0
     tail_fair_price: float = 0.0
     tail_ev: float = 0.0
     tail_ev_status: str = "unknown"
+    tail_ev_source: str = "mark"  # "ask" | "mark"
+
+    # Order-book execution reality for the picked side, from the latest
+    # Gamma fetch. best_bid/best_ask are the YES-side book top; buying the
+    # NO side executes at the YES bid's complement (1 − bid). A "wide" book
+    # (> 3¢ spread) means the displayed mark overstates what a tailing user
+    # can actually get.
+    best_bid: float = 0.0
+    best_ask: float = 0.0
+    spread_cents: float = 0.0
+    book_status: str = "unknown"  # "tight" | "wide" | "unknown"
+    tail_ask_price: float = 0.0   # executable picked-side price; 0 unknown
 
     # Per-category skill for THIS entry's category (from the enrichment
     # category_edges decomposition). When the category has fewer than 5
@@ -277,6 +292,31 @@ def _tail_edge_for(wallet: _SkilledWallet) -> float:
     if wallet.recent_independent_events >= _MIN_RECENT_EVENTS_FOR_TAIL_EDGE:
         edge = min(edge, wallet.recent_edge_lower_bound)
     return edge
+
+
+# A spread wider than this (in cents) flags the book as "wide": the mark
+# meaningfully overstates what a tailing user can execute at.
+_WIDE_SPREAD_CENTS = 3.0
+
+
+def _picked_side_book(
+    market_rec: _PolymarketMarketRec | None, outcome_index: int
+) -> tuple[float, float, str]:
+    """(executable_ask, spread_cents, book_status) for the picked outcome.
+
+    The Gamma book top is YES-side; buying the NO side executes at the YES
+    bid's complement (1 − bid). Returns zeros/"unknown" when either side of
+    the book is missing or inverted.
+    """
+    if market_rec is None:
+        return 0.0, 0.0, "unknown"
+    bid, ask = market_rec.best_bid, market_rec.best_ask
+    if not (0.0 < bid < 1.0 and 0.0 < ask < 1.0 and ask >= bid):
+        return 0.0, 0.0, "unknown"
+    spread_cents = round((ask - bid) * 100.0, 2)
+    picked_ask = ask if outcome_index == 0 else 1.0 - bid
+    status = "wide" if spread_cents > _WIDE_SPREAD_CENTS else "tight"
+    return round(picked_ask, 4), spread_cents, status
 
 
 def _tail_ev(
@@ -411,6 +451,8 @@ class _PolymarketMarketRec:
     active: bool
     closed: bool
     yes_price: float  # last_trade_price or mid; 0 if unknown
+    best_bid: float   # YES-side book top; 0 if unknown
+    best_ask: float
     fetched_at: str
 
 
@@ -545,12 +587,12 @@ def _load_polymarket_markets() -> dict[str, _PolymarketMarketRec]:
         if not cond:
             continue
         last = row.get("last_trade_price")
-        bid = row.get("best_bid")
-        ask = row.get("best_ask")
+        bid = _f(row.get("best_bid"))
+        ask = _f(row.get("best_ask"))
         if last is not None:
             price = _f(last)
-        elif bid is not None and ask is not None:
-            price = (_f(bid) + _f(ask)) / 2.0
+        elif bid > 0.0 and ask > 0.0:
+            price = (bid + ask) / 2.0
         else:
             price = 0.0
         out[cond] = _PolymarketMarketRec(
@@ -561,6 +603,8 @@ def _load_polymarket_markets() -> dict[str, _PolymarketMarketRec]:
             active=bool(row.get("active", False)),
             closed=bool(row.get("closed", False)),
             yes_price=price,
+            best_bid=bid,
+            best_ask=ask,
             fetched_at=str(row.get("fetched_at", "") or ""),
         )
     return out
@@ -1004,8 +1048,19 @@ def _compute_skilled_bets(
             category_lb = wallet.edge_lower_bound
             category_events = category_fit[2] if category_fit is not None else 0.0
             category_source = "wallet_fallback"
+        # EV is computed against what a tailing user can actually execute at:
+        # the picked side's ask when the book is known, else the mark.
+        tail_ask_price, spread_cents, book_status = _picked_side_book(
+            market_rec, pos.outcome_index
+        )
+        if tail_ask_price > 0.0:
+            tail_exec_price = tail_ask_price
+            tail_ev_source = "ask"
+        else:
+            tail_exec_price = current_outcome
+            tail_ev_source = "mark"
         tail_fair_price, tail_ev, tail_ev_status = _tail_ev(
-            entry_price, current_outcome, tail_edge
+            entry_price, tail_exec_price, tail_edge
         )
         entry_usdc = _f(buy.get("usdc_size"))
         conviction_z = (
@@ -1100,6 +1155,12 @@ def _compute_skilled_bets(
                 tail_fair_price=tail_fair_price,
                 tail_ev=tail_ev,
                 tail_ev_status=tail_ev_status,
+                tail_ev_source=tail_ev_source,
+                best_bid=round(market_rec.best_bid, 4) if market_rec else 0.0,
+                best_ask=round(market_rec.best_ask, 4) if market_rec else 0.0,
+                spread_cents=spread_cents,
+                book_status=book_status,
+                tail_ask_price=tail_ask_price,
                 category_skill_likelihood=round(category_skill, 6),
                 category_edge_lower_bound=round(category_lb, 4),
                 category_independent_events=round(category_events, 4),

@@ -72,6 +72,9 @@ class SignalLedgerRow:
     tail_fair_price: float = 0.0
     tail_ev: float = 0.0
     tail_ev_status: str = "unknown"
+    tail_ev_source: str = "mark"
+    spread_cents: float = 0.0
+    book_status: str = "unknown"
 
     # Settlement.
     status: str = "open"        # open | won | lost | void
@@ -227,6 +230,9 @@ def update_signal_ledger() -> dict[str, int]:
                     tail_fair_price=signal.tail_fair_price,
                     tail_ev=signal.tail_ev,
                     tail_ev_status=signal.tail_ev_status,
+                    tail_ev_source=signal.tail_ev_source,
+                    spread_cents=signal.spread_cents,
+                    book_status=signal.book_status,
                 )
             )
         )
@@ -297,6 +303,7 @@ _BREAKDOWN_DIMENSIONS = (
     "category",
     "wallet_archetype",
     "consensus",
+    "book_status",
 )
 
 

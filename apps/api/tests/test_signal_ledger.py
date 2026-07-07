@@ -160,10 +160,14 @@ def test_refresh_records_open_signals_once(
     assert fed["conviction"] == "unknown"
     assert fed["consensus_wallets"] == 1
     assert fed["wallet_archetype"] == "unclassified"
-    # Edge bound 0.2 on entry 0.45 → fair ≈ 0.4998, now 0.58 → EV −8.0¢.
+    # Edge bound 0.2 on entry 0.45 → fair ≈ 0.4998, executable ask 0.59 →
+    # EV −9.0¢ at the book top.
     assert fed["tail_fair_price"] == 0.4998
-    assert fed["tail_ev"] == -0.0802
+    assert fed["tail_ev"] == -0.0902
     assert fed["tail_ev_status"] == "negative"
+    assert fed["tail_ev_source"] == "ask"
+    assert fed["spread_cents"] == 2.0
+    assert fed["book_status"] == "tight"
 
 
 def test_refresh_settles_won_signal_with_both_roi_variants(
@@ -274,6 +278,8 @@ def test_ledger_summary_reports_hit_rate_and_roi(
     assert fresh["signals"] == 2
     assert fresh["won"] == 1
     assert body["breakdowns"]["consensus"]["1 wallet"]["signals"] == 2
+    # Both fixture markets carry a 2¢ book → the "tight" execution bucket.
+    assert body["breakdowns"]["book_status"]["tight"]["signals"] == 2
 
     # The open btc row marks to its latest observed price (unchanged → 0).
     mtm = body["open_mark_to_market"]

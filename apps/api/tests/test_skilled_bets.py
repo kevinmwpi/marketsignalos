@@ -244,8 +244,8 @@ def test_skilled_bets_orders_best_tail_ev_first_within_tier(
     assert len(rows) == 2
 
     # Both entries are "fresh"; btc has less of its move priced in relative
-    # to the wallet's implied fair price, so its tail EV (−5.6¢) beats
-    # fed's (−8.0¢) and it ranks first despite the older BUY timestamp.
+    # to the wallet's implied fair price, so its tail EV (−6.6¢ at the ask)
+    # beats fed's (−9.0¢) and it ranks first despite the older BUY timestamp.
     assert rows[0]["condition_id"] == "0xcond_btc"
     assert rows[0]["bought_at"] == 1730000000
     assert rows[1]["condition_id"] == "0xcond_fed"
@@ -258,9 +258,10 @@ def test_skilled_bets_carries_tail_ev_fields(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Each row must carry the wallet-edge-implied fair price and the EV of
-    tailing at TODAY's price. Alpha's conservative edge bound is 0.2
-    log-odds; fed entry 0.45 → fair sigmoid(logit(0.45)+0.2) ≈ 0.4998,
-    now 0.58 → EV ≈ −8.0¢ (thesis already priced past fair)."""
+    tailing at the EXECUTABLE price. Alpha's conservative edge bound is 0.2
+    log-odds; fed entry 0.45 → fair sigmoid(logit(0.45)+0.2) ≈ 0.4998. The
+    fed book is 0.57/0.59, so a YES tail executes at the 0.59 ask →
+    EV ≈ −9.0¢ (thesis already priced past fair)."""
     pm_dir = _seed(tmp_path)
     monkeypatch.setenv("POLYMARKET_DATA_DIR", str(pm_dir))
 
@@ -269,13 +270,20 @@ def test_skilled_bets_carries_tail_ev_fields(
     fed = next(r for r in rows if r["condition_id"] == "0xcond_fed")
     assert fed["tail_edge_used"] == 0.2
     assert fed["tail_fair_price"] == 0.4998
-    assert fed["tail_ev"] == -0.0802
+    assert fed["tail_ev"] == -0.0902
     assert fed["tail_ev_status"] == "negative"
+    assert fed["tail_ev_source"] == "ask"
+    assert fed["tail_ask_price"] == 0.59
+    assert fed["best_bid"] == 0.57
+    assert fed["best_ask"] == 0.59
+    assert fed["spread_cents"] == 2.0
+    assert fed["book_status"] == "tight"
 
     btc = next(r for r in rows if r["condition_id"] == "0xcond_btc")
     assert btc["tail_fair_price"] == 0.3436
-    assert btc["tail_ev"] == -0.0564
+    assert btc["tail_ev"] == -0.0664  # at the 0.41 ask, not the 0.40 mark
     assert btc["tail_ev_status"] == "negative"
+    assert btc["tail_ev_source"] == "ask"
 
 
 def test_skilled_bets_min_tail_ev_filters_and_drops_unknown(
@@ -291,9 +299,9 @@ def test_skilled_bets_min_tail_ev_filters_and_drops_unknown(
     ).json()
     assert rows == []
 
-    # A floor between the two EVs (−5.6¢ and −8.0¢) keeps only btc.
+    # A floor between the two at-ask EVs (−6.6¢ and −9.0¢) keeps only btc.
     rows = client.get(
-        "/signals/skilled-bets?min_skill=0.9&min_resolved=20&min_tail_ev=-0.06"
+        "/signals/skilled-bets?min_skill=0.9&min_resolved=20&min_tail_ev=-0.07"
     ).json()
     assert [r["condition_id"] for r in rows] == ["0xcond_btc"]
 
@@ -335,10 +343,11 @@ def test_skilled_bets_category_fit_caps_tail_edge(
     assert fed["category_skill_likelihood"] == 0.97
     assert fed["category_edge_lower_bound"] == 0.1
     assert fed["category_independent_events"] == 25.0
-    # min(lifetime 0.2, economics 0.1) → fair sigmoid(logit(0.45)+0.1) ≈ 0.4749.
+    # min(lifetime 0.2, economics 0.1) → fair sigmoid(logit(0.45)+0.1) ≈ 0.4749,
+    # executed at the 0.59 ask.
     assert fed["tail_edge_used"] == 0.1
     assert fed["tail_fair_price"] == 0.4749
-    assert fed["tail_ev"] == -0.1051
+    assert fed["tail_ev"] == -0.1151
 
     btc = next(r for r in feed if r["condition_id"] == "0xcond_btc")
     assert btc["category_skill_source"] == "wallet_fallback"
@@ -346,6 +355,59 @@ def test_skilled_bets_category_fit_caps_tail_edge(
     assert btc["category_skill_likelihood"] == btc["skill_likelihood"]
     assert btc["category_independent_events"] == 2.0
     assert btc["tail_edge_used"] == 0.2  # crypto fit too thin to cap
+
+
+def test_picked_side_book_math() -> None:
+    from marketsignalos_api.services.skilled_bets import (
+        _picked_side_book,
+        _PolymarketMarketRec,
+    )
+
+    rec = _PolymarketMarketRec(
+        condition_id="c", category="", slug="", event_slug="",
+        active=True, closed=False, yes_price=0.5,
+        best_bid=0.48, best_ask=0.53, fetched_at="",
+    )
+    # YES buys at the ask; NO buys at the YES bid's complement (1 − 0.48).
+    assert _picked_side_book(rec, 0) == (0.53, 5.0, "wide")
+    assert _picked_side_book(rec, 1) == (0.52, 5.0, "wide")
+
+    rec.best_ask = 0.50  # 2¢ spread → tight
+    assert _picked_side_book(rec, 0) == (0.5, 2.0, "tight")
+
+    rec.best_bid = 0.0  # one-sided book → unusable
+    assert _picked_side_book(rec, 0) == (0.0, 0.0, "unknown")
+    assert _picked_side_book(None, 0) == (0.0, 0.0, "unknown")
+
+
+def test_skilled_bets_falls_back_to_mark_without_book(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Markets without a live book keep the mark-based EV so the signal
+    still ranks — it just says so via tail_ev_source."""
+    pm_dir = _seed(tmp_path)
+    markets_path = pm_dir / "polymarket_markets.jsonl"
+    rows = [
+        json.loads(line)
+        for line in markets_path.read_text(encoding="utf-8").splitlines()
+        if line
+    ]
+    for row in rows:
+        if row["condition_id"] == "0xcond_btc":
+            row["best_bid"] = None
+            row["best_ask"] = None
+    _write_jsonl(markets_path, rows)
+    monkeypatch.setenv("POLYMARKET_DATA_DIR", str(pm_dir))
+
+    feed = TestClient(app).get(
+        "/signals/skilled-bets?min_skill=0.9&min_resolved=20"
+    ).json()
+    btc = next(r for r in feed if r["condition_id"] == "0xcond_btc")
+    assert btc["tail_ev_source"] == "mark"
+    assert btc["book_status"] == "unknown"
+    assert btc["tail_ask_price"] == 0.0
+    # fair 0.3436 vs the 0.40 mark — the pre-book number.
+    assert btc["tail_ev"] == -0.0564
 
 
 def test_tail_ev_math_statuses() -> None:

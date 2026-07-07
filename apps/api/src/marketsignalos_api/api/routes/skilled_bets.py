@@ -93,6 +93,13 @@ class SkilledBetOut(BaseModel):
     tail_fair_price: float
     tail_ev: float
     tail_ev_status: str
+    tail_ev_source: str
+
+    best_bid: float
+    best_ask: float
+    spread_cents: float
+    book_status: str
+    tail_ask_price: float
 
     category_skill_likelihood: float
     category_edge_lower_bound: float
@@ -134,9 +141,10 @@ def skilled_bets(
         ge=-1.0,
         le=1.0,
         description=(
-            "When set, only include signals whose tail EV at today's price is "
-            "at least this many dollars per share; signals without a live "
-            "price (tail_ev_status=unknown) are dropped."
+            "When set, only include signals whose tail EV at today's "
+            "executable price (the picked side's ask when the book is known, "
+            "else the mark) is at least this many dollars per share; signals "
+            "without a live price (tail_ev_status=unknown) are dropped."
         ),
     ),
     limit: int = Query(default=50, ge=1, le=500),
