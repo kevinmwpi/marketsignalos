@@ -288,3 +288,55 @@ def _wire_immediate_executor(
 
     monkeypatch.setattr(ingestor_route, "_run_ingestor_sync", fake_run)
     monkeypatch.setattr(asyncio, "get_event_loop", lambda: _ImmediateLoop())
+
+
+# ── Manual watchlist endpoints ───────────────────────────────────────────────
+
+def test_watchlist_add_list_and_idempotency(
+    tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("POLYMARKET_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("POLYMARKET_WATCHLIST_PATH", str(tmp_path / "wl.txt"))
+    client = TestClient(app)
+    address = "0x" + "b" * 40
+
+    resp = client.post("/ingestor/watchlist", json={"address": address})
+    assert resp.status_code == 201
+    body = resp.json()
+    assert body["added"] is True
+    assert body["wallet"] == address
+    assert body["review_status"] == "pinned"
+
+    # Re-adding returns 200 and does not duplicate.
+    resp = client.post("/ingestor/watchlist", json={"address": address})
+    assert resp.status_code == 200
+    assert resp.json()["added"] is False
+
+    listed = client.get("/ingestor/watchlist").json()
+    assert listed == {"count": 1, "addresses": [address]}
+
+
+def test_watchlist_rejects_invalid_address_with_422(
+    tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("POLYMARKET_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("POLYMARKET_WATCHLIST_PATH", str(tmp_path / "wl.txt"))
+    resp = TestClient(app).post(
+        "/ingestor/watchlist", json={"address": "not-a-wallet"}
+    )
+    assert resp.status_code == 422
+    assert "0x-prefixed" in resp.json()["detail"]
+
+
+def test_watchlist_add_returns_409_while_pipeline_runs(
+    tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The pipeline rewrites the watchlist mid-run; a concurrent manual add
+    would race that read-modify-write."""
+    monkeypatch.setenv("POLYMARKET_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("POLYMARKET_WATCHLIST_PATH", str(tmp_path / "wl.txt"))
+    ingestor_route._state["running"] = True
+    resp = TestClient(app).post(
+        "/ingestor/watchlist", json={"address": "0x" + "c" * 40}
+    )
+    assert resp.status_code == 409

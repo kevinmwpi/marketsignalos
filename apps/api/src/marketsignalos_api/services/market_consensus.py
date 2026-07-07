@@ -11,16 +11,26 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from marketsignalos_api.services.skilled_bets import SkilledBetSignal, compute_skilled_bets
+from marketsignalos_api.services.skilled_bets import (
+    SkilledBetSignal,
+    compute_skilled_bets,
+    wallet_cluster_key,
+)
 
 
 @dataclass(slots=True)
 class ConsensusSide:
-    """All skilled wallets holding one (condition, outcome) side."""
+    """All skilled wallets holding one (condition, outcome) side.
+
+    `wallets` counts distinct ENTITIES (wallets sharing a display name are
+    clustered as one — see skilled_bets.wallet_cluster_key); `accounts` is
+    the raw wallet-address count before clustering.
+    """
 
     outcome_index: int
     outcome: str
     wallets: int = 0
+    accounts: int = 0
     wallet_names: list[str] = field(default_factory=list)
     total_position_value_usdc: float = 0.0
     avg_entry_price: float = 0.0       # capital-weighted by entry USDC
@@ -87,6 +97,9 @@ def compute_market_consensus(
         for row in rows:
             seen.setdefault(row.proxy_wallet, row)
         wallets = list(seen.values())
+        entity_count = len(
+            {wallet_cluster_key(w.proxy_wallet, w.wallet_name) for w in wallets}
+        )
 
         total_value = sum(w.current_position_value_usdc for w in wallets)
         entry_capital = sum(max(0.0, w.entry_usdc_size) for w in wallets)
@@ -99,8 +112,9 @@ def compute_market_consensus(
         side = ConsensusSide(
             outcome_index=outcome_idx,
             outcome=wallets[0].outcome or ("Yes" if outcome_idx == 0 else "No"),
-            wallets=len(wallets),
-            wallet_names=sorted(_display_name(w) for w in wallets),
+            wallets=entity_count,
+            accounts=len(wallets),
+            wallet_names=sorted({_display_name(w) for w in wallets}),
             total_position_value_usdc=round(total_value, 2),
             avg_entry_price=round(avg_entry, 4),
             avg_skill_likelihood=round(

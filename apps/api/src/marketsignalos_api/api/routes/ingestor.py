@@ -351,6 +351,55 @@ async def trigger_deep_ingestor_run() -> JSONResponse:
     )
 
 
+class WatchlistAddRequest(BaseModel):
+    address: str
+
+
+@router.get("/watchlist")
+def get_watchlist() -> dict[str, Any]:
+    """Current wallet watchlist (manual + auto-seeded, merged)."""
+    try:
+        from marketsignalos_polymarket.runner import run_list_watchlist  # noqa: PLC0415
+    except ImportError as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Polymarket pipeline not importable: {exc}",
+        ) from exc
+    addresses = run_list_watchlist()
+    return {"count": len(addresses), "addresses": addresses}
+
+
+@router.post("/watchlist", status_code=201)
+def add_watchlist_wallet(body: WatchlistAddRequest) -> JSONResponse:
+    """Manually add a wallet to the watchlist and pin it so it can never be
+    archived. Idempotent — re-adding an existing wallet returns 200. The
+    wallet is hydrated (activity, positions, enrichment) on the next
+    pipeline run. Returns 409 while a pipeline run is in flight to avoid
+    racing its watchlist rewrite."""
+    try:
+        from marketsignalos_polymarket.runner import (  # noqa: PLC0415
+            run_add_watchlist_wallet,
+        )
+    except ImportError as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Polymarket pipeline not importable: {exc}",
+        ) from exc
+
+    with _lock:
+        if _state["running"]:
+            raise HTTPException(status_code=409, detail="Ingestion already running")
+
+    try:
+        result = run_add_watchlist_wallet(body.address)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return JSONResponse(
+        status_code=201 if result["added"] else 200,
+        content={"status": "ok", **result},
+    )
+
+
 @router.post("/prune-wallets")
 def trigger_prune_wallets(
     dormant_days: int = 90, dry_run: bool = False,

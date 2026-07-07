@@ -23,6 +23,7 @@ import argparse
 import json
 import logging
 import os
+import re
 import threading
 import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -3150,6 +3151,53 @@ def run_prune_wallets(
         "active_wallets": active,
         "archived_wallets": archived,
         "pinned_wallets": pinned,
+    }
+
+
+_WALLET_ADDRESS_RE = re.compile(r"^0x[0-9a-fA-F]{40}$")
+_WATCHLIST_HEADER = "# Polymarket wallet watchlist — auto-seeded + manual additions"
+
+
+def run_list_watchlist() -> list[str]:
+    """Current watchlist addresses (sorted, lowercase). Public wrapper for
+    the API's GET /ingestor/watchlist."""
+    return sorted(set(_load_watchlist(_watchlist_path())))
+
+
+def run_add_watchlist_wallet(address: str) -> dict[str, Any]:
+    """
+    Manually add one wallet to the watchlist and pin its review state so
+    dormancy archival can never drop it. Idempotent: re-adding an existing
+    wallet only re-asserts the pin. Both watchlist rewrite sites union with
+    the existing file, so a manual entry survives every seeding pass.
+
+    Raises ValueError on anything that isn't a 0x-prefixed 40-hex address.
+    """
+    wallet = address.strip().lower()
+    if not _WALLET_ADDRESS_RE.match(wallet):
+        raise ValueError("address must be a 0x-prefixed 40-hex-character wallet address")
+
+    path = _watchlist_path()
+    existing = set(_load_watchlist(path))
+    added = wallet not in existing
+    if added:
+        merged = sorted(existing | {wallet})
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            "\n".join([_WATCHLIST_HEADER] + merged) + "\n", encoding="utf-8"
+        )
+    review_status = run_pin_wallet(wallet, pin=True)
+    log.info(
+        "watchlist_manual_add wallet=%s added=%s size=%d",
+        wallet,
+        added,
+        len(existing) + (1 if added else 0),
+    )
+    return {
+        "wallet": wallet,
+        "added": added,
+        "watchlist_size": len(existing) + (1 if added else 0),
+        "review_status": review_status,
     }
 
 

@@ -75,6 +75,7 @@ class SkilledBetOut(BaseModel):
     remaining_edge_status: str
 
     consensus_wallets: int
+    consensus_accounts: int
     consensus_contested: bool
 
     conviction: str

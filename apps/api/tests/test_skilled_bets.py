@@ -357,6 +357,70 @@ def test_skilled_bets_category_fit_caps_tail_edge(
     assert btc["tail_edge_used"] == 0.2  # crypto fit too thin to cap
 
 
+def test_consensus_dedupes_same_name_wallets(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Two wallets with the same display name holding the same side count as
+    ONE entity (consensus_wallets) but two accounts (consensus_accounts) —
+    one operator running several wallets can't fake confluence."""
+    pm_dir = _seed(tmp_path)
+
+    def _append(name: str, rows: list[dict[str, object]]) -> None:
+        path = pm_dir / name
+        with path.open("a", encoding="utf-8") as fh:
+            for row in rows:
+                fh.write(json.dumps(row, separators=(",", ":")) + "\n")
+
+    # Clone alpha as a second wallet with the SAME display name, holding the
+    # same fed YES side.
+    enrichment_path = pm_dir / "polymarket_wallet_enrichment.jsonl"
+    alpha = json.loads(
+        enrichment_path.read_text(encoding="utf-8").splitlines()[0]
+    )
+    clone = dict(alpha)
+    clone["proxy_wallet"] = "0xalpha2"
+    _append("polymarket_wallet_enrichment.jsonl", [clone])
+    _append(
+        "polymarket_positions.jsonl",
+        [{
+            "proxy_wallet": "0xalpha2", "condition_id": "0xcond_fed",
+            "outcome_index": 0, "outcome": "Yes",
+            "size": 100.0, "avg_price": 0.5, "current_value_usdc": 58.0,
+            "slug": "fed-50bp-sep", "title": "Fed cuts 50bp in September",
+            "event_slug": "fed-decision",
+            "current_outcome_price": 0.58, "snapshot_id": "snapshot-alpha2",
+            "snapshot_at": "2026-05-12T08:00:00Z",
+        }],
+    )
+    _append(
+        "polymarket_position_snapshots.jsonl",
+        [{"proxy_wallet": "0xalpha2", "snapshot_id": "snapshot-alpha2",
+          "complete": True}],
+    )
+    _append(
+        "polymarket_activity.jsonl",
+        [{
+            "proxy_wallet": "0xalpha2", "timestamp": 1731400000,
+            "condition_id": "0xcond_fed", "type": "TRADE", "side": "BUY",
+            "size": 100.0, "usdc_size": 50.0, "price": 0.5,
+            "outcome_index": 0, "outcome": "Yes", "slug": "fed-50bp-sep",
+            "title": "Fed cuts 50bp in September", "event_slug": "fed-decision",
+            "transaction_hash": "0xtx_clone",
+        }],
+    )
+    monkeypatch.setenv("POLYMARKET_DATA_DIR", str(pm_dir))
+
+    rows = TestClient(app).get(
+        "/signals/skilled-bets?min_skill=0.9&min_resolved=20"
+    ).json()
+    fed_rows = [r for r in rows if r["condition_id"] == "0xcond_fed"]
+    assert len(fed_rows) == 2  # both accounts still surface individually
+    for row in fed_rows:
+        assert row["consensus_wallets"] == 1   # one entity ("AlphaWhale")
+        assert row["consensus_accounts"] == 2  # two wallet addresses
+        assert row["consensus_contested"] is False
+
+
 def test_picked_side_book_math() -> None:
     from marketsignalos_api.services.skilled_bets import (
         _picked_side_book,

@@ -142,11 +142,18 @@ class SkilledBetSignal:
     remaining_edge_status: str
 
     # Smart-money confluence on this market.
-    #   consensus_wallets    distinct skilled wallets holding this same
+    #   consensus_wallets    distinct skilled ENTITIES holding this same
     #                        (condition, outcome) side — including this one.
+    #                        Wallets sharing the same non-blank display name
+    #                        are collapsed into one entity (cheap cluster
+    #                        heuristic) so one operator running several
+    #                        wallets can't fake confluence.
+    #   consensus_accounts   raw distinct wallet addresses on this side,
+    #                        before entity clustering.
     #   consensus_contested  True when skilled wallets hold BOTH sides of
     #                        this market.
     consensus_wallets: int = 1
+    consensus_accounts: int = 1
     consensus_contested: bool = False
 
     # Position-sizing conviction: skilled traders size up when conviction is
@@ -282,6 +289,16 @@ def _sigmoid(x: float) -> float:
         return 1.0 / (1.0 + math.exp(-x))
     ex = math.exp(x)
     return ex / (1.0 + ex)
+
+
+def wallet_cluster_key(proxy_wallet: str, wallet_name: str) -> str:
+    """Cheap entity-cluster heuristic for consensus dedupe: wallets sharing
+    the same non-blank display name count as ONE entity; unnamed wallets are
+    their own cluster. Deliberately labeled a heuristic — an on-chain
+    funding-source clusterer (shared first funder) is the rigorous upgrade
+    and needs a data source this pipeline doesn't ingest yet."""
+    name = wallet_name.strip().lower()
+    return f"name:{name}" if name else f"wallet:{proxy_wallet.lower()}"
 
 
 def _tail_edge_for(wallet: _SkilledWallet) -> float:
@@ -1168,12 +1185,16 @@ def _compute_skilled_bets(
             )
         )
 
-    # Consensus maps over ALL candidates: distinct skilled wallets per
-    # (condition, outcome) side, and which sides of each market are held.
+    # Consensus maps over ALL candidates: distinct skilled entities (and raw
+    # accounts) per (condition, outcome) side, and which sides of each market
+    # are held.
     wallets_by_side: dict[tuple[str, int], set[str]] = defaultdict(set)
+    clusters_by_side: dict[tuple[str, int], set[str]] = defaultdict(set)
     for signal in candidates:
-        wallets_by_side[(signal.condition_id, signal.outcome_index)].add(
-            signal.proxy_wallet
+        side = (signal.condition_id, signal.outcome_index)
+        wallets_by_side[side].add(signal.proxy_wallet)
+        clusters_by_side[side].add(
+            wallet_cluster_key(signal.proxy_wallet, signal.wallet_name)
         )
     sides_by_cond: dict[str, set[int]] = defaultdict(set)
     for cond, outcome_idx in wallets_by_side:
@@ -1194,9 +1215,9 @@ def _compute_skilled_bets(
             continue
         if not include_untradable and not is_actionable(signal.tradability):
             continue
-        signal.consensus_wallets = len(
-            wallets_by_side[(signal.condition_id, signal.outcome_index)]
-        )
+        side = (signal.condition_id, signal.outcome_index)
+        signal.consensus_wallets = len(clusters_by_side[side])
+        signal.consensus_accounts = len(wallets_by_side[side])
         signal.consensus_contested = len(sides_by_cond[signal.condition_id]) > 1
         out.append(signal)
 

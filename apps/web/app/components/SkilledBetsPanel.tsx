@@ -65,6 +65,7 @@ export type SkilledBet = {
   remaining_edge_status: string;
 
   consensus_wallets: number;
+  consensus_accounts: number;
   consensus_contested: boolean;
 
   conviction: string;
@@ -279,7 +280,7 @@ export default function SkilledBetsPanel({
                     {bet.consensus_wallets >= 2 && (
                       <span
                         className="rounded bg-violet-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-violet-700"
-                        title="Distinct skilled wallets holding this same side"
+                        title={`Distinct skilled entities holding this same side (wallets sharing a display name count once${bet.consensus_accounts > bet.consensus_wallets ? `; ${bet.consensus_accounts} wallet addresses total` : ""})`}
                       >
                         {bet.consensus_wallets} skilled wallets
                       </span>

@@ -245,3 +245,33 @@ def test_consensus_endpoint_min_wallets_filter(
     conds = [r["condition_id"] for r in rows]
     # Sorted by wallet count: fed (2) before btc (1).
     assert conds == ["0xcond_fed", "0xcond_btc"]
+
+
+def test_consensus_endpoint_dedupes_same_name_wallets(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Two accounts under one display name are one entity: the side reports
+    wallets=1 (entities) alongside accounts=2, and the min_wallets gate runs
+    on entities so a self-copying operator can't fake confluence."""
+    pm_dir = _seed(tmp_path)
+    # Rename beta to alpha's display name — same entity, second account.
+    enrichment = pm_dir / "polymarket_wallet_enrichment.jsonl"
+    rows = [json.loads(line) for line in enrichment.read_text("utf-8").splitlines() if line]
+    for row in rows:
+        if row["proxy_wallet"] == "0xbeta":
+            row["name"] = "AlphaWhale"
+            row["pseudonym"] = "AlphaWhale"
+    _write_jsonl(enrichment, rows)
+    monkeypatch.setenv("POLYMARKET_DATA_DIR", str(pm_dir))
+
+    client = TestClient(app)
+    # Entity-level gate: fed now has ONE entity on YES — min_wallets=2 drops it.
+    body = client.get("/signals/market-consensus?min_wallets=2").json()
+    assert body == []
+
+    body = client.get("/signals/market-consensus?min_wallets=1").json()
+    fed = next(m for m in body if m["condition_id"] == "0xcond_fed")
+    side = fed["sides"][0]
+    assert side["wallets"] == 1
+    assert side["accounts"] == 2
+    assert side["wallet_names"] == ["AlphaWhale"]
