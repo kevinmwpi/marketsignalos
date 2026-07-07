@@ -96,6 +96,7 @@ class Bet:
     cost_usdc: float = 0.0   # used for rank_score weighting
     weight: float = 1.0      # event-capped likelihood contribution
     ts: int = 0              # unix seconds of the last fill — recency weighting input
+    category: str = ""       # normalized Gamma category — per-category fit input
 
 
 @dataclass(slots=True, frozen=True)

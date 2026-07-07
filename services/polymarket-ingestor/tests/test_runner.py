@@ -876,3 +876,66 @@ def test_merge_skill_qualified_wallets_into_watchlist(tmp_path: Path) -> None:
         if line.strip() and not line.startswith("#")
     }
     assert wallets == {"0xedge", "0xexisting"}
+
+
+# ── Manual watchlist additions ───────────────────────────────────────────────
+
+def test_add_watchlist_wallet_appends_pins_and_dedupes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from marketsignalos_polymarket.runner import (
+        run_add_watchlist_wallet,
+        run_list_watchlist,
+    )
+
+    monkeypatch.setenv("POLYMARKET_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("POLYMARKET_WATCHLIST_PATH", str(tmp_path / "wl.txt"))
+    address = "0x" + "AbCd" * 10  # mixed case — must normalize to lowercase
+
+    result = run_add_watchlist_wallet(address)
+    assert result["added"] is True
+    assert result["wallet"] == address.lower()
+    assert result["review_status"] == "pinned"
+    assert run_list_watchlist() == [address.lower()]
+
+    # Idempotent: a second add only re-asserts the pin.
+    again = run_add_watchlist_wallet(address.lower())
+    assert again["added"] is False
+    assert again["watchlist_size"] == 1
+    assert run_list_watchlist() == [address.lower()]
+
+    # The file keeps its header comment so seeding passes recognize it.
+    content = (tmp_path / "wl.txt").read_text(encoding="utf-8")
+    assert content.startswith("# Polymarket wallet watchlist")
+
+
+def test_add_watchlist_wallet_preserves_existing_entries(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from marketsignalos_polymarket.runner import (
+        run_add_watchlist_wallet,
+        run_list_watchlist,
+    )
+
+    monkeypatch.setenv("POLYMARKET_DATA_DIR", str(tmp_path))
+    wl = tmp_path / "wl.txt"
+    monkeypatch.setenv("POLYMARKET_WATCHLIST_PATH", str(wl))
+    existing = "0x" + "1" * 40
+    wl.write_text(f"# header\n{existing}\n", encoding="utf-8")
+
+    new = "0x" + "2" * 40
+    run_add_watchlist_wallet(new)
+    assert run_list_watchlist() == [existing, new]
+
+
+def test_add_watchlist_wallet_rejects_invalid_addresses(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from marketsignalos_polymarket.runner import run_add_watchlist_wallet
+
+    monkeypatch.setenv("POLYMARKET_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("POLYMARKET_WATCHLIST_PATH", str(tmp_path / "wl.txt"))
+    for bad in ("", "AlphaWhale", "0x123", "0x" + "g" * 40, "1x" + "a" * 40):
+        with pytest.raises(ValueError):
+            run_add_watchlist_wallet(bad)
+    assert not (tmp_path / "wl.txt").exists()

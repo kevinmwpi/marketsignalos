@@ -41,7 +41,7 @@ def _seed(tmp_path: Path) -> Path:
                 "forecast_edge_lower_bound": 0.2, "independent_settled_events": 50.0,
                 "all_time_pnl_usdc": 250_000, "all_time_roi": 0.25, "pnl_30d_usdc": 1_000,
                 "data_quality_status": "trusted", "tailability_status": "tailable",
-                "score_version": "forecast-v2",
+                "score_version": "forecast-v2", "price_lead_score": 0.75,
                 "total_volume_usdc": 1_000_000, "total_pnl_usdc": 250_000,
                 "avg_position_size_usdc": 20_000, "trade_count": 200,
                 "last_activity_at": 1731000000, "computed_at": "2026-05-12T00:00:00Z",
@@ -227,11 +227,12 @@ def _seed(tmp_path: Path) -> Path:
     return d
 
 
-def test_skilled_bets_orders_latest_buy_first(
+def test_skilled_bets_orders_best_tail_ev_first_within_tier(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Feed semantics: newest BUY entry on top; the latest of multiple buys
-    on the same position is what gets shown."""
+    """Feed semantics: within the same remaining-edge tier, the entry with
+    the best tail EV at today's price ranks first; the latest of multiple
+    buys on the same position is what gets shown."""
     pm_dir = _seed(tmp_path)
     monkeypatch.setenv("POLYMARKET_DATA_DIR", str(pm_dir))
 
@@ -242,13 +243,259 @@ def test_skilled_bets_orders_latest_buy_first(
     # alpha has TWO held positions with matching buys; both should appear.
     assert len(rows) == 2
 
-    # Newest first — the fed-50bp entry (ts=1731500000) ranks above btc (1730000000).
-    assert rows[0]["condition_id"] == "0xcond_fed"
-    assert rows[0]["bought_at"] == 1731500000
-    assert rows[0]["transaction_hash"] == "0xtx_new", \
+    # Both entries are "fresh"; btc has less of its move priced in relative
+    # to the wallet's implied fair price, so its tail EV (−6.6¢ at the ask)
+    # beats fed's (−9.0¢) and it ranks first despite the older BUY timestamp.
+    assert rows[0]["condition_id"] == "0xcond_btc"
+    assert rows[0]["bought_at"] == 1730000000
+    assert rows[1]["condition_id"] == "0xcond_fed"
+    assert rows[1]["bought_at"] == 1731500000
+    assert rows[1]["transaction_hash"] == "0xtx_new", \
         "Should reflect the LATEST buy, not the older one"
-    assert rows[1]["condition_id"] == "0xcond_btc"
-    assert rows[1]["bought_at"] == 1730000000
+
+
+def test_skilled_bets_carries_tail_ev_fields(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Each row must carry the wallet-edge-implied fair price and the EV of
+    tailing at the EXECUTABLE price. Alpha's conservative edge bound is 0.2
+    log-odds; fed entry 0.45 → fair sigmoid(logit(0.45)+0.2) ≈ 0.4998. The
+    fed book is 0.57/0.59, so a YES tail executes at the 0.59 ask →
+    EV ≈ −9.0¢ (thesis already priced past fair)."""
+    pm_dir = _seed(tmp_path)
+    monkeypatch.setenv("POLYMARKET_DATA_DIR", str(pm_dir))
+
+    client = TestClient(app)
+    rows = client.get("/signals/skilled-bets?min_skill=0.9&min_resolved=20").json()
+    fed = next(r for r in rows if r["condition_id"] == "0xcond_fed")
+    assert fed["tail_edge_used"] == 0.2
+    assert fed["tail_fair_price"] == 0.4998
+    assert fed["tail_ev"] == -0.0902
+    assert fed["tail_ev_status"] == "negative"
+    assert fed["tail_ev_source"] == "ask"
+    assert fed["tail_ask_price"] == 0.59
+    assert fed["best_bid"] == 0.57
+    assert fed["best_ask"] == 0.59
+    assert fed["spread_cents"] == 2.0
+    assert fed["book_status"] == "tight"
+
+    btc = next(r for r in rows if r["condition_id"] == "0xcond_btc")
+    assert btc["tail_fair_price"] == 0.3436
+    assert btc["tail_ev"] == -0.0664  # at the 0.41 ask, not the 0.40 mark
+    assert btc["tail_ev_status"] == "negative"
+    assert btc["tail_ev_source"] == "ask"
+
+
+def test_skilled_bets_min_tail_ev_filters_and_drops_unknown(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    pm_dir = _seed(tmp_path)
+    monkeypatch.setenv("POLYMARKET_DATA_DIR", str(pm_dir))
+
+    client = TestClient(app)
+    # Both fixture rows carry negative EV — a floor of 0 empties the feed.
+    rows = client.get(
+        "/signals/skilled-bets?min_skill=0.9&min_resolved=20&min_tail_ev=0"
+    ).json()
+    assert rows == []
+
+    # A floor between the two at-ask EVs (−6.6¢ and −9.0¢) keeps only btc.
+    rows = client.get(
+        "/signals/skilled-bets?min_skill=0.9&min_resolved=20&min_tail_ev=-0.07"
+    ).json()
+    assert [r["condition_id"] for r in rows] == ["0xcond_btc"]
+
+
+def test_skilled_bets_category_fit_caps_tail_edge(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A proven category fit (>=5 independent events) replaces the wallet
+    edge in the EV math when it is more conservative; a thin category falls
+    back to the wallet-level score. Category matching is case-insensitive."""
+    pm_dir = _seed(tmp_path)
+    enrichment_path = pm_dir / "polymarket_wallet_enrichment.jsonl"
+    rows = [
+        json.loads(line)
+        for line in enrichment_path.read_text(encoding="utf-8").splitlines()
+        if line
+    ]
+    for row in rows:
+        if row["proxy_wallet"] == "0xalpha":
+            row["category_edges"] = [
+                # Proven but weaker than the wallet's 0.2 lifetime bound.
+                {"category": "Economics", "skill_likelihood": 0.97,
+                 "edge_mean": 0.3, "edge_lower_bound": 0.1,
+                 "independent_events": 25.0},
+                # Too thin to trust despite a huge bound.
+                {"category": "crypto", "skill_likelihood": 0.9,
+                 "edge_mean": 0.5, "edge_lower_bound": 0.4,
+                 "independent_events": 2.0},
+            ]
+    _write_jsonl(enrichment_path, rows)
+    monkeypatch.setenv("POLYMARKET_DATA_DIR", str(pm_dir))
+
+    feed = TestClient(app).get(
+        "/signals/skilled-bets?min_skill=0.9&min_resolved=20"
+    ).json()
+
+    fed = next(r for r in feed if r["condition_id"] == "0xcond_fed")
+    assert fed["category_skill_source"] == "category"
+    assert fed["category_skill_likelihood"] == 0.97
+    assert fed["category_edge_lower_bound"] == 0.1
+    assert fed["category_independent_events"] == 25.0
+    # min(lifetime 0.2, economics 0.1) → fair sigmoid(logit(0.45)+0.1) ≈ 0.4749,
+    # executed at the 0.59 ask.
+    assert fed["tail_edge_used"] == 0.1
+    assert fed["tail_fair_price"] == 0.4749
+    assert fed["tail_ev"] == -0.1151
+
+    btc = next(r for r in feed if r["condition_id"] == "0xcond_btc")
+    assert btc["category_skill_source"] == "wallet_fallback"
+    # Echoes the wallet-level score; reports the thin category's sample size.
+    assert btc["category_skill_likelihood"] == btc["skill_likelihood"]
+    assert btc["category_independent_events"] == 2.0
+    assert btc["tail_edge_used"] == 0.2  # crypto fit too thin to cap
+
+
+def test_consensus_dedupes_same_name_wallets(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Two wallets with the same display name holding the same side count as
+    ONE entity (consensus_wallets) but two accounts (consensus_accounts) —
+    one operator running several wallets can't fake confluence."""
+    pm_dir = _seed(tmp_path)
+
+    def _append(name: str, rows: list[dict[str, object]]) -> None:
+        path = pm_dir / name
+        with path.open("a", encoding="utf-8") as fh:
+            for row in rows:
+                fh.write(json.dumps(row, separators=(",", ":")) + "\n")
+
+    # Clone alpha as a second wallet with the SAME display name, holding the
+    # same fed YES side.
+    enrichment_path = pm_dir / "polymarket_wallet_enrichment.jsonl"
+    alpha = json.loads(
+        enrichment_path.read_text(encoding="utf-8").splitlines()[0]
+    )
+    clone = dict(alpha)
+    clone["proxy_wallet"] = "0xalpha2"
+    _append("polymarket_wallet_enrichment.jsonl", [clone])
+    _append(
+        "polymarket_positions.jsonl",
+        [{
+            "proxy_wallet": "0xalpha2", "condition_id": "0xcond_fed",
+            "outcome_index": 0, "outcome": "Yes",
+            "size": 100.0, "avg_price": 0.5, "current_value_usdc": 58.0,
+            "slug": "fed-50bp-sep", "title": "Fed cuts 50bp in September",
+            "event_slug": "fed-decision",
+            "current_outcome_price": 0.58, "snapshot_id": "snapshot-alpha2",
+            "snapshot_at": "2026-05-12T08:00:00Z",
+        }],
+    )
+    _append(
+        "polymarket_position_snapshots.jsonl",
+        [{"proxy_wallet": "0xalpha2", "snapshot_id": "snapshot-alpha2",
+          "complete": True}],
+    )
+    _append(
+        "polymarket_activity.jsonl",
+        [{
+            "proxy_wallet": "0xalpha2", "timestamp": 1731400000,
+            "condition_id": "0xcond_fed", "type": "TRADE", "side": "BUY",
+            "size": 100.0, "usdc_size": 50.0, "price": 0.5,
+            "outcome_index": 0, "outcome": "Yes", "slug": "fed-50bp-sep",
+            "title": "Fed cuts 50bp in September", "event_slug": "fed-decision",
+            "transaction_hash": "0xtx_clone",
+        }],
+    )
+    monkeypatch.setenv("POLYMARKET_DATA_DIR", str(pm_dir))
+
+    rows = TestClient(app).get(
+        "/signals/skilled-bets?min_skill=0.9&min_resolved=20"
+    ).json()
+    fed_rows = [r for r in rows if r["condition_id"] == "0xcond_fed"]
+    assert len(fed_rows) == 2  # both accounts still surface individually
+    for row in fed_rows:
+        assert row["consensus_wallets"] == 1   # one entity ("AlphaWhale")
+        assert row["consensus_accounts"] == 2  # two wallet addresses
+        assert row["consensus_contested"] is False
+
+
+def test_picked_side_book_math() -> None:
+    from marketsignalos_api.services.skilled_bets import (
+        _picked_side_book,
+        _PolymarketMarketRec,
+    )
+
+    rec = _PolymarketMarketRec(
+        condition_id="c", category="", slug="", event_slug="",
+        active=True, closed=False, yes_price=0.5,
+        best_bid=0.48, best_ask=0.53, fetched_at="",
+    )
+    # YES buys at the ask; NO buys at the YES bid's complement (1 − 0.48).
+    assert _picked_side_book(rec, 0) == (0.53, 5.0, "wide")
+    assert _picked_side_book(rec, 1) == (0.52, 5.0, "wide")
+
+    rec.best_ask = 0.50  # 2¢ spread → tight
+    assert _picked_side_book(rec, 0) == (0.5, 2.0, "tight")
+
+    rec.best_bid = 0.0  # one-sided book → unusable
+    assert _picked_side_book(rec, 0) == (0.0, 0.0, "unknown")
+    assert _picked_side_book(None, 0) == (0.0, 0.0, "unknown")
+
+
+def test_skilled_bets_falls_back_to_mark_without_book(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Markets without a live book keep the mark-based EV so the signal
+    still ranks — it just says so via tail_ev_source."""
+    pm_dir = _seed(tmp_path)
+    markets_path = pm_dir / "polymarket_markets.jsonl"
+    rows = [
+        json.loads(line)
+        for line in markets_path.read_text(encoding="utf-8").splitlines()
+        if line
+    ]
+    for row in rows:
+        if row["condition_id"] == "0xcond_btc":
+            row["best_bid"] = None
+            row["best_ask"] = None
+    _write_jsonl(markets_path, rows)
+    monkeypatch.setenv("POLYMARKET_DATA_DIR", str(pm_dir))
+
+    feed = TestClient(app).get(
+        "/signals/skilled-bets?min_skill=0.9&min_resolved=20"
+    ).json()
+    btc = next(r for r in feed if r["condition_id"] == "0xcond_btc")
+    assert btc["tail_ev_source"] == "mark"
+    assert btc["book_status"] == "unknown"
+    assert btc["tail_ask_price"] == 0.0
+    # fair 0.3436 vs the 0.40 mark — the pre-book number.
+    assert btc["tail_ev"] == -0.0564
+
+
+def test_tail_ev_math_statuses() -> None:
+    from marketsignalos_api.services.skilled_bets import _tail_ev
+
+    # Positive: fair well above the live price.
+    fair, ev, status = _tail_ev(0.30, 0.30, 0.2)
+    assert fair == 0.3436
+    assert ev == 0.0436
+    assert status == "positive"
+
+    # Marginal: inside the 2¢ spread/fee buffer.
+    fair, ev, status = _tail_ev(0.30, 0.33, 0.2)
+    assert ev == 0.0136
+    assert status == "marginal"
+
+    # Negative: priced past the wallet-implied fair price.
+    _, ev, status = _tail_ev(0.30, 0.40, 0.2)
+    assert ev == -0.0564
+    assert status == "negative"
+
+    # Unknown when either price is unobserved.
+    assert _tail_ev(0.0, 0.40, 0.2)[2] == "unknown"
+    assert _tail_ev(0.30, 0.0, 0.2)[2] == "unknown"
 
 
 def test_skilled_bets_excludes_low_skill_and_exited_and_unknown_entry(
@@ -282,6 +529,7 @@ def test_skilled_bets_carries_deep_link_urls_and_current_price(
 
     assert fed_row["polymarket_profile_url"] == "https://polymarket.com/profile/0xalpha"
     assert fed_row["polymarket_market_url"] == "https://polymarket.com/event/fed-decision"
+    assert fed_row["wallet_price_lead_score"] == 0.75
     assert fed_row["entry_price"] == 0.45
     # Live market has moved from 0.45 (entry) to 0.58 — caller can compute drift.
     assert fed_row["current_market_yes_price"] == 0.58

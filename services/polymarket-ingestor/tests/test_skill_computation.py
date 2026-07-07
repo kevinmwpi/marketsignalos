@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+from datetime import datetime, timezone
 
 from marketsignalos_polymarket.bayesian_skill import (
     Bet,
@@ -55,7 +56,9 @@ def _trade(
     )
 
 
-def _market(cond: str, *, closed: bool, winning_outcome: int | None) -> PolymarketMarket:
+def _market(
+    cond: str, *, closed: bool, winning_outcome: int | None, category: str = ""
+) -> PolymarketMarket:
     if winning_outcome is None:
         prices = [0.0, 0.0]  # canceled
     else:
@@ -65,7 +68,7 @@ def _market(cond: str, *, closed: bool, winning_outcome: int | None) -> Polymark
         condition_id=cond,
         slug=f"m-{cond}",
         question="?",
-        category="",
+        category=category,
         end_date="2026-01-01T00:00:00Z",
         outcomes=["Yes", "No"],
         outcome_prices=prices,
@@ -285,16 +288,90 @@ def test_stale_wallet_blocked_by_recent_events_floor() -> None:
     assert abs(fresh.recent_edge_mean - fresh.edge_mean) < 0.05
 
 
-def test_enrichment_carries_recent_fields_and_v3_version() -> None:
+def test_enrichment_carries_recent_fields_and_v4_version() -> None:
     activity = [_trade("0xc1", outcome=0, side="BUY", size=100, price=0.4, ts=1_700_000_000)]
     markets = {"0xc1": _market("0xc1", closed=True, winning_outcome=0)}
     e = compute_wallet_enrichment("0xabc", activity=activity, markets_by_condition=markets)
-    assert e.score_version == "forecast-v3"
+    assert e.score_version == "forecast-v4"
     # Single recent bet anchored at its own timestamp — zero decay.
     assert e.recent_independent_events == 1.0
     assert math.isfinite(e.recent_edge_mean)
     assert math.isfinite(e.recent_edge_lower_bound)
     assert 0.0 <= e.recent_skill_likelihood <= 1.0
+    # The fixture market has no Gamma category — nothing to decompose.
+    assert e.category_edges == []
+    # One 40¢ bet, no price history: every price-lead sub-signal is starved.
+    assert e.price_lead_score == 0.0
+    assert e.price_lead_drivers == ["insufficient price/resolution data to measure"]
+
+
+def test_enrichment_price_lead_from_post_entry_snapshots() -> None:
+    """Three independent wins whose markets each gained 10¢ within an hour
+    of entry (per the snapshot stream) → maximal drift sub-score."""
+    entry_ts = 1_700_000_000
+    activity = [
+        _trade(f"0xpl{i}", outcome=0, side="BUY", size=100, price=0.4, ts=entry_ts)
+        for i in range(3)
+    ]
+    markets = {
+        f"0xpl{i}": _market(f"0xpl{i}", closed=True, winning_outcome=0)
+        for i in range(3)
+    }
+    snapshots = [
+        PolymarketPriceSnapshot(
+            condition_id=f"0xpl{i}",
+            yes_price=0.5,
+            active=True,
+            closed=False,
+            fetched_at=datetime.fromtimestamp(
+                entry_ts + 3600, tz=timezone.utc
+            ).isoformat(),
+        )
+        for i in range(3)
+    ]
+    e = compute_wallet_enrichment(
+        "0xabc",
+        activity=activity,
+        markets_by_condition=markets,
+        price_snapshots=snapshots,
+    )
+    assert e.post_entry_drift_48h == 0.1
+    assert e.post_entry_drift_samples == 3.0
+    assert e.price_lead_score == 1.0
+    assert any("within 48h of entry" in d for d in e.price_lead_drivers)
+
+
+# ── Per-category edge decomposition ──────────────────────────────────────────
+
+def test_category_edges_separate_sharp_category_from_coin_flips() -> None:
+    """A wallet that crushes politics but coin-flips sports must show a
+    materially stronger politics fit; the thin-ish sports fit gets pulled
+    below the (politics-dominated) lifetime edge by its 50/50 record."""
+    activity: list[PolymarketActivity] = []
+    markets: dict[str, PolymarketMarket] = {}
+    for i in range(12):  # politics: 12 independent wins at 50¢
+        cond = f"0xpol{i}"
+        activity.append(_trade(cond, outcome=0, side="BUY", size=10, price=0.5, ts=2000 + i))
+        markets[cond] = _market(cond, closed=True, winning_outcome=0, category="Politics")
+    for i in range(6):  # sports: 3 wins / 3 losses at 50¢
+        cond = f"0xspt{i}"
+        activity.append(_trade(cond, outcome=0, side="BUY", size=10, price=0.5, ts=3000 + i))
+        markets[cond] = _market(
+            cond, closed=True, winning_outcome=0 if i < 3 else 1, category="Sports"
+        )
+
+    e = compute_wallet_enrichment("0xabc", activity=activity, markets_by_condition=markets)
+
+    assert [row["category"] for row in e.category_edges] == ["politics", "sports"]
+    politics = e.category_edges[0]
+    sports = e.category_edges[1]
+    assert politics["independent_events"] == 12.0
+    assert sports["independent_events"] == 6.0
+    assert politics["skill_likelihood"] > sports["skill_likelihood"]
+    assert politics["edge_mean"] > sports["edge_mean"]
+    # Partial pooling: the sports fit starts from the lifetime posterior and
+    # its 3W/3L likelihood drags it BELOW the lifetime edge estimate.
+    assert sports["edge_mean"] < e.edge_mean
 
 
 # ── rank_score ───────────────────────────────────────────────────────────────

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from typing import Any
 
 
 def _utcnow_iso() -> str:
@@ -306,6 +307,30 @@ class PolymarketWalletEnrichment:
     clv_mean: float = 0.0
     clv_lower_bound: float = 0.0   # mean − 1.645·SE (5th-percentile, normal approx)
     clv_sample_size: float = 0.0   # event-capped effective observations
+    # Per-category edge decomposition: the same Bayesian fit re-run on each
+    # Gamma category's bets with the wallet's own lifetime posterior as the
+    # prior (partial pooling — thin categories shrink back to the wallet-level
+    # estimate). One dict per category the wallet has settled bets in:
+    #   {category, skill_likelihood, edge_mean, edge_lower_bound,
+    #    independent_events}
+    # sorted by independent_events descending. Consumers should require
+    # >= CATEGORY_MIN_INDEPENDENT_EVENTS before trusting a category fit over
+    # the wallet-level score.
+    category_edges: list[dict[str, Any]] = field(default_factory=list)
+    # Price-lead footprint (see price_lead.py): does the market tend to
+    # follow this wallet's entries? Descriptive only — never gates
+    # tailability. Score is the mean of the available sub-scores; the raw
+    # sub-signal values ride along for the wallet dossier.
+    price_lead_score: float = 0.0
+    price_lead_drivers: list[str] = field(default_factory=list)
+    post_entry_drift_48h: float = 0.0      # mean picked-side move, $/share
+    post_entry_drift_samples: float = 0.0  # weighted bets with a 48h observation
+    longshot_win_rate: float = 0.0
+    longshot_implied_rate: float = 0.0
+    longshot_events: float = 0.0
+    late_entry_win_rate: float = 0.0
+    late_entry_implied_rate: float = 0.0
+    late_entry_events: float = 0.0
     # Trader-style classification (see trader_style.py): deterministic,
     # non-accusatory descriptors of HOW the wallet trades. Never gates
     # tailability — it labels operational footprint, not edge.
@@ -326,7 +351,7 @@ class PolymarketWalletEnrichment:
     economic_qualified: bool = False
     tailability_status: str = "blocked"
     tailability_reasons: list[str] = field(default_factory=list)
-    score_version: str = "forecast-v3"
+    score_version: str = "forecast-v4"
     computed_at: str = field(default_factory=_utcnow_iso)
 
 

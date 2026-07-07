@@ -36,6 +36,7 @@ import logging
 import math
 from collections import defaultdict
 from dataclasses import dataclass, replace
+from typing import Any
 
 from .bayesian_skill import (
     Bet,
@@ -56,6 +57,13 @@ from .models import (
     PolymarketWalletEnrichment,
     PolymarketWalletHydration,
 )
+from .price_lead import (
+    LeadBet,
+    PriceLead,
+    compute_price_lead,
+    parse_iso_ts,
+    unmeasured_price_lead,
+)
 from .trader_style import TraderStyle, compute_trader_style, unclassified_style
 
 log = logging.getLogger("marketsignalos.polymarket.skill")
@@ -65,6 +73,11 @@ log = logging.getLogger("marketsignalos.polymarket.skill")
 # remain tailable. Protects against tailing a wallet whose record is entirely
 # stale — the lifetime gate (ESS >= 20) can't catch that.
 MIN_RECENT_INDEPENDENT_EVENTS = 5.0
+
+# Floor for trusting a per-category edge fit over the wallet-level score.
+# Below this the category posterior is dominated by its prior (the wallet's
+# lifetime fit), so it adds no information — consumers fall back.
+CATEGORY_MIN_INDEPENDENT_EVENTS = 5.0
 
 
 # ── Position aggregation ──────────────────────────────────────────────────────
@@ -188,6 +201,53 @@ def _apply_event_weights(bets: list[Bet]) -> list[Bet]:
     """Cap each event at one likelihood vote, split across legs by capital."""
     weights = _event_capped_weights([(b.event_slug, b.cost_usdc) for b in bets])
     return [replace(bet, weight=weight) for bet, weight in zip(bets, weights)]
+
+
+# ── Per-category edge decomposition ──────────────────────────────────────────
+
+def _normalize_category(raw: str) -> str:
+    """Gamma category strings vary in case; group on a canonical form."""
+    return raw.strip().lower()
+
+
+def _category_edges(
+    bets: list[Bet], lifetime_fit: PosteriorFit
+) -> list[dict[str, Any]]:
+    """
+    Partial-pooling per-category refit: the same Bayesian edge model run on
+    each category's bets with the wallet's OWN lifetime posterior as the
+    prior. A category with plenty of data moves away from the wallet-level
+    estimate; a thin one shrinks back to it (which is exactly the fallback
+    consumers want). Bets on markets without a Gamma category are skipped —
+    they still shape the lifetime fit that anchors every category prior.
+    """
+    grouped: dict[str, list[Bet]] = defaultdict(list)
+    for bet in bets:
+        if bet.category:
+            grouped[bet.category].append(bet)
+
+    out: list[dict[str, Any]] = []
+    for category, category_bets in grouped.items():
+        fit = fit_wallet_posterior(
+            category_bets,
+            mu_prior=lifetime_fit.edge_mean,
+            # Guard against a degenerate zero-variance prior; the lifetime
+            # Laplace variance is strictly positive in practice.
+            sigma2_prior=max(lifetime_fit.edge_var, 1e-6),
+        )
+        out.append(
+            {
+                "category": category,
+                "skill_likelihood": round(fit.posterior_skill, 6),
+                "edge_mean": round(fit.edge_mean, 6),
+                "edge_lower_bound": round(fit.edge_lower_bound, 6),
+                "independent_events": round(
+                    effective_sample_size(category_bets), 4
+                ),
+            }
+        )
+    out.sort(key=lambda row: (-float(row["independent_events"]), str(row["category"])))
+    return out
 
 
 # ── Price history & closing-line value ───────────────────────────────────────
@@ -414,6 +474,7 @@ def _roll_up_wallet(
                 event_slug=pos.event_slug,
                 cost_usdc=bet_cost,
                 ts=pos.last_ts,
+                category=_normalize_category(market.category),
             )
         )
         position_sizes.append(bet_cost)
@@ -446,6 +507,36 @@ def _roll_up_wallet(
     )
 
 
+def _lead_bets_from_records(
+    records: list[_PositionRecord],
+    markets_by_condition: dict[str, PolymarketMarket],
+) -> list[LeadBet]:
+    """Reduce position records to the inputs price-lead scoring needs."""
+    out: list[LeadBet] = []
+    for rec in records:
+        market = markets_by_condition.get(rec.condition_id)
+        won: bool | None
+        if rec.status == "won":
+            won = True
+        elif rec.status == "lost":
+            won = False
+        else:
+            won = None
+        out.append(
+            LeadBet(
+                condition_id=rec.condition_id,
+                outcome_index=rec.outcome_index,
+                event_slug=rec.event_slug,
+                entry_price=rec.entry_price,
+                cost_usdc=rec.cost_usdc,
+                entry_ts=rec.last_ts,
+                won=won,
+                market_end_ts=parse_iso_ts(market.end_date) if market else 0,
+            )
+        )
+    return out
+
+
 def _enrichment_from_rollup(
     rollup: _WalletRollup,
     fit: PosteriorFit,
@@ -456,8 +547,10 @@ def _enrichment_from_rollup(
     clv_stats: tuple[float, float, float] = (0.0, 0.0, 0.0),
     hydration: PolymarketWalletHydration | None = None,
     style: TraderStyle | None = None,
+    lead: PriceLead | None = None,
 ) -> PolymarketWalletEnrichment:
     style = style or unclassified_style("style not computed")
+    lead = lead or unmeasured_price_lead("price lead not computed")
     resolved_trades = rollup.wins + rollup.losses
     win_rate = rollup.wins / resolved_trades if resolved_trades > 0 else 0.0
     avg_size = (
@@ -555,6 +648,17 @@ def _enrichment_from_rollup(
         recent_edge_mean=round(recent_fit.edge_mean, 6),
         recent_edge_lower_bound=round(recent_fit.edge_lower_bound, 6),
         recent_independent_events=round(recent_ess, 4),
+        category_edges=_category_edges(rollup.bets, fit),
+        price_lead_score=lead.price_lead_score,
+        price_lead_drivers=list(lead.drivers),
+        post_entry_drift_48h=lead.post_entry_drift_48h,
+        post_entry_drift_samples=lead.post_entry_drift_samples,
+        longshot_win_rate=lead.longshot_win_rate,
+        longshot_implied_rate=lead.longshot_implied_rate,
+        longshot_events=lead.longshot_events,
+        late_entry_win_rate=lead.late_entry_win_rate,
+        late_entry_implied_rate=lead.late_entry_implied_rate,
+        late_entry_events=lead.late_entry_events,
         clv_mean=round(clv_stats[0], 6),
         clv_lower_bound=round(clv_stats[1], 6),
         clv_sample_size=round(clv_stats[2], 4),
@@ -699,6 +803,9 @@ def compute_wallet_enrichment(
     style = compute_trader_style(
         activity, categories_by_condition=_categories_index(markets_by_condition)
     )
+    lead = compute_price_lead(
+        _lead_bets_from_records(rollup.records, markets_by_condition), history
+    )
     return _enrichment_from_rollup(
         rollup,
         fit,
@@ -708,6 +815,7 @@ def compute_wallet_enrichment(
         clv_stats=clv_stats,
         hydration=hydration,
         style=style,
+        lead=lead,
     )
 
 
@@ -794,6 +902,9 @@ def compute_enrichment_outputs(
             by_wallet.get(rollup.wallet, []),
             categories_by_condition=categories_by_condition,
         )
+        lead = compute_price_lead(
+            _lead_bets_from_records(rollup.records, markets_by_condition), history
+        )
         out.append(
             _enrichment_from_rollup(
                 rollup,
@@ -804,6 +915,7 @@ def compute_enrichment_outputs(
                 clv_stats=clv_stats,
                 hydration=hydration,
                 style=style,
+                lead=lead,
             )
         )
         all_bets.extend(

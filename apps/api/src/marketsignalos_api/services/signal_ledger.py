@@ -60,6 +60,22 @@ class SignalLedgerRow:
     bought_at: int              # unix seconds of the wallet's latest BUY
     recorded_at: str            # ISO timestamp the ledger recorded the signal
 
+    # Feed context frozen at record time so the summary can slice performance
+    # by signal quality dimensions. Added after the first ledger rows shipped;
+    # older rows lack these keys and readers bucket them as "unknown".
+    category: str = ""
+    remaining_edge_status: str = "unknown"
+    move_captured_pct: float = 0.0
+    conviction: str = "unknown"
+    consensus_wallets: int = 1
+    wallet_archetype: str = "unclassified"
+    tail_fair_price: float = 0.0
+    tail_ev: float = 0.0
+    tail_ev_status: str = "unknown"
+    tail_ev_source: str = "mark"
+    spread_cents: float = 0.0
+    book_status: str = "unknown"
+
     # Settlement.
     status: str = "open"        # open | won | lost | void
     settled_at: str = ""
@@ -105,16 +121,8 @@ def _row_key(row: dict[str, Any]) -> tuple[str, str, int]:
     )
 
 
-def _load_resolved_outcomes() -> dict[str, int | None]:
-    """
-    condition_id -> winning outcome_index for resolved markets, or None for
-    markets that closed without a single >=0.99 winner (canceled/ambiguous).
-    Unresolved (still active / not closed) markets are absent entirely.
-
-    Mirrors the strict settlement rule in the ingestor's skill computation:
-    live markets trade at 99c all the time, so price alone is never evidence
-    of resolution — the market must also be closed and inactive in Gamma.
-    """
+def _load_latest_markets() -> dict[str, dict[str, Any]]:
+    """condition_id -> the newest Gamma market row we have on file."""
     latest: dict[str, dict[str, Any]] = {}
     for row in _read_rows(polymarket_markets_path()):
         cond = str(row.get("condition_id", ""))
@@ -125,7 +133,19 @@ def _load_resolved_outcomes() -> dict[str, int | None]:
             existing.get("fetched_at", "")
         ):
             latest[cond] = row
+    return latest
 
+
+def _resolved_outcomes(latest: dict[str, dict[str, Any]]) -> dict[str, int | None]:
+    """
+    condition_id -> winning outcome_index for resolved markets, or None for
+    markets that closed without a single >=0.99 winner (canceled/ambiguous).
+    Unresolved (still active / not closed) markets are absent entirely.
+
+    Mirrors the strict settlement rule in the ingestor's skill computation:
+    live markets trade at 99c all the time, so price alone is never evidence
+    of resolution — the market must also be closed and inactive in Gamma.
+    """
     out: dict[str, int | None] = {}
     for cond, row in latest.items():
         if not row.get("closed") or row.get("active"):
@@ -140,6 +160,19 @@ def _load_resolved_outcomes() -> dict[str, int | None]:
         ]
         out[cond] = winners[0] if len(winners) == 1 else None
     return out
+
+
+def _live_outcome_price(row: dict[str, Any] | None, outcome_index: int) -> float:
+    """Latest observed price of one outcome, 0.0 when unavailable."""
+    if row is None:
+        return 0.0
+    prices = row.get("outcome_prices") or []
+    if not isinstance(prices, list) or not 0 <= outcome_index < len(prices):
+        return 0.0
+    price = prices[outcome_index]
+    if not isinstance(price, (int, float)):
+        return 0.0
+    return float(price)
 
 
 def _tail_roi(*, won: bool, price: float) -> float | None:
@@ -188,12 +221,24 @@ def update_signal_ledger() -> dict[str, int]:
                     surface_kalshi_price=signal.kalshi_yes_price,
                     bought_at=signal.bought_at,
                     recorded_at=_utcnow_iso(),
+                    category=signal.category,
+                    remaining_edge_status=signal.remaining_edge_status,
+                    move_captured_pct=signal.move_captured_pct,
+                    conviction=signal.conviction,
+                    consensus_wallets=signal.consensus_wallets,
+                    wallet_archetype=signal.wallet_archetype,
+                    tail_fair_price=signal.tail_fair_price,
+                    tail_ev=signal.tail_ev,
+                    tail_ev_status=signal.tail_ev_status,
+                    tail_ev_source=signal.tail_ev_source,
+                    spread_cents=signal.spread_cents,
+                    book_status=signal.book_status,
                 )
             )
         )
 
     # 2. Settle.
-    resolved = _load_resolved_outcomes()
+    resolved = _resolved_outcomes(_load_latest_markets())
     settled_won = settled_lost = settled_void = 0
     for row in rows:
         if str(row.get("status", "open")) != "open":
@@ -248,19 +293,112 @@ def list_signal_ledger(
     return rows[:limit]
 
 
+# Dimensions the summary slices settled performance by. Every value was
+# frozen on the row at record time; rows recorded before a dimension existed
+# fall into the "unknown" bucket.
+_BREAKDOWN_DIMENSIONS = (
+    "remaining_edge_status",
+    "conviction",
+    "tradability",
+    "category",
+    "wallet_archetype",
+    "consensus",
+    "book_status",
+)
+
+
+def _breakdown_bucket(row: dict[str, Any], dimension: str) -> str:
+    if dimension == "consensus":
+        n = int(row.get("consensus_wallets", 0) or 0)
+        if n <= 0:
+            return "unknown"
+        if n == 1:
+            return "1 wallet"
+        if n == 2:
+            return "2 wallets"
+        return "3+ wallets"
+    value = str(row.get(dimension, "") or "")
+    return value if value else "unknown"
+
+
+def _slice_stats(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    """
+    Performance of one slice of ledger rows. Hit rate alone is meaningless in
+    prediction markets (winning 60% of 70c bets is losing), so the slice also
+    carries the market-implied win probability at surface time and the
+    calibration edge against it:
+
+        avg_market_implied_prob  mean surface price of settled, priced rows
+        hit_rate_priced          realized win rate on those same rows
+        edge_vs_market           hit_rate_priced − avg_market_implied_prob
+                                 (positive → the slice beat the odds the
+                                 market quoted when the signal surfaced)
+    """
+    won = lost = 0
+    surface_rois: list[float] = []
+    priced_implied: list[float] = []
+    priced_wins = 0
+    for row in rows:
+        status = str(row.get("status", "open"))
+        if status not in ("won", "lost"):
+            continue
+        row_won = status == "won"
+        if row_won:
+            won += 1
+        else:
+            lost += 1
+        roi_surface = row.get("roi_at_surface")
+        if isinstance(roi_surface, (int, float)):
+            surface_rois.append(float(roi_surface))
+        surface = float(row.get("surface_price", 0.0) or 0.0)
+        if 0.0 < surface < 1.0:
+            priced_implied.append(surface)
+            if row_won:
+                priced_wins += 1
+
+    settled = won + lost
+    priced = len(priced_implied)
+    avg_implied = sum(priced_implied) / priced if priced else 0.0
+    hit_priced = priced_wins / priced if priced else 0.0
+    return {
+        "signals": len(rows),
+        "won": won,
+        "lost": lost,
+        "hit_rate": round(won / settled, 4) if settled else 0.0,
+        "avg_roi_at_surface": (
+            round(sum(surface_rois) / len(surface_rois), 4) if surface_rois else 0.0
+        ),
+        "settled_priced": priced,
+        "avg_market_implied_prob": round(avg_implied, 4),
+        "hit_rate_priced": round(hit_priced, 4),
+        "edge_vs_market": round(hit_priced - avg_implied, 4) if priced else 0.0,
+    }
+
+
 def summarize_signal_ledger() -> dict[str, Any]:
     """
     Headline answer to "does tailing the feed work?": hit rate and mean
     per-signal ROI under a flat $1-per-signal staking model, scored at both
     surface price and wallet entry price. Void rows are excluded from ROI.
+
+    Beyond the flat totals the summary carries:
+      calibration          did settled signals win more often than their
+                           surface price implied? (the market-baseline test)
+      open_mark_to_market  unrealized ROI of open rows at the latest observed
+                           price, so slow-resolving categories still report
+      breakdowns           the same settled stats sliced per quality
+                           dimension frozen on each row at record time
     """
     rows = _read_rows(signal_ledger_path())
     counts = {"open": 0, "won": 0, "lost": 0, "void": 0}
     surface_rois: list[float] = []
     entry_rois: list[float] = []
+    open_rows: list[dict[str, Any]] = []
     for row in rows:
         status = str(row.get("status", "open"))
         counts[status] = counts.get(status, 0) + 1
+        if status == "open":
+            open_rows.append(row)
         if status not in ("won", "lost"):
             continue
         roi_surface = row.get("roi_at_surface")
@@ -269,6 +407,34 @@ def summarize_signal_ledger() -> dict[str, Any]:
         roi_entry = row.get("roi_at_entry")
         if isinstance(roi_entry, (int, float)):
             entry_rois.append(float(roi_entry))
+
+    # Mark open rows to the latest observed price: $1 staked at the surface
+    # price is now worth live/surface, so unrealized ROI = live/surface − 1.
+    unrealized: list[float] = []
+    if open_rows:
+        latest_markets = _load_latest_markets()
+        for row in open_rows:
+            surface = float(row.get("surface_price", 0.0) or 0.0)
+            if not 0.0 < surface < 1.0:
+                continue
+            live = _live_outcome_price(
+                latest_markets.get(str(row.get("condition_id", ""))),
+                int(row.get("outcome_index", 0) or 0),
+            )
+            if not 0.0 < live < 1.0:
+                continue
+            unrealized.append((live - surface) / surface)
+
+    overall = _slice_stats(rows)
+    by_dimension: dict[str, dict[str, dict[str, Any]]] = {}
+    for dimension in _BREAKDOWN_DIMENSIONS:
+        grouped: dict[str, list[dict[str, Any]]] = {}
+        for row in rows:
+            grouped.setdefault(_breakdown_bucket(row, dimension), []).append(row)
+        by_dimension[dimension] = {
+            bucket: _slice_stats(bucket_rows)
+            for bucket, bucket_rows in sorted(grouped.items())
+        }
 
     settled = counts["won"] + counts["lost"]
     return {
@@ -288,4 +454,18 @@ def summarize_signal_ledger() -> dict[str, Any]:
             round(sum(entry_rois) / len(entry_rois), 4) if entry_rois else 0.0
         ),
         "total_roi_at_entry": round(sum(entry_rois), 4),
+        "calibration": {
+            "settled_priced": overall["settled_priced"],
+            "avg_market_implied_prob": overall["avg_market_implied_prob"],
+            "hit_rate_priced": overall["hit_rate_priced"],
+            "edge_vs_market": overall["edge_vs_market"],
+        },
+        "open_mark_to_market": {
+            "marked": len(unrealized),
+            "avg_unrealized_roi_at_surface": (
+                round(sum(unrealized) / len(unrealized), 4) if unrealized else 0.0
+            ),
+            "total_unrealized_roi_at_surface": round(sum(unrealized), 4),
+        },
+        "breakdowns": by_dimension,
     }

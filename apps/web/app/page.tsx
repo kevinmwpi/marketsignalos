@@ -4,6 +4,7 @@ import ExitSignalsPanel, { type ExitSignal } from "./components/ExitSignalsPanel
 import IngestButton from "./components/IngestButton";
 import PolymarketLeaderboardPanel, { type PolymarketWalletSkill } from "./components/PolymarketLeaderboardPanel";
 import SkilledBetsPanel, { type SkilledBet } from "./components/SkilledBetsPanel";
+import WatchlistForm from "./components/WatchlistForm";
 
 type ApiResult<T> = {
   data: T | null;
@@ -134,6 +135,7 @@ export default async function Home() {
             </span>
           </div>
           <div className="flex items-center gap-4">
+            <WatchlistForm />
             <IngestButton mode="shallow" />
             <IngestButton mode="deep" />
             <div className="flex items-center gap-2">

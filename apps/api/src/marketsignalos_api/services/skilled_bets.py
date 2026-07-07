@@ -27,7 +27,7 @@ import math
 import time
 from collections import Counter, defaultdict
 from collections.abc import Iterator
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -142,11 +142,18 @@ class SkilledBetSignal:
     remaining_edge_status: str
 
     # Smart-money confluence on this market.
-    #   consensus_wallets    distinct skilled wallets holding this same
+    #   consensus_wallets    distinct skilled ENTITIES holding this same
     #                        (condition, outcome) side — including this one.
+    #                        Wallets sharing the same non-blank display name
+    #                        are collapsed into one entity (cheap cluster
+    #                        heuristic) so one operator running several
+    #                        wallets can't fake confluence.
+    #   consensus_accounts   raw distinct wallet addresses on this side,
+    #                        before entity clustering.
     #   consensus_contested  True when skilled wallets hold BOTH sides of
     #                        this market.
     consensus_wallets: int = 1
+    consensus_accounts: int = 1
     consensus_contested: bool = False
 
     # Position-sizing conviction: skilled traders size up when conviction is
@@ -168,6 +175,51 @@ class SkilledBetSignal:
     # "discretionary" are human-paced. Never gates inclusion in the feed.
     wallet_archetype: str = "unclassified"
     wallet_automation_score: float = 0.0
+
+    # Price-lead footprint (from enrichment; see ingestor price_lead.py):
+    # 0..1 score of whether the market tends to follow this wallet's entries
+    # (post-entry drift, longshot conversion, late-entry accuracy).
+    # Descriptive only — never gates inclusion.
+    wallet_price_lead_score: float = 0.0
+
+    # Tail expected value at TODAY's executable price (see the tail-EV
+    # section above).
+    #   tail_edge_used   conservative log-odds edge applied (lifetime lower
+    #                    bound, capped by the recent-form bound when available
+    #                    and by the entry-category bound when that category
+    #                    has enough independent events)
+    #   tail_fair_price  sigmoid(logit(entry) + tail_edge_used); 0 when the
+    #                    entry price is unusable
+    #   tail_ev          tail_fair_price − executable price, $/share; 0 unknown.
+    #                    Computed at the picked side's ASK when the book is
+    #                    known (tail_ev_source="ask"), else at the mark.
+    #   tail_ev_status   "positive" | "marginal" | "negative" | "unknown"
+    tail_edge_used: float = 0.0
+    tail_fair_price: float = 0.0
+    tail_ev: float = 0.0
+    tail_ev_status: str = "unknown"
+    tail_ev_source: str = "mark"  # "ask" | "mark"
+
+    # Order-book execution reality for the picked side, from the latest
+    # Gamma fetch. best_bid/best_ask are the YES-side book top; buying the
+    # NO side executes at the YES bid's complement (1 − bid). A "wide" book
+    # (> 3¢ spread) means the displayed mark overstates what a tailing user
+    # can actually get.
+    best_bid: float = 0.0
+    best_ask: float = 0.0
+    spread_cents: float = 0.0
+    book_status: str = "unknown"  # "tight" | "wide" | "unknown"
+    tail_ask_price: float = 0.0   # executable picked-side price; 0 unknown
+
+    # Per-category skill for THIS entry's category (from the enrichment
+    # category_edges decomposition). When the category has fewer than 5
+    # independent settled events — or the market has no category — the
+    # wallet-level score is echoed and the source says so.
+    #   category_skill_source  "category" | "wallet_fallback"
+    category_skill_likelihood: float = 0.0
+    category_edge_lower_bound: float = 0.0
+    category_independent_events: float = 0.0
+    category_skill_source: str = "wallet_fallback"
 
 
 # ── Remaining-edge classification ─────────────────────────────────────────────
@@ -201,6 +253,113 @@ def _remaining_edge(entry_price: float, current_price: float) -> tuple[float, st
     else:
         status = "late"
     return round(captured, 4), status
+
+
+# ── Tail expected value ───────────────────────────────────────────────────────
+#
+# The Bayesian skill model (ingestor's bayesian_skill.py) estimates a per-wallet
+# log-odds edge: the wallet's picked outcomes win at rate
+# sigmoid(logit(entry_price) + edge). Applying the CONSERVATIVE edge bound to
+# the wallet's entry-implied probability gives an explainable fair-price
+# estimate for the picked outcome; subtracting the live price gives the
+# expected value — in probability units, i.e. dollars per share — of tailing
+# at TODAY's price rather than the wallet's. This is the number that answers
+# "does buying now still beat the odds the market is quoting?".
+
+# EV inside this buffer is within typical spread + fees — call it marginal
+# rather than positive so the feed doesn't oversell paper-thin edges.
+_TAIL_EV_MARGINAL_BUFFER = 0.02
+# Mirrors the ingestor's MIN_RECENT_INDEPENDENT_EVENTS: below this the recency
+# fit mostly echoes the population prior, so it can't tighten the bound.
+_MIN_RECENT_EVENTS_FOR_TAIL_EDGE = 5.0
+# Mirrors the ingestor's CATEGORY_MIN_INDEPENDENT_EVENTS: below this a
+# category fit is dominated by its prior (the wallet's lifetime posterior)
+# and adds nothing over the wallet-level score.
+_MIN_CATEGORY_EVENTS_FOR_TAIL_EDGE = 5.0
+_PRICE_EPS = 1e-3
+
+
+def _safe_logit(p: float) -> float:
+    clamped = min(max(p, _PRICE_EPS), 1.0 - _PRICE_EPS)
+    return math.log(clamped / (1.0 - clamped))
+
+
+def _sigmoid(x: float) -> float:
+    if x >= 0:
+        return 1.0 / (1.0 + math.exp(-x))
+    ex = math.exp(x)
+    return ex / (1.0 + ex)
+
+
+def wallet_cluster_key(proxy_wallet: str, wallet_name: str) -> str:
+    """Cheap entity-cluster heuristic for consensus dedupe: wallets sharing
+    the same non-blank display name count as ONE entity; unnamed wallets are
+    their own cluster. Deliberately labeled a heuristic — an on-chain
+    funding-source clusterer (shared first funder) is the rigorous upgrade
+    and needs a data source this pipeline doesn't ingest yet."""
+    name = wallet_name.strip().lower()
+    return f"name:{name}" if name else f"wallet:{proxy_wallet.lower()}"
+
+
+def _tail_edge_for(wallet: _SkilledWallet) -> float:
+    """Conservative log-odds edge for EV: the lifetime 5th-percentile bound,
+    further capped by the recency-weighted bound when the wallet has enough
+    recent independent events for that fit to mean anything."""
+    edge = wallet.edge_lower_bound
+    if wallet.recent_independent_events >= _MIN_RECENT_EVENTS_FOR_TAIL_EDGE:
+        edge = min(edge, wallet.recent_edge_lower_bound)
+    return edge
+
+
+# A spread wider than this (in cents) flags the book as "wide": the mark
+# meaningfully overstates what a tailing user can execute at.
+_WIDE_SPREAD_CENTS = 3.0
+
+
+def _picked_side_book(
+    market_rec: _PolymarketMarketRec | None, outcome_index: int
+) -> tuple[float, float, str]:
+    """(executable_ask, spread_cents, book_status) for the picked outcome.
+
+    The Gamma book top is YES-side; buying the NO side executes at the YES
+    bid's complement (1 − bid). Returns zeros/"unknown" when either side of
+    the book is missing or inverted.
+    """
+    if market_rec is None:
+        return 0.0, 0.0, "unknown"
+    bid, ask = market_rec.best_bid, market_rec.best_ask
+    if not (0.0 < bid < 1.0 and 0.0 < ask < 1.0 and ask >= bid):
+        return 0.0, 0.0, "unknown"
+    spread_cents = round((ask - bid) * 100.0, 2)
+    picked_ask = ask if outcome_index == 0 else 1.0 - bid
+    status = "wide" if spread_cents > _WIDE_SPREAD_CENTS else "tight"
+    return round(picked_ask, 4), spread_cents, status
+
+
+def _tail_ev(
+    entry_price: float, current_price: float, tail_edge: float
+) -> tuple[float, float, str]:
+    """(fair_price, ev, status) of tailing this bet at current_price.
+
+    fair_price = sigmoid(logit(entry_price) + tail_edge) — the win probability
+    the wallet's conservative edge implies for the picked outcome. ev is
+    fair_price − current_price. Status is "unknown" when either price is
+    unobserved, else "positive" / "marginal" (inside the spread buffer) /
+    "negative".
+    """
+    if entry_price <= 0.0 or entry_price >= 1.0:
+        return 0.0, 0.0, "unknown"
+    fair = _sigmoid(_safe_logit(entry_price) + tail_edge)
+    if current_price <= 0.0 or current_price >= 1.0:
+        return round(fair, 4), 0.0, "unknown"
+    ev = fair - current_price
+    if ev >= _TAIL_EV_MARGINAL_BUFFER:
+        status = "positive"
+    elif ev > 0.0:
+        status = "marginal"
+    else:
+        status = "negative"
+    return round(fair, 4), round(ev, 4), status
 
 
 # ── Internal helpers ──────────────────────────────────────────────────────────
@@ -277,6 +436,11 @@ class _SkilledWallet:
     clv_sample_size: float = 0.0
     style_archetype: str = "unclassified"
     automation_score: float = 0.0
+    recent_edge_lower_bound: float = 0.0
+    recent_independent_events: float = 0.0
+    price_lead_score: float = 0.0
+    # normalized category -> (skill_likelihood, edge_lower_bound, independent_events)
+    category_edges: dict[str, tuple[float, float, float]] = field(default_factory=dict)
 
 
 @dataclass(slots=True)
@@ -304,6 +468,8 @@ class _PolymarketMarketRec:
     active: bool
     closed: bool
     yes_price: float  # last_trade_price or mid; 0 if unknown
+    best_bid: float   # YES-side book top; 0 if unknown
+    best_ask: float
     fetched_at: str
 
 
@@ -317,10 +483,24 @@ def _load_skilled_wallets(
             continue
         skill = _f(row.get("skill_likelihood"))
         resolved = _i(row.get("resolved_trades"))
+        category_edges: dict[str, tuple[float, float, float]] = {}
+        for edge_row in row.get("category_edges") or []:
+            if not isinstance(edge_row, dict):
+                continue
+            category_key = str(edge_row.get("category", "") or "").strip().lower()
+            if not category_key:
+                continue
+            category_edges[category_key] = (
+                _f(edge_row.get("skill_likelihood")),
+                _f(edge_row.get("edge_lower_bound")),
+                _f(edge_row.get("independent_events")),
+            )
         if (
-            # v2 rows (no recency fit) stay eligible so the feed survives a
-            # deploy until the next enrichment pass rewrites the file as v3.
-            str(row.get("score_version", "")) not in ("forecast-v2", "forecast-v3")
+            # Older rows (no recency fit / no category edges) stay eligible so
+            # the feed survives a deploy until the next enrichment pass
+            # rewrites the file at the current version.
+            str(row.get("score_version", ""))
+            not in ("forecast-v2", "forecast-v3", "forecast-v4")
             or str(row.get("data_quality_status", "untrusted")) != "trusted"
             or str(row.get("tailability_status", "blocked")) != "tailable"
             or skill < min_skill
@@ -333,8 +513,12 @@ def _load_skilled_wallets(
             skill_likelihood=skill,
             resolved_trades=resolved,
             win_rate=_f(row.get("win_rate")),
-            edge_mean=_f(row.get("edge_mean")),
-            edge_lower_bound=_f(row.get("edge_lower_bound")),
+            # forecast_* duplicates edge_* in current enrichment rows; the
+            # fallback covers older rows that only carry the forecast_ names.
+            edge_mean=_f(row.get("edge_mean", row.get("forecast_edge_mean"))),
+            edge_lower_bound=_f(
+                row.get("edge_lower_bound", row.get("forecast_edge_lower_bound"))
+            ),
             independent_settled_events=_f(row.get("independent_settled_events")),
             all_time_pnl_usdc=_f(row.get("all_time_pnl_usdc")),
             all_time_volume_usdc=_f(row.get("all_time_volume_usdc")),
@@ -357,6 +541,10 @@ def _load_skilled_wallets(
             clv_sample_size=_f(row.get("clv_sample_size")),
             style_archetype=str(row.get("style_archetype", "") or "unclassified"),
             automation_score=_f(row.get("automation_score")),
+            recent_edge_lower_bound=_f(row.get("recent_edge_lower_bound")),
+            recent_independent_events=_f(row.get("recent_independent_events")),
+            price_lead_score=_f(row.get("price_lead_score")),
+            category_edges=category_edges,
         )
     return out
 
@@ -416,12 +604,12 @@ def _load_polymarket_markets() -> dict[str, _PolymarketMarketRec]:
         if not cond:
             continue
         last = row.get("last_trade_price")
-        bid = row.get("best_bid")
-        ask = row.get("best_ask")
+        bid = _f(row.get("best_bid"))
+        ask = _f(row.get("best_ask"))
         if last is not None:
             price = _f(last)
-        elif bid is not None and ask is not None:
-            price = (_f(bid) + _f(ask)) / 2.0
+        elif bid > 0.0 and ask > 0.0:
+            price = (bid + ask) / 2.0
         else:
             price = 0.0
         out[cond] = _PolymarketMarketRec(
@@ -432,6 +620,8 @@ def _load_polymarket_markets() -> dict[str, _PolymarketMarketRec]:
             active=bool(row.get("active", False)),
             closed=bool(row.get("closed", False)),
             yes_price=price,
+            best_bid=bid,
+            best_ask=ask,
             fetched_at=str(row.get("fetched_at", "") or ""),
         )
     return out
@@ -743,9 +933,10 @@ def compute_skilled_bets(
     Returns recent BUY entries from skilled wallets that are STILL HELD.
 
     Ordering: remaining-edge rank first (fresh/discounted entries before
-    partially-priced ones, fully-converged "late" signals last), then entry
-    timestamp (newest first) within each rank. When `max_move_captured` < 1,
-    signals whose move_captured_pct meets or exceeds it are dropped entirely.
+    partially-priced ones, fully-converged "late" signals last), then
+    high-conviction entries, then tail EV at today's price (best first), then
+    entry timestamp (newest first). When `max_move_captured` < 1, signals
+    whose move_captured_pct meets or exceeds it are dropped entirely.
     Memoized on input-file fingerprint + params; see the caching note above.
     """
     cached = _compute_skilled_bets_cached(
@@ -855,6 +1046,39 @@ def _compute_skilled_bets(
         move_captured, remaining_edge_status = _remaining_edge(
             entry_price, current_outcome
         )
+        # Per-category skill for this entry's own category. A proven category
+        # fit caps the tail edge (a politics sharp's sports bets get priced
+        # at their sports edge, not their overall one); a thin or missing
+        # category falls back to the wallet-level score.
+        category_raw = market_rec.category if market_rec else ""
+        category_fit = wallet.category_edges.get(category_raw.strip().lower())
+        tail_edge = _tail_edge_for(wallet)
+        if (
+            category_fit is not None
+            and category_fit[2] >= _MIN_CATEGORY_EVENTS_FOR_TAIL_EDGE
+        ):
+            category_skill, category_lb, category_events = category_fit
+            category_source = "category"
+            tail_edge = min(tail_edge, category_lb)
+        else:
+            category_skill = wallet.skill_likelihood
+            category_lb = wallet.edge_lower_bound
+            category_events = category_fit[2] if category_fit is not None else 0.0
+            category_source = "wallet_fallback"
+        # EV is computed against what a tailing user can actually execute at:
+        # the picked side's ask when the book is known, else the mark.
+        tail_ask_price, spread_cents, book_status = _picked_side_book(
+            market_rec, pos.outcome_index
+        )
+        if tail_ask_price > 0.0:
+            tail_exec_price = tail_ask_price
+            tail_ev_source = "ask"
+        else:
+            tail_exec_price = current_outcome
+            tail_ev_source = "mark"
+        tail_fair_price, tail_ev, tail_ev_status = _tail_ev(
+            entry_price, tail_exec_price, tail_edge
+        )
         entry_usdc = _f(buy.get("usdc_size"))
         conviction_z = (
             stats.zscore(entry_usdc)
@@ -943,15 +1167,34 @@ def _compute_skilled_bets(
                 clv_sample_size=round(wallet.clv_sample_size, 4),
                 wallet_archetype=wallet.style_archetype,
                 wallet_automation_score=round(wallet.automation_score, 4),
+                wallet_price_lead_score=round(wallet.price_lead_score, 4),
+                tail_edge_used=round(tail_edge, 4),
+                tail_fair_price=tail_fair_price,
+                tail_ev=tail_ev,
+                tail_ev_status=tail_ev_status,
+                tail_ev_source=tail_ev_source,
+                best_bid=round(market_rec.best_bid, 4) if market_rec else 0.0,
+                best_ask=round(market_rec.best_ask, 4) if market_rec else 0.0,
+                spread_cents=spread_cents,
+                book_status=book_status,
+                tail_ask_price=tail_ask_price,
+                category_skill_likelihood=round(category_skill, 6),
+                category_edge_lower_bound=round(category_lb, 4),
+                category_independent_events=round(category_events, 4),
+                category_skill_source=category_source,
             )
         )
 
-    # Consensus maps over ALL candidates: distinct skilled wallets per
-    # (condition, outcome) side, and which sides of each market are held.
+    # Consensus maps over ALL candidates: distinct skilled entities (and raw
+    # accounts) per (condition, outcome) side, and which sides of each market
+    # are held.
     wallets_by_side: dict[tuple[str, int], set[str]] = defaultdict(set)
+    clusters_by_side: dict[tuple[str, int], set[str]] = defaultdict(set)
     for signal in candidates:
-        wallets_by_side[(signal.condition_id, signal.outcome_index)].add(
-            signal.proxy_wallet
+        side = (signal.condition_id, signal.outcome_index)
+        wallets_by_side[side].add(signal.proxy_wallet)
+        clusters_by_side[side].add(
+            wallet_cluster_key(signal.proxy_wallet, signal.wallet_name)
         )
     sides_by_cond: dict[str, set[int]] = defaultdict(set)
     for cond, outcome_idx in wallets_by_side:
@@ -972,19 +1215,22 @@ def _compute_skilled_bets(
             continue
         if not include_untradable and not is_actionable(signal.tradability):
             continue
-        signal.consensus_wallets = len(
-            wallets_by_side[(signal.condition_id, signal.outcome_index)]
-        )
+        side = (signal.condition_id, signal.outcome_index)
+        signal.consensus_wallets = len(clusters_by_side[side])
+        signal.consensus_accounts = len(wallets_by_side[side])
         signal.consensus_contested = len(sides_by_cond[signal.condition_id]) > 1
         out.append(signal)
 
     # Down-rank converged signals: a stale entry is worse than no entry for a
     # tailing user. Within each remaining-edge rank, unusually-large
-    # ("high conviction") entries first, then newest BUY.
+    # ("high conviction") entries first, then best tail EV at today's price
+    # (unknown-EV rows sort as 0 — between positive and negative), then
+    # newest BUY.
     out.sort(
         key=lambda s: (
             _REMAINING_EDGE_SORT_RANK.get(s.remaining_edge_status, 1),
             0 if s.conviction == "high" else 1,
+            -s.tail_ev,
             -s.bought_at,
         )
     )

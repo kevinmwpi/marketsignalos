@@ -11,7 +11,8 @@ router = APIRouter(prefix="/signals", tags=["signals"])
 class ConsensusSideOut(BaseModel):
     outcome_index: int
     outcome: str
-    wallets: int
+    wallets: int   # distinct entities (name-clustered)
+    accounts: int  # raw wallet addresses before clustering
     wallet_names: list[str] = Field(default_factory=list)
     total_position_value_usdc: float
     avg_entry_price: float
@@ -76,6 +77,7 @@ def market_consensus(
                     outcome_index=side.outcome_index,
                     outcome=side.outcome,
                     wallets=side.wallets,
+                    accounts=side.accounts,
                     wallet_names=side.wallet_names,
                     total_position_value_usdc=side.total_position_value_usdc,
                     avg_entry_price=side.avg_entry_price,

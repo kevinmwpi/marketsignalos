@@ -99,6 +99,10 @@ def notifications_state_path() -> Path:
     return _polymarket_dir() / "notifications_state.json"
 
 
+def fastlane_state_path() -> Path:
+    return _polymarket_dir() / "fastlane_state.json"
+
+
 def polymarket_wallet_bets_path() -> Path:
     return _polymarket_dir() / "polymarket_wallet_bets.jsonl"
 
