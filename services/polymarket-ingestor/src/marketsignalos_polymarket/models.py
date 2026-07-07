@@ -317,6 +317,20 @@ class PolymarketWalletEnrichment:
     # >= CATEGORY_MIN_INDEPENDENT_EVENTS before trusting a category fit over
     # the wallet-level score.
     category_edges: list[dict[str, Any]] = field(default_factory=list)
+    # Price-lead footprint (see price_lead.py): does the market tend to
+    # follow this wallet's entries? Descriptive only — never gates
+    # tailability. Score is the mean of the available sub-scores; the raw
+    # sub-signal values ride along for the wallet dossier.
+    price_lead_score: float = 0.0
+    price_lead_drivers: list[str] = field(default_factory=list)
+    post_entry_drift_48h: float = 0.0      # mean picked-side move, $/share
+    post_entry_drift_samples: float = 0.0  # weighted bets with a 48h observation
+    longshot_win_rate: float = 0.0
+    longshot_implied_rate: float = 0.0
+    longshot_events: float = 0.0
+    late_entry_win_rate: float = 0.0
+    late_entry_implied_rate: float = 0.0
+    late_entry_events: float = 0.0
     # Trader-style classification (see trader_style.py): deterministic,
     # non-accusatory descriptors of HOW the wallet trades. Never gates
     # tailability — it labels operational footprint, not edge.

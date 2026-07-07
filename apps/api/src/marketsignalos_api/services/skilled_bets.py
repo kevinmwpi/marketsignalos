@@ -169,6 +169,12 @@ class SkilledBetSignal:
     wallet_archetype: str = "unclassified"
     wallet_automation_score: float = 0.0
 
+    # Price-lead footprint (from enrichment; see ingestor price_lead.py):
+    # 0..1 score of whether the market tends to follow this wallet's entries
+    # (post-entry drift, longshot conversion, late-entry accuracy).
+    # Descriptive only — never gates inclusion.
+    wallet_price_lead_score: float = 0.0
+
     # Tail expected value at TODAY's price (see the tail-EV section above).
     #   tail_edge_used   conservative log-odds edge applied (lifetime lower
     #                    bound, capped by the recent-form bound when available
@@ -375,6 +381,7 @@ class _SkilledWallet:
     automation_score: float = 0.0
     recent_edge_lower_bound: float = 0.0
     recent_independent_events: float = 0.0
+    price_lead_score: float = 0.0
     # normalized category -> (skill_likelihood, edge_lower_bound, independent_events)
     category_edges: dict[str, tuple[float, float, float]] = field(default_factory=dict)
 
@@ -477,6 +484,7 @@ def _load_skilled_wallets(
             automation_score=_f(row.get("automation_score")),
             recent_edge_lower_bound=_f(row.get("recent_edge_lower_bound")),
             recent_independent_events=_f(row.get("recent_independent_events")),
+            price_lead_score=_f(row.get("price_lead_score")),
             category_edges=category_edges,
         )
     return out
@@ -1087,6 +1095,7 @@ def _compute_skilled_bets(
                 clv_sample_size=round(wallet.clv_sample_size, 4),
                 wallet_archetype=wallet.style_archetype,
                 wallet_automation_score=round(wallet.automation_score, 4),
+                wallet_price_lead_score=round(wallet.price_lead_score, 4),
                 tail_edge_used=round(tail_edge, 4),
                 tail_fair_price=tail_fair_price,
                 tail_ev=tail_ev,

@@ -87,6 +87,7 @@ class SkilledBetOut(BaseModel):
 
     wallet_archetype: str
     wallet_automation_score: float
+    wallet_price_lead_score: float
 
     tail_edge_used: float
     tail_fair_price: float

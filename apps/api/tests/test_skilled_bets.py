@@ -41,7 +41,7 @@ def _seed(tmp_path: Path) -> Path:
                 "forecast_edge_lower_bound": 0.2, "independent_settled_events": 50.0,
                 "all_time_pnl_usdc": 250_000, "all_time_roi": 0.25, "pnl_30d_usdc": 1_000,
                 "data_quality_status": "trusted", "tailability_status": "tailable",
-                "score_version": "forecast-v2",
+                "score_version": "forecast-v2", "price_lead_score": 0.75,
                 "total_volume_usdc": 1_000_000, "total_pnl_usdc": 250_000,
                 "avg_position_size_usdc": 20_000, "trade_count": 200,
                 "last_activity_at": 1731000000, "computed_at": "2026-05-12T00:00:00Z",
@@ -403,6 +403,7 @@ def test_skilled_bets_carries_deep_link_urls_and_current_price(
 
     assert fed_row["polymarket_profile_url"] == "https://polymarket.com/profile/0xalpha"
     assert fed_row["polymarket_market_url"] == "https://polymarket.com/event/fed-decision"
+    assert fed_row["wallet_price_lead_score"] == 0.75
     assert fed_row["entry_price"] == 0.45
     # Live market has moved from 0.45 (entry) to 0.58 — caller can compute drift.
     assert fed_row["current_market_yes_price"] == 0.58

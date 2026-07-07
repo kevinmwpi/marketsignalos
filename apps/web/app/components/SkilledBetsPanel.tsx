@@ -77,6 +77,7 @@ export type SkilledBet = {
 
   wallet_archetype: string;
   wallet_automation_score: number;
+  wallet_price_lead_score: number;
 
   tail_edge_used: number;
   tail_fair_price: number;
@@ -286,6 +287,14 @@ export default function SkilledBetsPanel({
                         title={`This wallet's trading footprint looks automated (automation score ${(bet.wallet_automation_score * 100).toFixed(0)}%)`}
                       >
                         Systematic
+                      </span>
+                    )}
+                    {bet.wallet_price_lead_score >= 0.6 && (
+                      <span
+                        className="rounded bg-fuchsia-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-fuchsia-700"
+                        title={`The market tends to follow this wallet's entries — price-lead score ${(bet.wallet_price_lead_score * 100).toFixed(0)}% (post-entry drift, longshot conversion, late-entry accuracy)`}
+                      >
+                        Price lead
                       </span>
                     )}
                     {bet.category && bet.category_skill_source === "category" && (

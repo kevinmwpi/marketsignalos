@@ -121,8 +121,10 @@ class _WatchedWallet:
 
 
 def _load_watchlist(max_wallets: int) -> list[_WatchedWallet]:
-    """Top tailable wallets by conservative rank score. Same trust gates the
-    feed applies: trusted data + tailable status."""
+    """Top tailable wallets by conservative rank score, boosted by the
+    price-lead footprint — wallets the market tends to follow are exactly
+    the ones whose alerts decay fastest, so they deserve the low-latency
+    slots. Same trust gates the feed applies: trusted data + tailable."""
     ranked: list[tuple[float, float, _WatchedWallet]] = []
     for row in _read_jsonl(polymarket_enrichment_path()):
         wallet = str(row.get("proxy_wallet", "")).lower()
@@ -133,9 +135,13 @@ def _load_watchlist(max_wallets: int) -> list[_WatchedWallet]:
             or str(row.get("tailability_status", "blocked")) != "tailable"
         ):
             continue
+        # price_lead_score is 0..1, so the boost at most doubles a rank.
+        effective_rank = _f(row.get("rank_score")) * (
+            1.0 + _f(row.get("price_lead_score"))
+        )
         ranked.append(
             (
-                _f(row.get("rank_score")),
+                effective_rank,
                 _f(row.get("skill_likelihood")),
                 _WatchedWallet(
                     proxy_wallet=wallet,

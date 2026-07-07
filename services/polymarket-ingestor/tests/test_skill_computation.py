@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+from datetime import datetime, timezone
 
 from marketsignalos_polymarket.bayesian_skill import (
     Bet,
@@ -299,6 +300,45 @@ def test_enrichment_carries_recent_fields_and_v4_version() -> None:
     assert 0.0 <= e.recent_skill_likelihood <= 1.0
     # The fixture market has no Gamma category — nothing to decompose.
     assert e.category_edges == []
+    # One 40¢ bet, no price history: every price-lead sub-signal is starved.
+    assert e.price_lead_score == 0.0
+    assert e.price_lead_drivers == ["insufficient price/resolution data to measure"]
+
+
+def test_enrichment_price_lead_from_post_entry_snapshots() -> None:
+    """Three independent wins whose markets each gained 10¢ within an hour
+    of entry (per the snapshot stream) → maximal drift sub-score."""
+    entry_ts = 1_700_000_000
+    activity = [
+        _trade(f"0xpl{i}", outcome=0, side="BUY", size=100, price=0.4, ts=entry_ts)
+        for i in range(3)
+    ]
+    markets = {
+        f"0xpl{i}": _market(f"0xpl{i}", closed=True, winning_outcome=0)
+        for i in range(3)
+    }
+    snapshots = [
+        PolymarketPriceSnapshot(
+            condition_id=f"0xpl{i}",
+            yes_price=0.5,
+            active=True,
+            closed=False,
+            fetched_at=datetime.fromtimestamp(
+                entry_ts + 3600, tz=timezone.utc
+            ).isoformat(),
+        )
+        for i in range(3)
+    ]
+    e = compute_wallet_enrichment(
+        "0xabc",
+        activity=activity,
+        markets_by_condition=markets,
+        price_snapshots=snapshots,
+    )
+    assert e.post_entry_drift_48h == 0.1
+    assert e.post_entry_drift_samples == 3.0
+    assert e.price_lead_score == 1.0
+    assert any("within 48h of entry" in d for d in e.price_lead_drivers)
 
 
 # ── Per-category edge decomposition ──────────────────────────────────────────

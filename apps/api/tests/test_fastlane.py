@@ -282,6 +282,30 @@ def test_fetch_error_skips_wallet_without_killing_tick(
     assert result["wallets_initialized"] == 1  # alpha still initialized
 
 
+def test_watchlist_boosts_price_lead_wallets(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    captured_posts: list[dict[str, Any]],
+) -> None:
+    """alpha's rank_score (5.0) trails beta's (9.0), but a 0.9 price-lead
+    score boosts alpha's effective rank to 9.5 — it takes the single
+    fast-lane slot because its alerts decay fastest."""
+    d = tmp_path / "pmdata"
+    d.mkdir(parents=True, exist_ok=True)
+    alpha = _enrichment_row("0xalpha", rank_score=5.0)
+    alpha["price_lead_score"] = 0.9
+    _write_jsonl(
+        d / "polymarket_wallet_enrichment.jsonl",
+        [alpha, _enrichment_row("0xbeta", rank_score=9.0)],
+    )
+    monkeypatch.setenv("POLYMARKET_DATA_DIR", str(d))
+    monkeypatch.setenv("FASTLANE_WALLETS", "1")
+
+    feed = _FakeFeed()
+    fastlane.run_fastlane_tick(fetch=feed.fetch)
+    assert [addr for addr, _ in feed.calls] == ["0xalpha"]
+
+
 def test_config_off_unless_interval_set(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("FASTLANE_EVERY_SECONDS", raising=False)
     assert fastlane.FastlaneConfig.from_env() is None
