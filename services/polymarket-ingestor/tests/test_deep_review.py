@@ -619,6 +619,35 @@ def test_pick_hydration_batch_oldest_polled_first() -> None:
     assert batch == ["0xnew", "0xb", "0xpin", "0xa"]
 
 
+def test_pick_hydration_batch_prioritizes_skilled_incomplete() -> None:
+    state = {
+        "0xold": PolymarketWalletReviewState(
+            proxy_wallet="0xold", status="active", first_seen_at="2025-01-01T00:00:00Z",
+            last_polled_at="2026-05-01T00:00:00Z",
+        ),
+        # Skilled and NOT activity-complete — jumps the queue even though it
+        # was polled most recently.
+        "0xskilled": PolymarketWalletReviewState(
+            proxy_wallet="0xskilled", status="active",
+            first_seen_at="2025-01-01T00:00:00Z",
+            last_polled_at="2026-06-01T00:00:00Z",
+        ),
+        # Skilled but already complete — back to the normal rotation.
+        "0xdone": PolymarketWalletReviewState(
+            proxy_wallet="0xdone", status="active",
+            first_seen_at="2025-01-01T00:00:00Z",
+            last_polled_at="2026-05-05T00:00:00Z",
+        ),
+    }
+    batch = _pick_hydration_batch(
+        state,
+        batch_size=2,
+        skill_priority={"0xskilled", "0xdone"},
+        activity_complete={"0xdone"},
+    )
+    assert batch == ["0xskilled", "0xold"]
+
+
 def test_pick_hydration_batch_respects_batch_size() -> None:
     state = {
         f"0x{i:02x}": PolymarketWalletReviewState(

@@ -24,10 +24,12 @@ import json
 import logging
 import os
 import re
+import shutil
 import threading
 import uuid
+import zlib
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -55,13 +57,14 @@ from .models import (
     PolymarketPosition,
     PolymarketPositionSnapshot,
     PolymarketPriceSnapshot,
+    PolymarketWalletBet,
     PolymarketWalletHydration,
     PolymarketWalletReviewState,
     PolymarketWalletValue,
 )
 from .polymarket_client import PolymarketClient, PolymarketClientConfig
 from .rate_limiter import HostRateLimiter
-from .skill_computation import compute_enrichment_outputs
+from .skill_computation import compute_enrichment_outputs_streaming
 from .storage import (
     ActivityStore,
     ClosedPositionStore,
@@ -472,9 +475,29 @@ def _paginate_activity_window(
     since_timestamp: int | None,
     end_timestamp: int | None = None,
     max_boundary_offset: int = 3000,
+    on_page: Callable[[list[PolymarketActivity]], None] | None = None,
 ) -> _ActivityPaginationResult:
-    """Walk /activity through descending timestamp windows."""
+    """Walk /activity through descending timestamp windows.
+
+    With ``on_page`` the fetched events are streamed to the sink page by page
+    and never accumulated here, so peak memory stays at a single page instead
+    of a whole (whale-sized) history; the returned ``events`` list is then
+    empty and callers must consume events through the sink. Without a sink the
+    accumulate-and-return behaviour is preserved for the compat wrapper/tests.
+    Overlapping boundary re-fetches may hand the sink duplicate events — the
+    dedupe store makes the writes idempotent, so that is harmless.
+    """
     collected: dict[tuple[str, str, int, str], PolymarketActivity] = {}
+
+    def _emit(events: list[PolymarketActivity]) -> None:
+        if not events:
+            return
+        if on_page is not None:
+            on_page(events)
+        else:
+            for event in events:
+                collected[_activity_key(event)] = event
+
     cursor = end_timestamp
     oldest_seen: int | None = None
     exhausted = False
@@ -492,8 +515,7 @@ def _paginate_activity_window(
             event for event in parsed
             if since_timestamp is None or event.timestamp > since_timestamp
         ]
-        for event in fresh:
-            collected[_activity_key(event)] = event
+        _emit(fresh)
         if since_timestamp is not None and len(fresh) < len(parsed):
             exhausted = True
             break
@@ -513,9 +535,12 @@ def _paginate_activity_window(
                 start=oldest,
                 end=oldest,
             )
-            for event in (parse_activity_row(row) for row in boundary_raw):
-                if since_timestamp is None or event.timestamp > since_timestamp:
-                    collected[_activity_key(event)] = event
+            boundary_fresh = [
+                event
+                for event in (parse_activity_row(row) for row in boundary_raw)
+                if since_timestamp is None or event.timestamp > since_timestamp
+            ]
+            _emit(boundary_fresh)
             if len(boundary_raw) < page_size:
                 break
             offset += page_size
@@ -808,7 +833,7 @@ def _fetched_at_age_seconds(fetched_at: str) -> float | None:
 
 def _load_market_index(markets_path: Path) -> dict[str, dict[str, Any]]:
     index: dict[str, dict[str, Any]] = {}
-    for row in _read_jsonl(markets_path):
+    for row in _iter_jsonl(markets_path):
         cond = str(row.get("condition_id", ""))
         if not cond:
             continue
@@ -852,10 +877,9 @@ def _plan_market_backfill_fetches(
 
 
 def _reference_refresh_is_stale(stores: _Stores, *, open_market_ttl_seconds: int) -> bool:
-    activity_rows = _read_jsonl(stores.activity_path)
     activity_conds = {
         str(row.get("condition_id", ""))
-        for row in activity_rows
+        for row in _iter_jsonl(stores.activity_path)
         if row.get("type") == "TRADE" and row.get("condition_id")
     }
     if not activity_conds:
@@ -869,9 +893,8 @@ def _reference_refresh_is_stale(stores: _Stores, *, open_market_ttl_seconds: int
 
 def _refresh_metadata_coverage(stores: _Stores) -> None:
     """Update hydration metadata coverage using settlement-ready Gamma rows."""
-    activity_rows = _read_jsonl(stores.activity_path)
     conds_by_wallet: dict[str, set[str]] = {}
-    for row in activity_rows:
+    for row in _iter_jsonl(stores.activity_path):
         if row.get("type") != "TRADE":
             continue
         wallet = str(row.get("proxy_wallet", "")).lower()
@@ -937,6 +960,7 @@ def _extend_activity_via_subgraph(
     activity_page_size: int,
     max_pages: int,
     rate_limiter: HostRateLimiter | None,
+    on_page: Callable[[list[PolymarketActivity]], None] | None = None,
 ) -> list[PolymarketActivity]:
     if state.activity_history_complete:
         return []
@@ -975,6 +999,7 @@ def _extend_activity_via_subgraph(
         max_pages=max_pages,
         since_timestamp=None,
         end_timestamp=state.oldest_activity_cursor_timestamp,
+        on_page=on_page,
     )
     state.activity_history_complete = extra.exhausted and extra.boundary_complete
     if not extra.boundary_complete:
@@ -1009,19 +1034,39 @@ def _hydrate_single_wallet(
     )
     state.errors = []
     since = None if full_backfill else stores.checkpoints.get_last_timestamp(addr)
-    activity: list[PolymarketActivity] = []
+    # Stream activity to disk page-by-page rather than accumulating a whole
+    # (whale-sized) history in RAM before a single write. The dedupe store
+    # keeps per-page writes idempotent, so overlapping boundary re-fetches
+    # never double-write; peak memory per wallet stays at one page.
+    activity_written = 0
+    newest_ts: int | None = None
+
+    def _sink(events: list[PolymarketActivity]) -> None:
+        nonlocal activity_written, newest_ts
+        if not events:
+            return
+        if write_lock is not None:
+            with write_lock:
+                written = stores.activity.write_activity(events)
+        else:
+            written = stores.activity.write_activity(events)
+        activity_written += written
+        batch_max = max(event.timestamp for event in events)
+        if newest_ts is None or batch_max > newest_ts:
+            newest_ts = batch_max
+
     try:
         if since is not None:
             if rate_limiter is not None:
                 rate_limiter.wait()
-            incremental = _paginate_activity_window(
+            _paginate_activity_window(
                 client,
                 addr,
                 page_size=activity_page_size,
                 max_pages=max_pages,
                 since_timestamp=since,
+                on_page=_sink,
             )
-            activity.extend(incremental.events)
 
         if full_backfill:
             state.activity_history_complete = False
@@ -1036,8 +1081,8 @@ def _hydrate_single_wallet(
                 max_pages=max_pages,
                 since_timestamp=None,
                 end_timestamp=state.oldest_activity_cursor_timestamp,
+                on_page=_sink,
             )
-            activity.extend(history.events)
             if history.oldest_timestamp is not None:
                 state.oldest_activity_cursor_timestamp = history.oldest_timestamp - 1
             state.activity_history_complete = history.exhausted and history.boundary_complete
@@ -1045,15 +1090,14 @@ def _hydrate_single_wallet(
                 state.errors.append("activity boundary exceeded offset safety bound")
 
         if try_subgraph_backfill and not state.activity_history_complete:
-            activity.extend(
-                _extend_activity_via_subgraph(
-                    client,
-                    addr,
-                    state,
-                    activity_page_size=activity_page_size,
-                    max_pages=max_pages,
-                    rate_limiter=rate_limiter,
-                )
+            _extend_activity_via_subgraph(
+                client,
+                addr,
+                state,
+                activity_page_size=activity_page_size,
+                max_pages=max_pages,
+                rate_limiter=rate_limiter,
+                on_page=_sink,
             )
     except Exception as exc:  # noqa: BLE001
         state.activity_history_complete = False
@@ -1061,18 +1105,18 @@ def _hydrate_single_wallet(
 
     parsed_positions: list[PolymarketPosition] = []
     value = PolymarketWalletValue(proxy_wallet=addr, value_usdc=0.0)
-    activity_written = positions_written = values_written = 0
+    positions_written = values_written = 0
     position_snapshot_at = _utcnow_iso()
     position_snapshot_id = f"{addr.lower()}:{uuid.uuid4().hex}"
 
     def _write() -> None:
-        nonlocal activity_written, positions_written, values_written
-        activity_written += stores.activity.write_activity(activity)
-        if activity:
-            max_ts = max(event.timestamp for event in activity)
-            stores.checkpoints.set_last_timestamp(addr, max_ts)
+        nonlocal positions_written, values_written
+        # Activity rows were already streamed to disk during pagination; here we
+        # only advance the checkpoint to the newest timestamp we saw.
+        if newest_ts is not None:
+            stores.checkpoints.set_last_timestamp(addr, newest_ts)
             state.newest_activity_timestamp = max(
-                state.newest_activity_timestamp or 0, max_ts
+                state.newest_activity_timestamp or 0, newest_ts
             )
         if parsed_positions:
             positions_written += stores.positions.write_positions(parsed_positions)
@@ -1166,7 +1210,7 @@ def _hydrate_single_wallet(
         "wallet wallet=%s since=%s activity_new=%d positions=%d value_usdc=%.2f errors=%d",
         addr,
         since,
-        len(activity),
+        activity_written,
         len(parsed_positions),
         value.value_usdc,
         len(state.errors),
@@ -1391,9 +1435,8 @@ def run_markets_backfill_from_activity(
     Skips settled markets already in the store and only re-fetches open
     markets whose cached snapshot is older than the TTL (default 1 hour).
     """
-    activity_rows = _read_jsonl(stores.activity_path)
     activity_conds = {
-        str(r.get("condition_id", "")) for r in activity_rows
+        str(r.get("condition_id", "")) for r in _iter_jsonl(stores.activity_path)
         if r.get("type") == "TRADE" and r.get("condition_id")
     }
     if not activity_conds:
@@ -1497,50 +1540,97 @@ def run_reference_refresh(
 
 # ── JSONL readers (for the enrichment pass) ──────────────────────────────────
 
-def _read_jsonl(path: Path) -> list[dict[str, Any]]:
+def _iter_jsonl(path: Path) -> Iterator[dict[str, Any]]:
+    """Stream a JSONL file one parsed row at a time — the activity file can
+    exceed RAM, so consumers must never materialize it wholesale."""
     if not path.exists():
-        return []
-    rows: list[dict[str, Any]] = []
-    for line in path.read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            obj = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        if isinstance(obj, dict):
-            rows.append(obj)
-    return rows
+        return
+    with path.open(encoding="utf-8") as handle:
+        for line in handle:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                obj = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(obj, dict):
+                yield obj
+
+
+def _read_jsonl(path: Path) -> list[dict[str, Any]]:
+    return list(_iter_jsonl(path))
+
+
+def _activity_from_row(row: dict[str, Any]) -> PolymarketActivity | None:
+    try:
+        return PolymarketActivity(
+            proxy_wallet=str(row.get("proxy_wallet", "")),
+            timestamp=int(row.get("timestamp", 0) or 0),
+            condition_id=str(row.get("condition_id", "")),
+            type=str(row.get("type", "")),
+            side=str(row.get("side", "")),
+            size=_as_float(row.get("size")),
+            usdc_size=_as_float(row.get("usdc_size")),
+            price=_as_float(row.get("price")),
+            outcome_index=int(row.get("outcome_index", 0) or 0),
+            outcome=str(row.get("outcome", "")),
+            slug=str(row.get("slug", "")),
+            title=str(row.get("title", "")),
+            event_slug=str(row.get("event_slug", "")),
+            transaction_hash=str(row.get("transaction_hash", "")),
+            name=str(row.get("name", "")),
+            pseudonym=str(row.get("pseudonym", "")),
+        )
+    except (TypeError, ValueError) as exc:
+        log.warning("activity_row_parse_failed error=%s row_keys=%s", exc, list(row.keys())[:5])
+        return None
 
 
 def _load_activity_records(path: Path) -> list[PolymarketActivity]:
     out: list[PolymarketActivity] = []
-    for row in _read_jsonl(path):
-        try:
-            out.append(
-                PolymarketActivity(
-                    proxy_wallet=str(row.get("proxy_wallet", "")),
-                    timestamp=int(row.get("timestamp", 0) or 0),
-                    condition_id=str(row.get("condition_id", "")),
-                    type=str(row.get("type", "")),
-                    side=str(row.get("side", "")),
-                    size=_as_float(row.get("size")),
-                    usdc_size=_as_float(row.get("usdc_size")),
-                    price=_as_float(row.get("price")),
-                    outcome_index=int(row.get("outcome_index", 0) or 0),
-                    outcome=str(row.get("outcome", "")),
-                    slug=str(row.get("slug", "")),
-                    title=str(row.get("title", "")),
-                    event_slug=str(row.get("event_slug", "")),
-                    transaction_hash=str(row.get("transaction_hash", "")),
-                    name=str(row.get("name", "")),
-                    pseudonym=str(row.get("pseudonym", "")),
-                )
-            )
-        except (TypeError, ValueError) as exc:
-            log.warning("activity_row_parse_failed error=%s row_keys=%s", exc, list(row.keys())[:5])
+    for row in _iter_jsonl(path):
+        record = _activity_from_row(row)
+        if record is not None:
+            out.append(record)
     return out
+
+
+def _shard_activity_by_wallet(
+    path: Path, *, shard_count: int, tmp_dir: Path
+) -> list[Path]:
+    """Partition the activity JSONL into wallet-disjoint shard files.
+
+    All of a wallet's events land in one shard, preserving file order, so
+    each shard can be enriched independently. One streaming read + write of
+    the source file; peak memory is a single row.
+    """
+    tmp_dir.mkdir(parents=True, exist_ok=True)
+    shard_paths = [tmp_dir / f"activity_shard_{i:03d}.jsonl" for i in range(shard_count)]
+    handles = [p.open("w", encoding="utf-8") for p in shard_paths]
+    try:
+        for row in _iter_jsonl(path):
+            wallet = str(row.get("proxy_wallet", "")).lower()
+            index = zlib.crc32(wallet.encode("utf-8")) % shard_count
+            handles[index].write(json.dumps(row, separators=(",", ":")) + "\n")
+    finally:
+        for handle in handles:
+            handle.close()
+    return shard_paths
+
+
+def _iter_activity_shards(shard_paths: list[Path]) -> Iterator[list[PolymarketActivity]]:
+    for index, shard_path in enumerate(shard_paths):
+        records = [
+            record
+            for row in _iter_jsonl(shard_path)
+            if (record := _activity_from_row(row)) is not None
+        ]
+        if index % 8 == 0 or index == len(shard_paths) - 1:
+            log.info(
+                "enrichment shard %d/%d rows=%d", index + 1, len(shard_paths), len(records)
+            )
+        yield records
 
 
 def _load_market_records(path: Path) -> list[PolymarketMarket]:
@@ -1762,21 +1852,41 @@ def _load_price_snapshot_records(path: Path) -> list[PolymarketPriceSnapshot]:
 
 
 def run_enrichment(stores: _Stores) -> int:
-    """Recompute and overwrite wallet enrichment from the local JSONL stores."""
-    activity = _load_activity_records(stores.activity_path)
+    """Recompute and overwrite wallet enrichment from the local JSONL stores.
+
+    The activity file is streamed through wallet-disjoint on-disk shards so
+    peak memory is bounded by one shard, not the whole file — fully-hydrated
+    whale wallets push the activity JSONL past what fits in RAM."""
     markets = _load_market_records(stores.markets_path)
     leaderboard = _load_leaderboard_records(stores.leaderboard_path)
     hydration = stores.hydration.load_hydration()
     price_snapshots = _load_price_snapshot_records(stores.price_snapshots_path)
-    enrichments, wallet_bets = compute_enrichment_outputs(
-        activity=activity,
-        markets=markets,
-        leaderboard=leaderboard,
-        hydration_by_wallet=hydration,
-        price_snapshots=price_snapshots,
-    )
+    shard_dir = stores.activity_path.parent / ".enrichment_shards"
+    try:
+        shard_paths = _shard_activity_by_wallet(
+            stores.activity_path, shard_count=64, tmp_dir=shard_dir,
+        )
+        # Bet records stream straight to the store as pass 2 produces them —
+        # a full catalog yields millions of rows and accumulating them in RAM
+        # was the last unbounded sink after the rollup fix.
+        bets_written = 0
+        with stores.wallet_bets.rewrite() as write_bet_batch:
+
+            def _bet_sink(batch: list[PolymarketWalletBet]) -> None:
+                nonlocal bets_written
+                bets_written += write_bet_batch(batch)
+
+            enrichments, _ = compute_enrichment_outputs_streaming(
+                activity_shards_factory=lambda: _iter_activity_shards(shard_paths),
+                markets=markets,
+                leaderboard=leaderboard,
+                hydration_by_wallet=hydration,
+                price_snapshots=price_snapshots,
+                bet_sink=_bet_sink,
+            )
+    finally:
+        shutil.rmtree(shard_dir, ignore_errors=True)
     written = stores.enrichment.write_enrichment(enrichments)
-    bets_written = stores.wallet_bets.write_bets(wallet_bets)
     log.info("enrichment_written wallets=%d bet_records=%d", written, bets_written)
     return written
 
@@ -2817,15 +2927,32 @@ def prune_review_state(
 
 
 def _pick_hydration_batch(
-    state: dict[str, PolymarketWalletReviewState], *, batch_size: int
+    state: dict[str, PolymarketWalletReviewState],
+    *,
+    batch_size: int,
+    skill_priority: set[str] | None = None,
+    activity_complete: set[str] | None = None,
 ) -> list[str]:
-    """Oldest-polled-first cursor. Wallets with no last_polled_at sort first
-    so net-new wallets are always picked up promptly."""
+    """Oldest-polled-first cursor with a skill fast lane.
+
+    Wallets that already look skilled but still lack a complete activity
+    history jump the queue — they are the only candidates that can become
+    tailable, so hydrating them first is what lights the signals feed. Once
+    complete they drop back to the normal rotation. Within each tier, wallets
+    with no last_polled_at sort first so net-new wallets are picked up
+    promptly."""
+    prioritized = (skill_priority or set()) - (activity_complete or set())
     candidates = [
         record for record in state.values()
         if record.status in {"active", "pinned"}
     ]
-    candidates.sort(key=lambda r: (r.last_polled_at or "", r.proxy_wallet))
+    candidates.sort(
+        key=lambda r: (
+            0 if r.proxy_wallet in prioritized else 1,
+            r.last_polled_at or "",
+            r.proxy_wallet,
+        )
+    )
     return [r.proxy_wallet for r in candidates[:batch_size]]
 
 
@@ -2954,8 +3081,21 @@ def run_deep_pipeline(
                 dormant_days=dormant_days,
             )
 
-        # 4. Pick + hydrate the oldest-polled batch
-        batch = _pick_hydration_batch(state, batch_size=wallet_batch_size)
+        # 4. Pick + hydrate: skilled-but-incomplete wallets jump the queue,
+        # then the oldest-polled cursor.
+        hydration_by_wallet = stores.hydration.load_hydration()
+        batch = _pick_hydration_batch(
+            state,
+            batch_size=wallet_batch_size,
+            skill_priority=_load_skilled_wallets(
+                _data_dir() / "polymarket_wallet_enrichment.jsonl"
+            ),
+            activity_complete={
+                wallet
+                for wallet, hydration_state in hydration_by_wallet.items()
+                if hydration_state.activity_history_complete
+            },
+        )
         log.info(
             "deep_pipeline step=hydrate batch_size=%d (of %d active+pinned)",
             len(batch),

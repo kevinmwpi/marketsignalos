@@ -35,6 +35,7 @@ from __future__ import annotations
 import logging
 import math
 from collections import defaultdict
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass, replace
 from typing import Any
 
@@ -44,9 +45,10 @@ from .bayesian_skill import (
     PosteriorFit,
     apply_recency_weights,
     effective_sample_size,
-    fit_population_prior,
     fit_wallet_posterior,
+    population_prior_from_fits,
     rank_score,
+    weak_prior_fit,
 )
 from .models import (
     PolymarketActivity,
@@ -73,6 +75,12 @@ log = logging.getLogger("marketsignalos.polymarket.skill")
 # remain tailable. Protects against tailing a wallet whose record is entirely
 # stale — the lifetime gate (ESS >= 20) can't catch that.
 MIN_RECENT_INDEPENDENT_EVENTS = 5.0
+
+# Minimum closing-line-value observations before a wallet's CLV edge counts as
+# tailability evidence. CLV — did the wallet get a better price than where the
+# market settled? — is the cleanest, market-mechanism-independent measure of
+# edge, so it gates tailability rather than merely decorating the row.
+MIN_CLV_SAMPLE = 10.0
 
 # Floor for trusting a per-category edge fit over the wallet-level score.
 # Below this the category posterior is dominated by its prior (the wallet's
@@ -167,10 +175,13 @@ def _market_winning_outcome(market: PolymarketMarket) -> int | None:
     Inspect a market's outcome_prices to determine the winning outcome index.
     Returns None if the market isn't actually resolved.
 
-    Canonical settlement is intentionally strict. Live markets frequently
-    trade at 99c, so price alone is never sufficient evidence of resolution.
+    Settlement requires Gamma's closed flag AND a unique >=0.99 winner. Live
+    markets frequently trade at 99c, so price alone is never sufficient
+    evidence of resolution. The active flag carries no settlement signal:
+    Gamma keeps active=True on resolved markets, so requiring active=False
+    would classify every market as unresolved.
     """
-    if not market.closed or market.active or not market.outcome_prices:
+    if not market.closed or not market.outcome_prices:
         return None
     winners = [i for i, price in enumerate(market.outcome_prices) if price >= 0.99]
     return winners[0] if len(winners) == 1 else None
@@ -612,6 +623,17 @@ def _enrichment_from_rollup(
         # Only meaningful when there is enough recent data — with a near-empty
         # recent sample the fit just echoes the population prior.
         tailability_reasons.append("recent forecast edge is negative")
+    # Closing-line value is the cleanest, market-mechanism-independent measure
+    # of edge — did the wallet consistently get a better price than where the
+    # market settled? Require statistically-confident positive CLV over an
+    # adequate sample, not just a good win/loss-implied forecast fit. (clv_stats
+    # is (mean, lower_bound, sample_size).)
+    if clv_stats[2] < MIN_CLV_SAMPLE:
+        tailability_reasons.append(
+            f"fewer than {int(MIN_CLV_SAMPLE)} closing-line observations"
+        )
+    elif clv_stats[1] <= 0.0:
+        tailability_reasons.append("closing-line value not confidently positive")
     tailability_status = "tailable" if not tailability_reasons else "blocked"
 
     return PolymarketWalletEnrichment(
@@ -827,9 +849,49 @@ def compute_enrichment_outputs(
     hydration_by_wallet: dict[str, PolymarketWalletHydration] | None = None,
     price_snapshots: list[PolymarketPriceSnapshot] | None = None,
 ) -> tuple[list[PolymarketWalletEnrichment], list[PolymarketWalletBet]]:
+    """Single-shot wrapper around the shard-streaming core — use it when the
+    activity list already fits in memory (tests, small datasets)."""
+    return compute_enrichment_outputs_streaming(
+        activity_shards_factory=lambda: iter([activity]),
+        markets=markets,
+        leaderboard=leaderboard,
+        hydration_by_wallet=hydration_by_wallet,
+        price_snapshots=price_snapshots,
+    )
+
+
+def compute_enrichment_outputs_streaming(
+    *,
+    activity_shards_factory: Callable[[], Iterator[list[PolymarketActivity]]],
+    markets: list[PolymarketMarket],
+    leaderboard: list[PolymarketLeaderboardEntry],
+    hydration_by_wallet: dict[str, PolymarketWalletHydration] | None = None,
+    price_snapshots: list[PolymarketPriceSnapshot] | None = None,
+    bet_sink: Callable[[list[PolymarketWalletBet]], None] | None = None,
+) -> tuple[list[PolymarketWalletEnrichment], list[PolymarketWalletBet]]:
     """
     Compute enrichment for every wallet present in the activity stream,
     plus the per-position betting records behind those aggregates.
+
+    `activity_shards_factory` returns a fresh iterator over disjoint
+    wallet-partitioned slices of the activity stream: every event for a given
+    wallet must arrive in the same shard, in file order. It is called twice
+    (see the two passes below), so it must re-yield the same shards each time
+    — the on-disk shard reader does this by re-reading the files.
+
+    Raw events are reduced to per-wallet aggregates one shard at a time, and
+    crucially the rollups are NOT retained between passes: for the full wallet
+    universe (thousands of whales, each with a heavy bet/record list) holding
+    every rollup at once exceeds RAM. Instead pass 1 keeps only the lightweight
+    per-wallet fit needed for the population prior, and pass 2 re-derives each
+    rollup from the shards.
+
+    `bet_sink`, when provided, receives each wallet's bet records as they are
+    produced in pass 2 and the returned bet list is left empty — a full
+    catalog resolves millions of records, and accumulating them (~6 GB) was
+    the last unbounded sink after the rollup fix. Sink order is deterministic
+    (shard order, then first-appearance order within a shard) but NOT sorted
+    by wallet the way the accumulate-and-return path sorts.
 
     The leaderboard list is used purely to look up display names /
     pseudonyms (since the data-api uses the pseudonymized
@@ -842,11 +904,6 @@ def compute_enrichment_outputs(
       2. Refit each wallet under the empirical prior — this is the
          shrinkage step that prevents 5/5 wallets from looking elite.
     """
-    # Bucket activity by wallet.
-    by_wallet: dict[str, list[PolymarketActivity]] = defaultdict(list)
-    for event in activity:
-        by_wallet[event.proxy_wallet.lower()].append(event)
-
     # Build the markets index — keep the most recently fetched per condition_id.
     markets_by_condition: dict[str, PolymarketMarket] = {}
     for market in markets:
@@ -860,70 +917,96 @@ def compute_enrichment_outputs(
         if entry.proxy_wallet not in names_by_wallet:
             names_by_wallet[entry.proxy_wallet] = (entry.name, entry.pseudonym)
 
-    # Pass 1: roll up every wallet so we have the bet lists in hand.
-    rollups: list[_WalletRollup] = []
-    for wallet, events in by_wallet.items():
-        name, pseudonym = names_by_wallet.get(wallet, ("", ""))
-        rollups.append(
-            _roll_up_wallet(
+    categories_by_condition = _categories_index(markets_by_condition)
+
+    # Pass 1: reduce each shard's events to per-wallet aggregates, keeping only
+    # the lightweight inputs later passes need — the weak-prior fit that feeds
+    # the population prior, the trader style, and the recency reference. The
+    # rollups themselves are discarded; pass 2 rebuilds them from the shards.
+    weak_fits: list[PosteriorFit] = []
+    styles_by_wallet: dict[str, TraderStyle] = {}
+    now_ts = 0
+    for shard in activity_shards_factory():
+        by_wallet: dict[str, list[PolymarketActivity]] = defaultdict(list)
+        for event in shard:
+            by_wallet[event.proxy_wallet.lower()].append(event)
+        for wallet, events in by_wallet.items():
+            name, pseudonym = names_by_wallet.get(wallet, ("", ""))
+            rollup = _roll_up_wallet(
                 wallet, events, markets_by_condition,
                 name=name, pseudonym=pseudonym,
             )
-        )
+            fit = weak_prior_fit(rollup.bets)
+            if fit is not None:
+                weak_fits.append(fit)
+            for bet in rollup.bets:
+                if bet.ts > now_ts:
+                    now_ts = bet.ts
+            styles_by_wallet[wallet] = compute_trader_style(
+                events, categories_by_condition=categories_by_condition,
+            )
 
-    # Empirical-Bayes population prior from per-wallet MLEs.
-    prior = fit_population_prior([r.bets for r in rollups])
-
-    # Deterministic recency reference: the newest resolved bet anywhere in the
-    # dataset. Using data (not the wall clock) keeps scores reproducible.
-    now_ts = max(
-        (bet.ts for rollup in rollups for bet in rollup.bets), default=0
-    )
-
+    # Empirical-Bayes population prior from the per-wallet MLEs (order-free).
+    prior = population_prior_from_fits(weak_fits)
     history = build_price_history(markets, price_snapshots)
-    categories_by_condition = _categories_index(markets_by_condition)
 
-    # Pass 2: fit each wallet under the empirical prior.
+    # Pass 2: re-stream the shards, rebuild each rollup, and fit it under the
+    # empirical prior (the shrinkage step). Re-deriving each rollup is cheaper
+    # than having retained all of them across pass 1.
     out: list[PolymarketWalletEnrichment] = []
     all_bets: list[PolymarketWalletBet] = []
-    for rollup in rollups:
-        fit = fit_wallet_posterior(
-            rollup.bets, mu_prior=prior.mu, sigma2_prior=prior.sigma2
-        )
-        ess = effective_sample_size(rollup.bets)
-        recent_bets = apply_recency_weights(rollup.bets, now_ts=now_ts)
-        recent_fit = fit_wallet_posterior(
-            recent_bets, mu_prior=prior.mu, sigma2_prior=prior.sigma2
-        )
-        recent_ess = effective_sample_size(recent_bets)
-        clv_stats, per_record_clv = _records_clv(rollup.records, history)
-        hydration = (hydration_by_wallet or {}).get(rollup.wallet)
-        style = compute_trader_style(
-            by_wallet.get(rollup.wallet, []),
-            categories_by_condition=categories_by_condition,
-        )
-        lead = compute_price_lead(
-            _lead_bets_from_records(rollup.records, markets_by_condition), history
-        )
-        out.append(
-            _enrichment_from_rollup(
-                rollup,
-                fit,
-                ess=ess,
-                recent_fit=recent_fit,
-                recent_ess=recent_ess,
-                clv_stats=clv_stats,
-                hydration=hydration,
-                style=style,
-                lead=lead,
+    for shard in activity_shards_factory():
+        by_wallet = defaultdict(list)
+        for event in shard:
+            by_wallet[event.proxy_wallet.lower()].append(event)
+        for wallet, events in by_wallet.items():
+            name, pseudonym = names_by_wallet.get(wallet, ("", ""))
+            rollup = _roll_up_wallet(
+                wallet, events, markets_by_condition,
+                name=name, pseudonym=pseudonym,
             )
-        )
-        all_bets.extend(
-            _wallet_bets_from_rollup(rollup, per_record_clv, markets_by_condition)
-        )
+            fit = fit_wallet_posterior(
+                rollup.bets, mu_prior=prior.mu, sigma2_prior=prior.sigma2
+            )
+            ess = effective_sample_size(rollup.bets)
+            recent_bets = apply_recency_weights(rollup.bets, now_ts=now_ts)
+            recent_fit = fit_wallet_posterior(
+                recent_bets, mu_prior=prior.mu, sigma2_prior=prior.sigma2
+            )
+            recent_ess = effective_sample_size(recent_bets)
+            clv_stats, per_record_clv = _records_clv(rollup.records, history)
+            hydration = (hydration_by_wallet or {}).get(rollup.wallet)
+            style = styles_by_wallet.get(rollup.wallet)
+            lead = compute_price_lead(
+                _lead_bets_from_records(rollup.records, markets_by_condition),
+                history,
+            )
+            out.append(
+                _enrichment_from_rollup(
+                    rollup,
+                    fit,
+                    ess=ess,
+                    recent_fit=recent_fit,
+                    recent_ess=recent_ess,
+                    clv_stats=clv_stats,
+                    hydration=hydration,
+                    style=style,
+                    lead=lead,
+                )
+            )
+            wallet_bets = _wallet_bets_from_rollup(
+                rollup, per_record_clv, markets_by_condition
+            )
+            if bet_sink is not None:
+                bet_sink(wallet_bets)
+            else:
+                all_bets.extend(wallet_bets)
 
-    # Default order: best-ranked first. Tiebreak by skill_likelihood then
-    # wallet for determinism.
+    # Deterministic output regardless of shard order: enrichments by rank, and
+    # bet records grouped by wallet (a stable sort preserves each wallet's own
+    # record order, matching the single-shot path). Sink mode already handed
+    # the records off, so there is nothing to sort.
+    all_bets.sort(key=lambda b: b.proxy_wallet)
     out.sort(
         key=lambda e: (-e.rank_score, -e.skill_likelihood, e.proxy_wallet)
     )
