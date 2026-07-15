@@ -122,7 +122,8 @@ def _resolve_fed(pm_dir: Path, *, outcome_prices: list[float]) -> None:
     markets = _open_markets()
     markets[0].update(
         closed=True,
-        active=False,
+        # Gamma keeps active=True on resolved markets.
+        active=True,
         outcome_prices=outcome_prices,
         fetched_at="2026-09-19T00:00:00Z",
     )

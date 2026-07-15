@@ -140,15 +140,16 @@ def _resolved_outcomes(latest: dict[str, dict[str, Any]]) -> dict[str, int | Non
     """
     condition_id -> winning outcome_index for resolved markets, or None for
     markets that closed without a single >=0.99 winner (canceled/ambiguous).
-    Unresolved (still active / not closed) markets are absent entirely.
+    Unresolved (not yet closed) markets are absent entirely.
 
-    Mirrors the strict settlement rule in the ingestor's skill computation:
-    live markets trade at 99c all the time, so price alone is never evidence
-    of resolution — the market must also be closed and inactive in Gamma.
+    Mirrors the settlement rule in the ingestor's skill computation: live
+    markets trade at 99c all the time, so a settled price only counts once
+    Gamma marks the market closed. The active flag carries no settlement
+    signal — Gamma keeps active=True on resolved markets.
     """
     out: dict[str, int | None] = {}
     for cond, row in latest.items():
-        if not row.get("closed") or row.get("active"):
+        if not row.get("closed"):
             continue
         prices = row.get("outcome_prices") or []
         if not isinstance(prices, list):
