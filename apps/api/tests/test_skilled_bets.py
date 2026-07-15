@@ -976,3 +976,60 @@ def test_leaderboard_filters_by_archetype(
     ).json()
     assert "0xalpha" not in {row["proxy_wallet"] for row in unclassified}
     assert {row["style_archetype"] for row in unclassified} == {"unclassified"}
+
+
+def test_feed_disk_cache_survives_process_restart(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A cold process (empty in-memory memo) with an unchanged data
+    fingerprint must serve the on-disk spill instead of recomputing — the
+    recompute walks the full activity file and takes tens of minutes on
+    hydrated data."""
+    from marketsignalos_api.services import skilled_bets as sb
+
+    pm_dir = _seed(tmp_path)
+    monkeypatch.setenv("POLYMARKET_DATA_DIR", str(pm_dir))
+
+    first = sb.compute_skilled_bets(min_skill=0.9, min_resolved=20, limit=None)
+    assert first, "fixture should produce signals"
+    assert sb._feed_cache_path().exists()
+
+    # Simulate a restart: drop the memo, then make any recompute explode so a
+    # disk miss cannot silently fall back to computing.
+    sb._compute_skilled_bets_cached.cache_clear()
+
+    def _boom(**_kwargs: object) -> list[object]:
+        raise AssertionError("recompute should have been served from disk")
+
+    monkeypatch.setattr(sb, "_compute_skilled_bets", _boom)
+    again = sb.compute_skilled_bets(min_skill=0.9, min_resolved=20, limit=None)
+    assert again == first
+
+
+def test_invalidate_cache_removes_disk_spill(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from marketsignalos_api.services import skilled_bets as sb
+
+    pm_dir = _seed(tmp_path)
+    monkeypatch.setenv("POLYMARKET_DATA_DIR", str(pm_dir))
+
+    sb.compute_skilled_bets(min_skill=0.9, min_resolved=20, limit=None)
+    assert sb._feed_cache_path().exists()
+    sb.invalidate_cache()
+    assert not sb._feed_cache_path().exists()
+
+
+def test_corrupt_disk_cache_falls_back_to_recompute(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from marketsignalos_api.services import skilled_bets as sb
+
+    pm_dir = _seed(tmp_path)
+    monkeypatch.setenv("POLYMARKET_DATA_DIR", str(pm_dir))
+
+    first = sb.compute_skilled_bets(min_skill=0.9, min_resolved=20, limit=None)
+    sb._feed_cache_path().write_text("{not valid json", encoding="utf-8")
+    sb._compute_skilled_bets_cached.cache_clear()
+    again = sb.compute_skilled_bets(min_skill=0.9, min_resolved=20, limit=None)
+    assert again == first

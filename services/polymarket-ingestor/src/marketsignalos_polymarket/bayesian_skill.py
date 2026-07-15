@@ -64,6 +64,17 @@ _MIN_SIGMA2_POP = 0.01
 # return a finite MLE.
 _WEAK_PRIOR_SIGMA2 = 100.0
 
+# Physically meaningful bound on the log-odds edge. Beyond ~|20| the sigmoid
+# is numerically saturated (odds ratio > 4e8), so any larger value is an
+# artifact of an under-regularised fit, never real skill. The per-wallet MAP
+# and the population-prior moments are both clamped to this domain.
+_EDGE_CLAMP = 20.0
+
+# Upper bound on the fitted population variance. Method-of-moments on
+# per-wallet MLEs can be inflated without limit by a single degenerate fit;
+# capping it keeps the empirical-Bayes shrinkage from silently switching off.
+_MAX_SIGMA2_POP = 4.0
+
 
 def _normal_cdf(z: float) -> float:
     return 0.5 * (1.0 + math.erf(z / math.sqrt(2.0)))
@@ -82,6 +93,13 @@ def _sigmoid(x: float) -> float:
         return 1.0 / (1.0 + ex)
     ex = math.exp(x)
     return ex / (1.0 + ex)
+
+
+def _softplus(x: float) -> float:
+    """log(1 + e^x), numerically stable — used by the log-posterior line search."""
+    if x > 0.0:
+        return x + math.log1p(math.exp(-x))
+    return math.log1p(math.exp(x))
 
 
 # ── Per-wallet posterior fit ─────────────────────────────────────────────────
@@ -145,9 +163,23 @@ def fit_wallet_posterior(
     weights = [max(0.0, b.weight) for b in bets]
     inv_sigma2 = 1.0 / sigma2_prior
 
-    edge = mu_prior
+    def _log_posterior(e: float) -> float:
+        acc = 0.0
+        for li, yi, weight in zip(logits, ys, weights):
+            z = li + e
+            acc -= weight * (yi * _softplus(-z) + (1.0 - yi) * _softplus(z))
+        return acc - (e - mu_prior) ** 2 * inv_sigma2 * 0.5
+
+    # Damped Newton: the log-posterior is concave, so the Newton direction is
+    # always an ascent direction, but the *raw* step overshoots to garbage when
+    # the objective is nearly flat (a saturated wallet under a diffuse prior —
+    # the failure mode that produced billion-scale "edges" and a degenerate
+    # population prior). We backtrack the step until the objective actually
+    # increases and clamp to the physical edge domain, which guarantees
+    # monotone convergence to the true MAP.
+    edge = min(_EDGE_CLAMP, max(-_EDGE_CLAMP, mu_prior))
+    obj = _log_posterior(edge)
     for _ in range(max_iter):
-        # q_i = sigmoid(logit_i + edge); accumulate gradient and Hessian.
         grad_data = 0.0
         hess_data = 0.0
         for li, yi, weight in zip(logits, ys, weights):
@@ -157,11 +189,22 @@ def fit_wallet_posterior(
         gradient = grad_data - (edge - mu_prior) * inv_sigma2
         hessian = hess_data - inv_sigma2  # strictly negative
         step = -gradient / hessian
-        edge_new = edge + step
-        if abs(step) < tol:
-            edge = edge_new
+        scale = 1.0
+        cand = edge
+        advanced = False
+        for _bt in range(40):
+            cand = min(_EDGE_CLAMP, max(-_EDGE_CLAMP, edge + scale * step))
+            if _log_posterior(cand) >= obj:
+                advanced = True
+                break
+            scale *= 0.5
+        if not advanced:
+            break  # already at the maximum (no ascent step exists)
+        moved = abs(cand - edge)
+        edge = cand
+        obj = _log_posterior(edge)
+        if moved < tol:
             break
-        edge = edge_new
 
     # Final Hessian evaluation for the Laplace variance.
     info = inv_sigma2
@@ -210,23 +253,37 @@ def fit_population_prior(per_wallet_bets: list[list[Bet]]) -> PopulationPrior:
     """
     fits: list[PosteriorFit] = []
     for bets in per_wallet_bets:
-        if len(bets) < 3:
-            continue
-        fits.append(
-            fit_wallet_posterior(
-                bets,
-                mu_prior=0.0,
-                sigma2_prior=_WEAK_PRIOR_SIGMA2,
-            )
-        )
+        fit = weak_prior_fit(bets)
+        if fit is not None:
+            fits.append(fit)
+    return population_prior_from_fits(fits)
 
+
+def weak_prior_fit(bets: list[Bet]) -> PosteriorFit | None:
+    """Per-wallet MLE under the weak prior — the input to the population fit.
+
+    Returns None for wallets with too few resolved bets (<3) to inform the
+    prior. Exposed so a streaming caller can accumulate these lightweight
+    fits one wallet at a time instead of holding every wallet's bets in RAM.
+    """
+    if len(bets) < 3:
+        return None
+    return fit_wallet_posterior(bets, mu_prior=0.0, sigma2_prior=_WEAK_PRIOR_SIGMA2)
+
+
+def population_prior_from_fits(fits: list[PosteriorFit]) -> PopulationPrior:
+    """Method-of-moments population prior from per-wallet weak-prior MLEs."""
     if len(fits) < 2:
         return PopulationPrior(mu=0.0, sigma2=0.25)
 
-    mu = sum(f.edge_mean for f in fits) / len(fits)
-    total_var = sum((f.edge_mean - mu) ** 2 for f in fits) / len(fits)
+    # Clamp each MLE to the physical domain before taking moments so a single
+    # degenerate fit cannot drag the population mean/variance to absurd values.
+    means = [min(_EDGE_CLAMP, max(-_EDGE_CLAMP, f.edge_mean)) for f in fits]
+    mu = sum(means) / len(means)
+    total_var = sum((m - mu) ** 2 for m in means) / len(means)
     within_var = sum(f.edge_var for f in fits) / len(fits)
     sigma2 = max(_MIN_SIGMA2_POP, total_var - within_var)
+    sigma2 = min(sigma2, _MAX_SIGMA2_POP)
     return PopulationPrior(mu=mu, sigma2=sigma2)
 
 

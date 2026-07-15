@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import math
+from typing import Any
 from datetime import datetime, timezone
 
 from marketsignalos_polymarket.bayesian_skill import (
     Bet,
     PopulationPrior,
+    PosteriorFit,
     apply_recency_weights,
     effective_sample_size,
     fit_population_prior,
@@ -20,13 +22,69 @@ from marketsignalos_polymarket.models import (
     PolymarketWalletHydration,
 )
 from marketsignalos_polymarket.skill_computation import (
+    MIN_CLV_SAMPLE,
     _apply_event_weights,
+    _enrichment_from_rollup,
     _market_winning_outcome,
+    _WalletRollup,
     build_price_history,
     compute_all_enrichment,
     compute_enrichment_outputs,
+    compute_enrichment_outputs_streaming,
     compute_wallet_enrichment,
 )
+
+
+def test_streaming_shards_match_single_shot() -> None:
+    """Sharded streaming must produce byte-identical outputs to the
+    single-shot path — sharding is a memory strategy, not a model change."""
+    from dataclasses import replace as _replace  # noqa: PLC0415
+
+    wallets = ["0xw1", "0xw2", "0xw3"]
+    activity: list[PolymarketActivity] = []
+    conds: list[str] = []
+    for w_i, wallet in enumerate(wallets):
+        for c_i in range(3):
+            cond = f"0xc{w_i}{c_i}"
+            conds.append(cond)
+            activity.append(
+                _replace(
+                    _trade(cond, outcome=0, side="BUY", size=100, price=0.4, ts=1000 + c_i),
+                    proxy_wallet=wallet,
+                )
+            )
+    markets = [_market(cond, closed=True, winning_outcome=0) for cond in conds]
+
+    single = compute_enrichment_outputs(
+        activity=list(activity), markets=markets, leaderboard=[],
+    )
+    shards = [
+        [e for e in activity if e.proxy_wallet == "0xw1"],
+        [e for e in activity if e.proxy_wallet in {"0xw2", "0xw3"}],
+    ]
+    streamed = compute_enrichment_outputs_streaming(
+        activity_shards_factory=lambda: iter(shards), markets=markets, leaderboard=[],
+    )
+
+    # computed_at is a wall-clock stamp; everything model-derived must match.
+    def _stamped(rows: list[Any]) -> list[Any]:
+        return [_replace(r, computed_at="") for r in rows]
+
+    assert _stamped(single[0]) == _stamped(streamed[0])
+    assert _stamped(single[1]) == _stamped(streamed[1])
+
+    # Sink mode: bet records stream out per wallet instead of accumulating.
+    # Same records as the return path (modulo ordering); return list empty.
+    collected: list[Any] = []
+    sink_result = compute_enrichment_outputs_streaming(
+        activity_shards_factory=lambda: iter(shards),
+        markets=markets,
+        leaderboard=[],
+        bet_sink=collected.extend,
+    )
+    assert sink_result[1] == []
+    assert _stamped(sorted(collected, key=lambda b: b.proxy_wallet)) == _stamped(single[1])
+    assert _stamped(sink_result[0]) == _stamped(single[0])
 
 
 def _trade(
@@ -75,7 +133,9 @@ def _market(
         volume_usdc=1000,
         liquidity_usdc=100,
         closed=closed,
-        active=not closed,
+        # Gamma keeps active=True on resolved markets; settlement must not
+        # depend on the active flag.
+        active=True,
         last_trade_price=None,
         best_bid=None,
         best_ask=None,
@@ -791,6 +851,68 @@ def test_negative_authoritative_pnl_blocks_otherwise_strong_wallet() -> None:
     assert enrichment.data_quality_status == "trusted"
     assert enrichment.tailability_status == "blocked"
     assert "negative or zero all-time PnL" in enrichment.tailability_reasons
+    # With no closing-line observations the CLV gate also fires.
+    assert any("closing-line observations" in r for r in enrichment.tailability_reasons)
+
+
+def _clv_gate_inputs() -> tuple[_WalletRollup, PosteriorFit, PolymarketWalletHydration]:
+    """A rollup + fit + hydration that clears every tailability gate except the
+    closing-line-value gate, so CLV alone decides tailability."""
+    bets = [Bet(entry_price=0.5, won=True) for _ in range(25)]
+    rollup = _WalletRollup(
+        wallet="0xw", name="", pseudonym="", bets=bets, wins=25, losses=0,
+        total_pnl_usdc=1000.0, total_volume_usdc=5000.0,
+        resolved_volume_usdc=5000.0, trade_count=25, last_activity_ts=1000,
+        position_sizes=[100.0] * 25, records=[],
+    )
+    fit = PosteriorFit(
+        edge_mean=0.5, edge_var=0.01, posterior_skill=0.99,
+        edge_lower_bound=0.3, edge_z=5.0,
+    )
+    hydration = PolymarketWalletHydration(
+        proxy_wallet="0xw",
+        activity_history_complete=True, positions_complete=True,
+        closed_positions_complete=True, economic_all_time_complete=True,
+        economic_month_complete=True, metadata_condition_count=25,
+        metadata_covered_count=25, metadata_coverage=1.0,
+        all_time_pnl_usdc=1000.0, all_time_volume_usdc=5000.0, pnl_30d_usdc=100.0,
+    )
+    return rollup, fit, hydration
+
+
+def test_clv_gate_blocks_wallet_without_closing_line_evidence() -> None:
+    """A wallet that clears every other gate is still blocked with no CLV data —
+    CLV is a required evidence gate, not a decoration."""
+    rollup, fit, hydration = _clv_gate_inputs()
+    e = _enrichment_from_rollup(
+        rollup, fit, ess=25.0, recent_fit=fit, recent_ess=25.0,
+        clv_stats=(0.0, 0.0, 0.0), hydration=hydration,
+    )
+    assert e.tailability_status == "blocked"
+    assert e.tailability_reasons == [
+        f"fewer than {int(MIN_CLV_SAMPLE)} closing-line observations"
+    ]
+
+
+def test_clv_gate_passes_wallet_with_confident_positive_clv() -> None:
+    rollup, fit, hydration = _clv_gate_inputs()
+    e = _enrichment_from_rollup(
+        rollup, fit, ess=25.0, recent_fit=fit, recent_ess=25.0,
+        clv_stats=(0.05, 0.02, 15.0), hydration=hydration,
+    )
+    assert e.tailability_status == "tailable"
+    assert e.tailability_reasons == []
+
+
+def test_clv_gate_blocks_negative_closing_line_value() -> None:
+    """Enough CLV sample but the lower bound is not above zero -> not tailable."""
+    rollup, fit, hydration = _clv_gate_inputs()
+    e = _enrichment_from_rollup(
+        rollup, fit, ess=25.0, recent_fit=fit, recent_ess=25.0,
+        clv_stats=(-0.03, -0.06, 20.0), hydration=hydration,
+    )
+    assert e.tailability_status == "blocked"
+    assert "closing-line value not confidently positive" in e.tailability_reasons
 
 
 def test_compute_all_buckets_by_wallet_and_attaches_name() -> None:

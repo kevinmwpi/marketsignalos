@@ -15,8 +15,9 @@ from marketsignalos_polymarket.kalshi_markets_fetch import (
     KalshiMarket,
     write_kalshi_markets_jsonl,
 )
-from marketsignalos_polymarket.models import PolymarketMarket
+from marketsignalos_polymarket.models import PolymarketActivity, PolymarketMarket
 from marketsignalos_polymarket.runner import (
+    _activity_key,
     _build_stores,
     _is_kalshi_parlay,
     _paginate_activity,
@@ -301,6 +302,62 @@ def test_paginate_activity_resumes_from_oldest_timestamp_cursor() -> None:
     client.close()
     assert {event.timestamp for event in first.events} == {5, 4}
     assert {event.timestamp for event in second.events} == {3, 2}
+
+
+def test_paginate_activity_window_streaming_matches_accumulate() -> None:
+    """The on_page sink receives exactly the deduped events the accumulate path
+    returns — including same-second boundary re-fetches — but holds nothing in
+    memory (result.events stays empty). This pins the streaming refactor that
+    keeps whale hydration from ballooning RAM."""
+    def handler(request: httpx.Request) -> httpx.Response:
+        start = request.url.params.get("start")
+        end = request.url.params.get("end")
+        offset = int(request.url.params.get("offset") or 0)
+        if start == "999" and end == "999":
+            # Same-second boundary sweep: one overlapping row (0xb) plus a new
+            # one (0xd) at offset 0, then exhausted.
+            if offset == 0:
+                return httpx.Response(200, json=[
+                    _activity_row(ts=999, tx="0xb"),
+                    _activity_row(ts=999, tx="0xd"),
+                ])
+            return httpx.Response(200, json=[])
+        if end == "998":
+            return httpx.Response(200, json=[])
+        return httpx.Response(200, json=[
+            _activity_row(ts=1000, tx="0xa"),
+            _activity_row(ts=999, tx="0xb"),
+        ])
+
+    client = _client_with_handler(handler)
+    accumulate = _paginate_activity_window(
+        client, "0xabc", page_size=2, max_pages=5, since_timestamp=None
+    )
+    streamed: list[PolymarketActivity] = []
+    result = _paginate_activity_window(
+        client,
+        "0xabc",
+        page_size=2,
+        max_pages=5,
+        since_timestamp=None,
+        on_page=streamed.extend,
+    )
+    client.close()
+
+    # Streaming keeps no per-wallet accumulation.
+    assert result.events == []
+    # Same termination metadata either way.
+    assert (result.exhausted, result.boundary_complete, result.oldest_timestamp) == (
+        accumulate.exhausted,
+        accumulate.boundary_complete,
+        accumulate.oldest_timestamp,
+    )
+    # The sink sees the same events after the store's dedupe key collapses the
+    # overlapping boundary re-fetch (0xb appears on both the page and the sweep).
+    assert {_activity_key(e) for e in streamed} == {
+        _activity_key(e) for e in accumulate.events
+    }
+    assert {e.transaction_hash for e in accumulate.events} == {"0xa", "0xb", "0xd"}
 
 
 def test_paginate_positions_walks_beyond_first_page() -> None:
@@ -939,3 +996,46 @@ def test_add_watchlist_wallet_rejects_invalid_addresses(
         with pytest.raises(ValueError):
             run_add_watchlist_wallet(bad)
     assert not (tmp_path / "wl.txt").exists()
+
+
+# ── Activity sharding (streaming enrichment) ─────────────────────────────────
+
+
+def test_shard_activity_by_wallet_partitions_and_preserves_order(tmp_path: Path) -> None:
+    from marketsignalos_polymarket.runner import (  # noqa: PLC0415
+        _iter_activity_shards,
+        _shard_activity_by_wallet,
+    )
+
+    rows = [
+        {
+            "proxy_wallet": f"0xw{i % 3}", "timestamp": i, "condition_id": f"0xc{i}",
+            "type": "TRADE", "side": "BUY", "size": 1.0, "usdc_size": 0.5,
+            "price": 0.5, "outcome_index": 0, "outcome": "Yes", "slug": "s",
+            "title": "t", "event_slug": "e", "transaction_hash": f"0xtx{i}",
+        }
+        for i in range(10)
+    ]
+    src = tmp_path / "activity.jsonl"
+    src.write_text("\n".join(json.dumps(r) for r in rows) + "\n", encoding="utf-8")
+
+    shard_paths = _shard_activity_by_wallet(
+        src, shard_count=4, tmp_dir=tmp_path / "shards"
+    )
+    assert len(shard_paths) == 4
+
+    shard_of_wallet: dict[str, int] = {}
+    timestamps_by_wallet: dict[str, list[int]] = {}
+    total = 0
+    for index, shard in enumerate(_iter_activity_shards(shard_paths)):
+        for event in shard:
+            total += 1
+            # Wallet-disjoint: every event of a wallet lands in one shard.
+            assert shard_of_wallet.setdefault(event.proxy_wallet, index) == index
+            timestamps_by_wallet.setdefault(event.proxy_wallet, []).append(
+                event.timestamp
+            )
+    assert total == 10
+    # File order preserved within each wallet.
+    for stamps in timestamps_by_wallet.values():
+        assert stamps == sorted(stamps)

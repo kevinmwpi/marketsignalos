@@ -4,6 +4,8 @@ import json
 from dataclasses import replace
 from pathlib import Path
 
+import pytest
+
 from marketsignalos_polymarket.models import (
     MarketLink,
     PolymarketActivity,
@@ -11,6 +13,7 @@ from marketsignalos_polymarket.models import (
     PolymarketMarket,
     PolymarketPosition,
     PolymarketPositionSnapshot,
+    PolymarketWalletBet,
     PolymarketWalletHydration,
     PolymarketWalletValue,
 )
@@ -20,6 +23,7 @@ from marketsignalos_polymarket.storage import (
     DualMarketLinkStore,
     DualMarketStore,
     DualPositionStore,
+    DualWalletBetStore,
     DualWalletCheckpointStore,
     DualWalletValueStore,
     JsonlActivityStore,
@@ -28,6 +32,7 @@ from marketsignalos_polymarket.storage import (
     JsonlMarketStore,
     JsonlPositionStore,
     JsonlPositionSnapshotStore,
+    JsonlWalletBetStore,
     JsonlWalletHydrationStore,
     JsonlWalletValueStore,
     JsonWalletCheckpointStore,
@@ -379,3 +384,82 @@ def test_dual_market_link_reads_from_primary(tmp_path: Path) -> None:
     written = store.upsert_links([_link("K1", "0xp1", "pending", "auto")])
     assert written == 1
     assert secondary.calls == [("links", 1)]
+
+
+def _wallet_bet(wallet: str, cond: str) -> PolymarketWalletBet:
+    return PolymarketWalletBet(
+        proxy_wallet=wallet,
+        condition_id=cond,
+        outcome_index=0,
+        outcome="Yes",
+        event_slug="e",
+        category="sports",
+        title="t",
+        status="won",
+        entry_price=0.5,
+        cost_usdc=10.0,
+        net_size=20.0,
+        realized_pnl_usdc=0.0,
+        total_pnl_usdc=10.0,
+        clv=None,
+        last_trade_ts=1000,
+        computed_at="2026-07-14T00:00:00Z",
+    )
+
+
+def test_wallet_bet_rewrite_streams_batches(tmp_path: Path) -> None:
+    """Batches handed to the rewrite writer land as one coherent file — the
+    streaming path enrichment uses so millions of records never sit in RAM."""
+    store = JsonlWalletBetStore(tmp_path / "bets.jsonl")
+    with store.rewrite() as write_batch:
+        assert write_batch([_wallet_bet("0xa", "0xc1"), _wallet_bet("0xa", "0xc2")]) == 2
+        assert write_batch([_wallet_bet("0xb", "0xc3")]) == 1
+    rows = [
+        json.loads(line)
+        for line in (tmp_path / "bets.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    assert [(r["proxy_wallet"], r["condition_id"]) for r in rows] == [
+        ("0xa", "0xc1"), ("0xa", "0xc2"), ("0xb", "0xc3"),
+    ]
+
+
+def test_wallet_bet_rewrite_is_atomic_on_failure(tmp_path: Path) -> None:
+    """A crash mid-rewrite must leave the previous file untouched (and no
+    stray temp file), so a failed enrichment can't corrupt the bet history."""
+    path = tmp_path / "bets.jsonl"
+    store = JsonlWalletBetStore(path)
+    store.write_bets([_wallet_bet("0xold", "0xc0")])
+    before = path.read_text(encoding="utf-8")
+
+    with pytest.raises(RuntimeError):
+        with store.rewrite() as write_batch:
+            write_batch([_wallet_bet("0xnew", "0xc9")])
+            raise RuntimeError("simulated crash mid-rewrite")
+
+    assert path.read_text(encoding="utf-8") == before
+    assert not list(tmp_path.glob("*.tmp"))
+
+
+def test_wallet_bet_write_bets_round_trips_via_rewrite(tmp_path: Path) -> None:
+    path = tmp_path / "bets.jsonl"
+    store = JsonlWalletBetStore(path)
+    assert store.write_bets([_wallet_bet("0xa", "0xc1")]) == 1
+    # A second call fully replaces the previous pass (overwrite semantics).
+    assert store.write_bets([_wallet_bet("0xb", "0xc2")]) == 1
+    rows = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
+    assert [r["proxy_wallet"] for r in rows] == ["0xb"]
+
+
+def test_dual_wallet_bet_rewrite_fans_out(tmp_path: Path) -> None:
+    primary = JsonlWalletBetStore(tmp_path / "primary.jsonl")
+    secondary = JsonlWalletBetStore(tmp_path / "secondary.jsonl")
+    dual = DualWalletBetStore(primary, secondary)
+    with dual.rewrite() as write_batch:
+        assert write_batch([_wallet_bet("0xa", "0xc1")]) == 1
+        assert write_batch([_wallet_bet("0xb", "0xc2")]) == 1
+    for name in ("primary.jsonl", "secondary.jsonl"):
+        rows = [
+            json.loads(line)
+            for line in (tmp_path / name).read_text(encoding="utf-8").splitlines()
+        ]
+        assert [r["proxy_wallet"] for r in rows] == ["0xa", "0xb"]

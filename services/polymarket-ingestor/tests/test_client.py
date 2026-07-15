@@ -256,6 +256,57 @@ def test_retry_exhausted_raises() -> None:
     client.close()
 
 
+def test_retry_on_read_timeout_then_succeeds() -> None:
+    call_count = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        call_count["n"] += 1
+        if call_count["n"] == 1:
+            raise httpx.ReadTimeout("read timed out", request=request)
+        return httpx.Response(200, json=[{"proxyWallet": "0xabc", "amount": 1, "pseudonym": "", "name": ""}])
+
+    client = _client_with_mock(handler)
+    rows = client.get_leaderboard()
+    assert call_count["n"] == 2
+    assert len(rows) == 1
+    client.close()
+
+
+def test_retry_transport_error_exhausted_raises() -> None:
+    call_count = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        call_count["n"] += 1
+        raise httpx.ReadTimeout("read timed out", request=request)
+
+    client = _client_with_mock(handler)
+    with pytest.raises(httpx.ReadTimeout):
+        client.get_leaderboard()
+    # max_retries=2 → one initial attempt + two retries
+    assert call_count["n"] == 3
+    client.close()
+
+
+def test_cookie_jar_never_accumulates() -> None:
+    call_count = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        call_count["n"] += 1
+        return httpx.Response(
+            200,
+            headers={"Set-Cookie": f"__cf_bm_{call_count['n']}=v{call_count['n']}; Path=/"},
+            json=[{"proxyWallet": "0xabc", "amount": 1, "pseudonym": "", "name": ""}],
+        )
+
+    client = _client_with_mock(handler)
+    for _ in range(3):
+        client.get_leaderboard()
+    # Request building walks the whole jar, so it must stay empty — a jar
+    # that grows per response degrades large backfills to a crawl.
+    assert len(client._client.cookies) == 0  # noqa: SLF001
+    client.close()
+
+
 def test_host_constants_unchanged() -> None:
     # Tripwire: if these change, every existing JSONL filename assumption breaks too.
     assert LB_API.endswith("lb-api.polymarket.com")

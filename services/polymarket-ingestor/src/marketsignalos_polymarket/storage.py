@@ -17,6 +17,8 @@ Dedupe keys:
 from __future__ import annotations
 
 import json
+from collections.abc import Callable, Iterator
+from contextlib import AbstractContextManager, contextmanager
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any, Protocol
@@ -84,6 +86,9 @@ class EnrichmentStore(Protocol):
 
 class WalletBetStore(Protocol):
     def write_bets(self, bets: list[PolymarketWalletBet]) -> int: ...
+    def rewrite(
+        self,
+    ) -> AbstractContextManager[Callable[[list[PolymarketWalletBet]], int]]: ...
 
 
 class PriceSnapshotStore(Protocol):
@@ -433,10 +438,29 @@ class JsonlWalletBetStore:
         self._path.parent.mkdir(parents=True, exist_ok=True)
 
     def write_bets(self, bets: list[PolymarketWalletBet]) -> int:
-        with self._path.open("w", encoding="utf-8") as fh:
-            for bet in bets:
-                fh.write(json.dumps(asdict(bet), separators=(",", ":")) + "\n")
-        return len(bets)
+        with self.rewrite() as write_batch:
+            return write_batch(bets)
+
+    @contextmanager
+    def rewrite(self) -> Iterator[Callable[[list[PolymarketWalletBet]], int]]:
+        """Streaming rewrite: batches are written to a temp file as they arrive
+        (bounding caller memory to one batch — the full bet-record set can be
+        millions of rows) and atomically swapped in on clean exit, so a crash
+        mid-rewrite leaves the previous file intact."""
+        tmp = self._path.with_suffix(self._path.suffix + ".tmp")
+        try:
+            with tmp.open("w", encoding="utf-8") as fh:
+
+                def _write(batch: list[PolymarketWalletBet]) -> int:
+                    for bet in batch:
+                        fh.write(json.dumps(asdict(bet), separators=(",", ":")) + "\n")
+                    return len(batch)
+
+                yield _write
+            tmp.replace(self._path)
+        except BaseException:
+            tmp.unlink(missing_ok=True)
+            raise
 
 
 class JsonlPriceSnapshotStore:
@@ -1042,6 +1066,32 @@ class PostgresEnrichmentStore:
         return len(enrichments)
 
 
+_WALLET_BET_UPSERT_SQL = """
+    INSERT INTO polymarket_wallet_bets
+        (proxy_wallet, condition_id, outcome_index, outcome,
+         event_slug, category, title, status, entry_price,
+         cost_usdc, net_size, realized_pnl_usdc, total_pnl_usdc,
+         clv, last_trade_ts, computed_at)
+    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s,
+            %s, %s, %s, %s, %s, %s, %s::timestamptz)
+    ON CONFLICT (proxy_wallet, condition_id, outcome_index)
+    DO UPDATE SET
+        outcome           = EXCLUDED.outcome,
+        event_slug        = EXCLUDED.event_slug,
+        category          = EXCLUDED.category,
+        title             = EXCLUDED.title,
+        status            = EXCLUDED.status,
+        entry_price       = EXCLUDED.entry_price,
+        cost_usdc         = EXCLUDED.cost_usdc,
+        net_size          = EXCLUDED.net_size,
+        realized_pnl_usdc = EXCLUDED.realized_pnl_usdc,
+        total_pnl_usdc    = EXCLUDED.total_pnl_usdc,
+        clv               = EXCLUDED.clv,
+        last_trade_ts     = EXCLUDED.last_trade_ts,
+        computed_at       = EXCLUDED.computed_at
+"""
+
+
 class PostgresWalletBetStore:
     """Upsert on (proxy_wallet, condition_id, outcome_index)."""
 
@@ -1051,49 +1101,40 @@ class PostgresWalletBetStore:
     def write_bets(self, bets: list[PolymarketWalletBet]) -> int:
         if not bets:
             return 0
+        with self.rewrite() as write_batch:
+            return write_batch(bets)
+
+    @contextmanager
+    def rewrite(self) -> Iterator[Callable[[list[PolymarketWalletBet]], int]]:
+        """Streaming upsert: one connection/transaction across every batch,
+        committed on clean exit and rolled back on error. Upsert semantics mean
+        batches need no table truncation to stay idempotent."""
         conn = _pg_connect(self._dsn)
         try:
             with conn.cursor() as cur:
-                cur.executemany(
-                    """
-                    INSERT INTO polymarket_wallet_bets
-                        (proxy_wallet, condition_id, outcome_index, outcome,
-                         event_slug, category, title, status, entry_price,
-                         cost_usdc, net_size, realized_pnl_usdc, total_pnl_usdc,
-                         clv, last_trade_ts, computed_at)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s,
-                            %s, %s, %s, %s, %s, %s, %s::timestamptz)
-                    ON CONFLICT (proxy_wallet, condition_id, outcome_index)
-                    DO UPDATE SET
-                        outcome           = EXCLUDED.outcome,
-                        event_slug        = EXCLUDED.event_slug,
-                        category          = EXCLUDED.category,
-                        title             = EXCLUDED.title,
-                        status            = EXCLUDED.status,
-                        entry_price       = EXCLUDED.entry_price,
-                        cost_usdc         = EXCLUDED.cost_usdc,
-                        net_size          = EXCLUDED.net_size,
-                        realized_pnl_usdc = EXCLUDED.realized_pnl_usdc,
-                        total_pnl_usdc    = EXCLUDED.total_pnl_usdc,
-                        clv               = EXCLUDED.clv,
-                        last_trade_ts     = EXCLUDED.last_trade_ts,
-                        computed_at       = EXCLUDED.computed_at
-                    """,
-                    [
-                        (b.proxy_wallet, b.condition_id, b.outcome_index, b.outcome,
-                         b.event_slug, b.category, b.title, b.status, b.entry_price,
-                         b.cost_usdc, b.net_size, b.realized_pnl_usdc, b.total_pnl_usdc,
-                         b.clv, b.last_trade_ts, b.computed_at)
-                        for b in bets
-                    ],
-                )
+
+                def _write(batch: list[PolymarketWalletBet]) -> int:
+                    if not batch:
+                        return 0
+                    cur.executemany(
+                        _WALLET_BET_UPSERT_SQL,
+                        [
+                            (b.proxy_wallet, b.condition_id, b.outcome_index, b.outcome,
+                             b.event_slug, b.category, b.title, b.status, b.entry_price,
+                             b.cost_usdc, b.net_size, b.realized_pnl_usdc, b.total_pnl_usdc,
+                             b.clv, b.last_trade_ts, b.computed_at)
+                            for b in batch
+                        ],
+                    )
+                    return len(batch)
+
+                yield _write
             conn.commit()
-        except Exception:
+        except BaseException:
             conn.rollback()
             raise
         finally:
             conn.close()
-        return len(bets)
 
 
 class PostgresPriceSnapshotStore:
@@ -1399,6 +1440,18 @@ class DualWalletBetStore:
         written = self._primary.write_bets(bets)
         self._secondary.write_bets(bets)
         return written
+
+    @contextmanager
+    def rewrite(self) -> Iterator[Callable[[list[PolymarketWalletBet]], int]]:
+        with self._primary.rewrite() as primary_write, \
+                self._secondary.rewrite() as secondary_write:
+
+            def _write(batch: list[PolymarketWalletBet]) -> int:
+                written = primary_write(batch)
+                secondary_write(batch)
+                return written
+
+            yield _write
 
 
 class DualPriceSnapshotStore:

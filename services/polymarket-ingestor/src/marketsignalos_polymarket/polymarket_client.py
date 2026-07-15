@@ -457,7 +457,27 @@ class PolymarketClient:
     def _get_json(self, url: str, *, params: dict[str, Any] | None = None) -> Any:
         retryable = {429, 500, 502, 503, 504}
         for attempt in range(self._config.max_retries + 1):
-            response = self._client.get(url, params=params)
+            try:
+                response = self._client.get(url, params=params)
+            except httpx.TransportError as exc:
+                # Timeouts / dropped connections otherwise abort an entire
+                # pipeline run. These GETs are idempotent, so retry them with
+                # the same backoff as a 5xx.
+                if attempt == self._config.max_retries:
+                    raise
+                log.warning(
+                    "transient transport error (attempt %d/%d), retrying: %s",
+                    attempt + 1,
+                    self._config.max_retries,
+                    exc,
+                )
+                sleep(self._config.retry_backoff_seconds * (2**attempt))
+                continue
+            # These APIs are cookie-free, but Cloudflare sets cookies on every
+            # response and httpx accumulates each variant in the jar forever.
+            # Request building walks the entire jar, so a large backfill
+            # degrades to hours per request unless the jar stays empty.
+            self._client.cookies.clear()
             if response.status_code not in retryable:
                 response.raise_for_status()
                 return response.json()
@@ -477,7 +497,22 @@ class PolymarketClient:
         also raise on a populated `errors` array or a missing `data` object."""
         retryable = {429, 500, 502, 503, 504}
         for attempt in range(self._config.max_retries + 1):
-            response = self._client.post(GOLDSKY_SUBGRAPH, json={"query": query})
+            try:
+                response = self._client.post(GOLDSKY_SUBGRAPH, json={"query": query})
+            except httpx.TransportError as exc:
+                # Read-only GraphQL query — safe to retry like _get_json.
+                if attempt == self._config.max_retries:
+                    raise
+                log.warning(
+                    "subgraph transient transport error (attempt %d/%d), retrying: %s",
+                    attempt + 1,
+                    self._config.max_retries,
+                    exc,
+                )
+                sleep(self._config.retry_backoff_seconds * (2**attempt))
+                continue
+            # Same jar hygiene as _get_json — see the comment there.
+            self._client.cookies.clear()
             if response.status_code not in retryable:
                 response.raise_for_status()
                 payload = response.json()
