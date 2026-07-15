@@ -27,7 +27,7 @@ import math
 import time
 from collections import Counter, defaultdict
 from collections.abc import Iterator
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -839,6 +839,82 @@ def _inputs_fingerprint() -> tuple[tuple[str, int, int], ...]:
     return tuple(parts)
 
 
+# The in-memory memo dies with the process, and the recompute behind it walks
+# the full activity file — tens of minutes once whale wallets are hydrated. So
+# every fresh result is also spilled to a small on-disk artifact keyed by the
+# same (fingerprint, params) pair, and a cold process serves from the artifact
+# when the key still matches instead of paying the recompute.
+_FEED_CACHE_VERSION = 1
+_FEED_CACHE_MAX_ENTRIES = 6
+
+
+def _feed_cache_path() -> Path:
+    return polymarket_enrichment_path().parent / "skilled_bets_feed_cache.json"
+
+
+def _feed_cache_key(
+    fingerprint: tuple[tuple[str, int, int], ...], params: tuple[Any, ...]
+) -> list[Any]:
+    """JSON-normalized (fingerprint, params) — tuples become lists on disk."""
+    return [[list(part) for part in fingerprint], list(params)]
+
+
+def _feed_cache_load(
+    fingerprint: tuple[tuple[str, int, int], ...], params: tuple[Any, ...]
+) -> tuple[SkilledBetSignal, ...] | None:
+    try:
+        payload = json.loads(_feed_cache_path().read_text(encoding="utf-8"))
+        if payload.get("version") != _FEED_CACHE_VERSION:
+            return None
+        key = _feed_cache_key(fingerprint, params)
+        for entry in payload.get("entries", []):
+            if [entry.get("fingerprint"), entry.get("params")] == key:
+                return tuple(
+                    SkilledBetSignal(**row) for row in entry.get("signals", [])
+                )
+    except (OSError, ValueError, TypeError):
+        # Missing, corrupt, or written by an older signal shape — recompute.
+        return None
+    return None
+
+
+def _feed_cache_store(
+    fingerprint: tuple[tuple[str, int, int], ...],
+    params: tuple[Any, ...],
+    signals: tuple[SkilledBetSignal, ...],
+) -> None:
+    path = _feed_cache_path()
+    key = _feed_cache_key(fingerprint, params)
+    entries: list[dict[str, Any]] = []
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        if payload.get("version") == _FEED_CACHE_VERSION:
+            entries = [
+                entry
+                for entry in payload.get("entries", [])
+                if [entry.get("fingerprint"), entry.get("params")] != key
+            ]
+    except (OSError, ValueError):
+        entries = []
+    entries.insert(0, {
+        "fingerprint": key[0],
+        "params": key[1],
+        "computed_at": time.time(),
+        "signals": [asdict(signal) for signal in signals],
+    })
+    del entries[_FEED_CACHE_MAX_ENTRIES:]
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    try:
+        tmp.write_text(
+            json.dumps({"version": _FEED_CACHE_VERSION, "entries": entries}),
+            encoding="utf-8",
+        )
+        tmp.replace(path)
+    except OSError:
+        tmp.unlink(missing_ok=True)
+        log.warning("skilled_bets feed cache write failed", exc_info=True)
+
+
 @lru_cache(maxsize=32)
 def _compute_skilled_bets_cached(
     _fingerprint: tuple[tuple[str, int, int], ...],
@@ -851,9 +927,23 @@ def _compute_skilled_bets_cached(
     require_positive_edge: bool,
     max_move_captured: float,
 ) -> tuple[SkilledBetSignal, ...]:
-    # _fingerprint is unused inside the body — it exists only to key the cache
-    # on input-file state so changed data forces a recompute.
-    return tuple(
+    # _fingerprint is unused by the computation — it keys the cache on
+    # input-file state so changed data forces a recompute.
+    params = (
+        min_skill,
+        min_resolved,
+        min_position_value_usdc,
+        min_independent_events,
+        max_bet_age_days,
+        include_untradable,
+        require_positive_edge,
+        max_move_captured,
+    )
+    spilled = _feed_cache_load(_fingerprint, params)
+    if spilled is not None:
+        log.info("skilled_bets served from disk cache (%d signals)", len(spilled))
+        return spilled
+    computed = tuple(
         _compute_skilled_bets(
             min_skill=min_skill,
             min_resolved=min_resolved,
@@ -865,13 +955,16 @@ def _compute_skilled_bets_cached(
             max_move_captured=max_move_captured,
         )
     )
+    _feed_cache_store(_fingerprint, params, computed)
+    return computed
 
 
 def invalidate_cache() -> None:
-    """Drop all memoized skilled-bets results. Called after an ingest run so
-    the next request recomputes immediately rather than waiting for the file
-    fingerprint to change."""
+    """Drop all memoized skilled-bets results — in-memory AND the disk spill.
+    Called after an ingest run so the next request recomputes immediately even
+    on filesystems whose coarse mtimes would leave the fingerprint unchanged."""
     _compute_skilled_bets_cached.cache_clear()
+    _feed_cache_path().unlink(missing_ok=True)
     log.info("skilled_bets cache invalidated")
 
 
