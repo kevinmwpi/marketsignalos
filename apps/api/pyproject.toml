@@ -18,9 +18,12 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
   "httpx",
-  "mypy",
+  # Pinned deliberately — see the note in
+  # services/polymarket-ingestor/pyproject.toml. Keep the two packages on the
+  # same versions so a check that passes in one job passes in the other.
+  "mypy==2.3.1",
   "pytest",
-  "ruff",
+  "ruff==0.15.21",
   # tests/test_alert_rules.py parses ops/prometheus/alerts.yml so a renamed
   # collector fails CI instead of silently disarming an alert.
   "pyyaml",

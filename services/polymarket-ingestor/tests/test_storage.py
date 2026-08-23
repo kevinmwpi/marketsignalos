@@ -302,7 +302,7 @@ class _CountingSecondary:
 def test_dual_leaderboard_fans_out_to_secondary(tmp_path: Path) -> None:
     primary = JsonlLeaderboardStore(tmp_path / "lb.jsonl")
     secondary = _CountingSecondary()
-    store = DualLeaderboardStore(primary, secondary)  # type: ignore[arg-type]
+    store = DualLeaderboardStore(primary, secondary)
     entry = PolymarketLeaderboardEntry(
         proxy_wallet="0xabc", name="A", pseudonym="a",
         amount_usdc=1.0, metric="profit", window="all",
@@ -329,7 +329,7 @@ def test_dual_activity_fans_out(tmp_path: Path) -> None:
 def test_dual_position_fans_out(tmp_path: Path) -> None:
     primary = JsonlPositionStore(tmp_path / "p.jsonl")
     secondary = _CountingSecondary()
-    store = DualPositionStore(primary, secondary)  # type: ignore[arg-type]
+    store = DualPositionStore(primary, secondary)
     pos = PolymarketPosition(
         proxy_wallet="0xabc", condition_id="c", outcome_index=0, outcome="Yes",
         size=1, avg_price=0.5, current_value_usdc=1.0,
@@ -342,7 +342,7 @@ def test_dual_position_fans_out(tmp_path: Path) -> None:
 def test_dual_market_fans_out(tmp_path: Path) -> None:
     primary = JsonlMarketStore(tmp_path / "m.jsonl")
     secondary = _CountingSecondary()
-    store = DualMarketStore(primary, secondary)  # type: ignore[arg-type]
+    store = DualMarketStore(primary, secondary)
     m = PolymarketMarket(
         gamma_id="1", condition_id="c", slug="s", question="q?", category="",
         end_date="", outcomes=["Yes", "No"], outcome_prices=[0.5, 0.5],
@@ -356,7 +356,7 @@ def test_dual_market_fans_out(tmp_path: Path) -> None:
 def test_dual_wallet_value_fans_out(tmp_path: Path) -> None:
     primary = JsonlWalletValueStore(tmp_path / "v.jsonl")
     secondary = _CountingSecondary()
-    store = DualWalletValueStore(primary, secondary)  # type: ignore[arg-type]
+    store = DualWalletValueStore(primary, secondary)
     store.write_values([PolymarketWalletValue(proxy_wallet="0xabc", value_usdc=10.0)])
     assert secondary.calls == [("values", 1)]
 
@@ -366,7 +366,7 @@ def test_dual_checkpoint_reads_from_primary(tmp_path: Path) -> None:
     would fire). Write path fans out to both."""
     primary = JsonWalletCheckpointStore(tmp_path / "ckpt.json")
     secondary = _CountingSecondary()
-    store = DualWalletCheckpointStore(primary, secondary)  # type: ignore[arg-type]
+    store = DualWalletCheckpointStore(primary, secondary)
 
     assert store.get_last_timestamp("0xabc") is None  # would raise if secondary hit
     store.set_last_timestamp("0xabc", 1234)
@@ -377,7 +377,7 @@ def test_dual_checkpoint_reads_from_primary(tmp_path: Path) -> None:
 def test_dual_market_link_reads_from_primary(tmp_path: Path) -> None:
     primary = JsonlMarketLinkStore(tmp_path / "links.jsonl")
     secondary = _CountingSecondary()
-    store = DualMarketLinkStore(primary, secondary)  # type: ignore[arg-type]
+    store = DualMarketLinkStore(primary, secondary)
 
     # load_links must not hit secondary.
     assert store.load_links() == []

@@ -244,7 +244,7 @@ The pipeline runs JSONL-first. Postgres is opt-in via `DATABASE_URL` (`Dual*` st
 - Embedding-based matcher (only if TF-IDF precision proves inadequate)
 - Full OpenTelemetry trace propagation (stage durations exist; no span causality yet)
 - Runbook (`docs/runbook.md`) — per-alert runbooks now live in `docs/observability.md`
-- Ruff/mypy are unpinned in both packages; ruff 0.16 + mypy 2.3 surface ~100 pre-existing findings (mostly `RUF100` unused-noqa) that predate the observability work
+- Lint modernization: ruff is pinned at `0.15.21` because `0.16.0` widened its default rule set (~145 findings, 126 autofixable — none of them bugs). Bumping to 0.16.x and clearing them is its own change; keep the pin until then. **Never unpin these** — an unpinned linter makes CI a function of the calendar rather than of the commit
 
 ---
 
