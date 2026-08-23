@@ -19,6 +19,10 @@ from marketsignalos_api.api.routes.polymarket import router as polymarket_router
 from marketsignalos_api.api.routes.signal_ledger import router as signal_ledger_router
 from marketsignalos_api.api.routes.skilled_bets import router as skilled_bets_router
 from marketsignalos_api.api.routes.wallets import router as wallets_router
+from marketsignalos_api.observability import (
+    PrometheusMiddleware,
+    register_pipeline_metrics,
+)
 from marketsignalos_api.services.fastlane import start_fastlane_from_env, stop_fastlane
 from marketsignalos_api.services.ingest_scheduler import (
     start_scheduler_from_env,
@@ -31,7 +35,11 @@ async def _lifespan(_app: FastAPI) -> AsyncIterator[None]:
     """Start the optional background loops (ingest scheduler + fast-lane
     poller) with the server and cancel them cleanly on shutdown. Both are
     no-ops unless their env vars are set (INGEST_EVERY_MINUTES /
-    FASTLANE_EVERY_SECONDS)."""
+    FASTLANE_EVERY_SECONDS).
+
+    Pipeline collectors are registered here too so every series exists from
+    boot rather than appearing after the first ingest."""
+    register_pipeline_metrics()
     start_scheduler_from_env()
     start_fastlane_from_env()
     try:
@@ -118,6 +126,11 @@ def create_app() -> FastAPI:
         version="0.1.0",
         lifespan=_lifespan,
     )
+
+    # Registered before CORS so it is the outermost middleware and therefore
+    # times the whole request, CORS handling included — instrumentation that
+    # measures only part of the stack quietly under-reports latency.
+    app.add_middleware(PrometheusMiddleware)
 
     app.add_middleware(
         CORSMiddleware,

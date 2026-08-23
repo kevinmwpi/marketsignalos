@@ -21,6 +21,10 @@ dev = [
   "mypy",
   "pytest",
   "ruff",
+  # tests/test_alert_rules.py parses ops/prometheus/alerts.yml so a renamed
+  # collector fails CI instead of silently disarming an alert.
+  "pyyaml",
+  "types-PyYAML",
 ]
 
 [tool.setuptools]

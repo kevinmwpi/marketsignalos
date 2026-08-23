@@ -20,6 +20,7 @@ Env vars:
 from __future__ import annotations
 
 import argparse
+import functools
 import json
 import logging
 import os
@@ -33,10 +34,11 @@ from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeVar, cast
 
 import httpx
 
+from . import metrics
 from .kalshi_markets_fetch import (
     KalshiMarket,
     fetch_kalshi_markets,
@@ -1051,6 +1053,13 @@ def _hydrate_single_wallet(
         else:
             written = stores.activity.write_activity(events)
         activity_written += written
+        # The stall detector's ground truth. A wallet backfill can legitimately
+        # run for hours inside one "wallets" stage, so stage transitions alone
+        # cannot distinguish slow from wedged. A persisted page is durable
+        # progress by definition, and on 2026-07-13 it was exactly this that
+        # stopped happening for 13.5 hours while the process still looked fine.
+        metrics.pipeline_records_written_total.labels(store="activity").inc(written)
+        metrics.heartbeat()
         batch_max = max(event.timestamp for event in events)
         if newest_ts is None or batch_max > newest_ts:
             newest_ts = batch_max
@@ -2272,6 +2281,29 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+_PipelineFn = TypeVar("_PipelineFn", bound=Callable[..., "PipelineResult"])
+
+
+def _tracked_run(kind: str) -> Callable[[_PipelineFn], _PipelineFn]:
+    """Mark a pipeline entry point as a tracked run.
+
+    A decorator rather than an inline ``with`` block so the instrumentation
+    lands on every caller — the API buttons, the background scheduler, and the
+    CLI — without the entry-point bodies changing shape. Exiting the run also
+    closes whatever stage was still open, so the final stage gets timed.
+    """
+
+    def decorate(fn: _PipelineFn) -> _PipelineFn:
+        @functools.wraps(fn)
+        def wrapper(*args: Any, **kwargs: Any) -> PipelineResult:
+            with metrics.track_run(kind):
+                return fn(*args, **kwargs)
+
+        return cast(_PipelineFn, wrapper)
+
+    return decorate
+
+
 @dataclass(slots=True)
 class PipelineResult:
     """Counts surfaced back to the API so the UI can summarize the run.
@@ -2355,6 +2387,7 @@ class PipelineResult:
 _DEFAULT_WINDOWS: tuple[str, ...] = ("day", "week", "month", "all")
 
 
+@_tracked_run("shallow")
 def run_pipeline(
     *,
     windows: list[str] | None = None,
@@ -2404,14 +2437,28 @@ def run_pipeline(
     client = client or PolymarketClient(PolymarketClientConfig.from_env())
 
     def _emit(payload: dict[str, Any]) -> None:
+        # The pipeline already announces every stage transition here for the
+        # UI's benefit, and that stream is an accurate description of where the
+        # run is. Deriving stage timings from it keeps instrumentation out of
+        # the pipeline body entirely — no reindentation of multi-hundred-line
+        # blocks, and a stage added later is measured the moment it emits.
+        stage_name = payload.get("stage")
+        if isinstance(stage_name, str) and stage_name:
+            metrics.begin_stage(stage_name)
         if progress_cb is not None:
             progress_cb(payload)
 
     try:
         # 1. Seed watchlist across (window × metric)
-        metrics = ("profit", "volume") if include_profit_leaderboard else ("volume",)
+        # Named leaderboard_metrics, not metrics: this module now imports the
+        # observability `metrics` module, and the bare name shadowed it.
+        leaderboard_metrics = (
+            ("profit", "volume") if include_profit_leaderboard else ("volume",)
+        )
         log.info(
-            "pipeline step=seed_watchlist windows=%s metrics=%s", attempts, metrics
+            "pipeline step=seed_watchlist windows=%s metrics=%s",
+            attempts,
+            leaderboard_metrics,
         )
         existing = set(_load_watchlist(_watchlist_path()))
         seeded: set[str] = set(existing)
@@ -2425,7 +2472,7 @@ def run_pipeline(
                 "detail": f"window={window}",
             })
             window_ok = False
-            for metric in metrics:
+            for metric in leaderboard_metrics:
                 try:
                     raw = client.get_leaderboard(
                         metric=metric, window=window, limit=leaderboard_limit
@@ -2956,6 +3003,7 @@ def _pick_hydration_batch(
     return [r.proxy_wallet for r in candidates[:batch_size]]
 
 
+@_tracked_run("deep")
 def run_deep_pipeline(
     *,
     leaderboard_depth: int = _DEEP_DEFAULT_DEPTH,
@@ -2999,6 +3047,14 @@ def run_deep_pipeline(
     client = client or PolymarketClient(PolymarketClientConfig.from_env())
 
     def _emit(payload: dict[str, Any]) -> None:
+        # The pipeline already announces every stage transition here for the
+        # UI's benefit, and that stream is an accurate description of where the
+        # run is. Deriving stage timings from it keeps instrumentation out of
+        # the pipeline body entirely — no reindentation of multi-hundred-line
+        # blocks, and a stage added later is measured the moment it emits.
+        stage_name = payload.get("stage")
+        if isinstance(stage_name, str) and stage_name:
+            metrics.begin_stage(stage_name)
         if progress_cb is not None:
             progress_cb(payload)
 

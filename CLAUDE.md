@@ -30,6 +30,7 @@ marketsignalOS/
 │   ├── ingestor/data/             Shared JSONL data dir (gitignored; only artifact in this tree)
 │   └── polymarket-ingestor/       Polymarket ingestion + Polymarket→Kalshi market matcher
 ├── docs/                          Architecture, PRD, ADRs, runbooks
+├── ops/prometheus/alerts.yml      Alerting rules (incident regressions + SLOs)
 ├── scripts/                       Deployment entry points + discovery probes
 ├── .github/workflows/ci.yml       Python (lint/type/test) + Node (lint/build)
 ├── pyproject.toml                 Root Python tooling config (ruff, mypy, pytest paths)
@@ -157,7 +158,7 @@ The pipeline runs JSONL-first. Postgres is opt-in via `DATABASE_URL` (`Dual*` st
 |---|---|---|
 | `GET` | `/` | Minimal HTML landing page (orientation only; dashboard is the Next.js app) |
 | `GET` | `/health` | Health check (used by Railway) |
-| `GET` | `/metrics` | Prometheus text exposition |
+| `GET` | `/metrics` | Prometheus text exposition — request RED, pipeline stages, upstream client, model health, feed cache (see `docs/observability.md`) |
 | `POST` | `/ingestor/run` | Triggers one pass of `run_pipeline()`; returns 202 + started_at |
 | `POST` | `/ingestor/run/deep` | Triggers one deep discovery pass (categorized leaderboard sweep + recent-trader discovery); shares the single running flag with `/ingestor/run` |
 | `GET` | `/ingestor/status` | Live state: running flag, last_exit_code, last_error, log_tail, last_summary, schedule (background-scheduler state; null when off) |
@@ -236,11 +237,14 @@ The pipeline runs JSONL-first. Postgres is opt-in via `DATABASE_URL` (`Dual*` st
 - **Price-lead (informed-flow footprint) scoring** — `price_lead.py` scores whether the market tends to follow each wallet's entries from three explainable sub-signals (post-entry drift within 48h via price snapshots, longshot conversion vs implied, late-entry accuracy vs implied), event-capped like the skill fit; enrichment carries `price_lead_score` + `price_lead_drivers` + raw metrics (Alembic migration `0008`), feed rows carry `wallet_price_lead_score` (dashboard "Price lead" badge at ≥0.6), and the fast-lane watchlist ranks by `rank_score × (1 + price_lead_score)`. Descriptive and non-accusatory: it labels how the market reacts, never claims why
 - **Fast-lane poller** — `FASTLANE_EVERY_SECONDS` starts a second in-process loop that polls ONLY `/activity` for the top-N tailable wallets (by `rank_score`, boosted by `price_lead_score`) and webhook-delivers new BUY/SELL trades within one interval. Alert-only by design: it never writes the JSONL stores (the pipeline stays the sole writer and re-fetches the same events with dedupe); watermarks live in `fastlane_state.json`, first sight of a wallet initializes silently, and failed webhook POSTs retry the same batch (at-least-once)
 
+- **Observability** — `/metrics` exports real collectors instead of default process stats: request RED keyed on the route template, per-stage pipeline durations + RSS, a progress heartbeat that makes a wedged run detectable without an error, upstream request timing split into *construction* vs transport, and model-health gauges (`resolved_bets`, population prior mu/sigma2, skill saturation ratio). `ops/prometheus/alerts.yml` carries 13 rules: seven are regression guards derived one-for-one from the post-mortems in `docs/fix-lessons-learned.md` (each tagged with its incident date), six are SLOs. `apps/api/tests/test_alert_rules.py` fails CI if a rule references a metric nothing exports, so renaming a collector can't silently disarm an alert. Full inventory and per-alert runbooks in `docs/observability.md`
+
 ### Pending / in progress
 - `/positions` pagination (currently caps at ~100 per wallet)
 - Embedding-based matcher (only if TF-IDF precision proves inadequate)
-- Full OpenTelemetry trace propagation
-- Runbook (`docs/runbook.md`)
+- Full OpenTelemetry trace propagation (stage durations exist; no span causality yet)
+- Runbook (`docs/runbook.md`) — per-alert runbooks now live in `docs/observability.md`
+- Ruff/mypy are unpinned in both packages; ruff 0.16 + mypy 2.3 surface ~100 pre-existing findings (mostly `RUF100` unused-noqa) that predate the observability work
 
 ---
 
@@ -277,5 +281,6 @@ Deployed on **Railway** via Railpack builder.
 | `docs/polymarket-pipeline.md` | Full Polymarket data-flow reference |
 | `docs/polymarket-api-discovery.md` | Validated public Polymarket endpoint shapes |
 | `docs/phase4-roadmap.md` | Prioritized Phase 4+ roadmap (bot discovery + insight-trader tailing) |
+| `docs/observability.md` | Metric inventory, alert reference, incident→alert coverage |
 | `docs/runbook.md` | Operational runbook (WIP) |
 | `docs/fix-lessons-learned.md` | Post-mortems and lessons |

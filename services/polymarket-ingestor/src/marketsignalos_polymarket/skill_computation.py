@@ -34,11 +34,13 @@ from __future__ import annotations
 
 import logging
 import math
+import time
 from collections import defaultdict
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, replace
 from typing import Any
 
+from . import metrics
 from .bayesian_skill import (
     Bet,
     PopulationPrior,
@@ -904,6 +906,7 @@ def compute_enrichment_outputs_streaming(
       2. Refit each wallet under the empirical prior — this is the
          shrinkage step that prevents 5/5 wallets from looking elite.
     """
+    _started = time.perf_counter()
     # Build the markets index — keep the most recently fetched per condition_id.
     markets_by_condition: dict[str, PolymarketMarket] = {}
     for market in markets:
@@ -1010,17 +1013,58 @@ def compute_enrichment_outputs_streaming(
     out.sort(
         key=lambda e: (-e.rank_score, -e.skill_likelihood, e.proxy_wallet)
     )
+    resolved_bets = sum(e.resolved_trades for e in out)
     log.info(
         "enrichment_computed wallets=%d markets=%d resolved_bets=%d "
         "bet_records=%d prior=(mu=%.3f, sigma2=%.3f)",
         len(out),
         len(markets_by_condition),
-        sum(e.resolved_trades for e in out),
+        resolved_bets,
         len(all_bets),
         prior.mu,
         prior.sigma2,
     )
+    _export_model_health(
+        enrichments=out,
+        resolved_bets=resolved_bets,
+        market_count=len(markets_by_condition),
+        prior=prior,
+        duration_seconds=time.perf_counter() - _started,
+    )
     return out, all_bets
+
+
+# Every quantity below was already computed and already logged, and every one
+# of them went silently wrong in production anyway — a log line nobody greps is
+# not a monitor. Exporting them as series is what turns "resolved_bets=0" from
+# a string in a file into a condition that pages someone.
+def _export_model_health(
+    *,
+    enrichments: list[PolymarketWalletEnrichment],
+    resolved_bets: int,
+    market_count: int,
+    prior: PopulationPrior,
+    duration_seconds: float,
+) -> None:
+    metrics.enrichment_duration_seconds.observe(duration_seconds)
+    metrics.enrichment_wallets.set(len(enrichments))
+    metrics.enrichment_resolved_bets.set(resolved_bets)
+    metrics.enrichment_markets.set(market_count)
+    metrics.enrichment_tailable_wallets.set(
+        sum(1 for e in enrichments if e.tailability_status == "tailable")
+    )
+    metrics.population_prior_mu.set(prior.mu)
+    metrics.population_prior_sigma2.set(prior.sigma2)
+    # The 2026-07-14 divergence ended with skill_likelihood >= 0.999 for 500 of
+    # 500 wallets. Every wallet looking maximally skilled is indistinguishable
+    # from no signal at all, so the *ratio* is the health check: a healthy fit
+    # sits near 0.01, and anything approaching 1.0 means the score has stopped
+    # discriminating regardless of whether the fit "converged".
+    metrics.skill_likelihood_saturated_ratio.set(
+        (sum(1 for e in enrichments if e.skill_likelihood > 0.999) / len(enrichments))
+        if enrichments
+        else 0.0
+    )
 
 
 def compute_all_enrichment(
