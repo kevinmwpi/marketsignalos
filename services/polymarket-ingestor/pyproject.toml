@@ -28,7 +28,7 @@ dev = [
   # same PR.
   "mypy==2.3.1",
   "pytest",
-  "ruff==0.15.21",
+  "ruff==0.16.4",
 ]
 
 [tool.setuptools]
@@ -40,6 +40,16 @@ where = ["src"]
 [tool.ruff]
 line-length = 100
 target-version = "py312"
+
+[tool.ruff.lint]
+# TRY004 wants TypeError wherever a guard checks a type. These guards check the
+# *shape of a payload an external API returned* ("Expected list from /markets,
+# got dict"), which is a bad value, not a caller passing the wrong type — and
+# they sit alongside argument-validation guards in the same functions that
+# already raise ValueError, with tests asserting it. Converting them would be a
+# behaviour change across the client and storage layers in service of a style
+# opinion, so the convention stays ValueError.
+ignore = ["TRY004"]
 
 [tool.mypy]
 python_version = "3.12"

@@ -6,14 +6,14 @@ Create Date: 2026-06-11
 """
 from __future__ import annotations
 
-from typing import Sequence, Union
+from collections.abc import Sequence
 
 from alembic import op
 
 revision: str = "0006_trader_style_fields"
-down_revision: Union[str, None] = "0005_clv_wallet_bets_price_history"
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | None = "0005_clv_wallet_bets_price_history"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:

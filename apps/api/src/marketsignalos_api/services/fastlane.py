@@ -42,7 +42,7 @@ import logging
 import os
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -107,7 +107,7 @@ class FastlaneConfig:
 
 
 def _utcnow_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 # ── Watchlist selection ──────────────────────────────────────────────────────
@@ -182,7 +182,7 @@ def _default_fetch(address: str, since_ts: int | None) -> list[dict[str, Any]]:
     """One activity page per wallet per tick. A wallet doing >500 trades
     inside one interval overflows the page and the excess is only alerted by
     the next full pipeline pass — acceptable for an alerting sidecar."""
-    from marketsignalos_polymarket.polymarket_client import (  # noqa: PLC0415
+    from marketsignalos_polymarket.polymarket_client import (
         PolymarketClient,
     )
 
@@ -387,7 +387,7 @@ class FastlanePoller:
             loop = asyncio.get_running_loop()
             self.last_result = await loop.run_in_executor(None, run_fastlane_tick)
             self.ticks_completed += 1
-        except Exception:  # noqa: BLE001 — the loop must survive any tick failure
+        except Exception:
             log.exception("fastlane tick raised")
         finally:
             self._tick_running = False

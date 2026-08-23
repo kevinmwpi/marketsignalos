@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from marketsignalos_polymarket.price_lead import (
     LeadBet,
@@ -10,7 +10,7 @@ from marketsignalos_polymarket.price_lead import (
 
 
 def _iso(ts: int) -> str:
-    return datetime.fromtimestamp(ts, tz=timezone.utc).isoformat()
+    return datetime.fromtimestamp(ts, tz=UTC).isoformat()
 
 
 def _bet(

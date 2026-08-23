@@ -10,7 +10,6 @@ from pydantic import BaseModel, Field
 from marketsignalos_api._paths import polymarket_enrichment_path
 from marketsignalos_api.services.external_urls import polymarket_profile_url
 
-
 router = APIRouter(prefix="/signals", tags=["signals"])
 
 

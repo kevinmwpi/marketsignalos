@@ -31,7 +31,7 @@ import math
 import re
 from collections import defaultdict
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from .models import MarketLink
 
@@ -154,10 +154,10 @@ def _parse_iso_date(s: str) -> datetime | None:
     # Trim to ISO date portion; handle Z and offset variants.
     s = s.strip().replace("Z", "+00:00")
     try:
-        return datetime.fromisoformat(s).astimezone(timezone.utc)
+        return datetime.fromisoformat(s).astimezone(UTC)
     except (ValueError, TypeError):
         try:
-            return datetime.strptime(s[:10], "%Y-%m-%d").replace(tzinfo=timezone.utc)
+            return datetime.strptime(s[:10], "%Y-%m-%d").replace(tzinfo=UTC)
         except ValueError:
             return None
 
