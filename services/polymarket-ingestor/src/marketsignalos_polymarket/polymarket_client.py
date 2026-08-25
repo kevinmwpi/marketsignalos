@@ -234,8 +234,11 @@ class PolymarketClient:
                 if cursor_ts is not None
                 else ""
             )
+            # Percent-format is deliberate: GraphQL is brace-dense, and an
+            # f-string would need every literal { and } doubled. This keeps the
+            # query readable as the GraphQL it actually is.
             query = (
-                "{ orderFilledEvents(first: %d, orderBy: timestamp, "
+                "{ orderFilledEvents(first: %d, orderBy: timestamp, "  # noqa: UP031
                 "orderDirection: desc%s) { maker { id } taker { id } timestamp } }"
                 % (page_size, where)
             )
@@ -374,8 +377,10 @@ class PolymarketClient:
         cursor_ts = before_timestamp
         for _ in range(max_pages):
             ts_filter = f", timestamp_lt: {cursor_ts}" if cursor_ts is not None else ""
+            # Percent-format for the same reason as above: doubling braces in
+            # an f-string would make this query far harder to read.
             query = (
-                "{ orderFilledEvents(first: %d, orderBy: timestamp, "
+                "{ orderFilledEvents(first: %d, orderBy: timestamp, "  # noqa: UP031
                 'orderDirection: desc, where: { or: [{ maker: "%s" }, { taker: "%s" }]%s }) '
                 "{ id timestamp transactionHash maker { id } taker { id } "
                 "makerAssetId takerAssetId makerAmountFilled takerAmountFilled } }"

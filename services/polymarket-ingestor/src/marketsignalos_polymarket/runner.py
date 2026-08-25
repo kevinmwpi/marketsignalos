@@ -29,10 +29,10 @@ import shutil
 import threading
 import uuid
 import zlib
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from collections.abc import Callable, Iterator
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, TypeVar, cast
 
@@ -76,12 +76,12 @@ from .storage import (
     DualLeaderboardStore,
     DualMarketLinkStore,
     DualMarketStore,
-    DualPositionStore,
     DualPositionSnapshotStore,
+    DualPositionStore,
     DualPriceSnapshotStore,
     DualWalletBetStore,
-    DualWalletHydrationStore,
     DualWalletCheckpointStore,
+    DualWalletHydrationStore,
     DualWalletValueStore,
     EnrichmentStore,
     JsonlActivityStore,
@@ -90,8 +90,8 @@ from .storage import (
     JsonlLeaderboardStore,
     JsonlMarketLinkStore,
     JsonlMarketStore,
-    JsonlPositionStore,
     JsonlPositionSnapshotStore,
+    JsonlPositionStore,
     JsonlPriceSnapshotStore,
     JsonlWalletBetStore,
     JsonlWalletHydrationStore,
@@ -100,20 +100,20 @@ from .storage import (
     LeaderboardStore,
     MarketLinkStore,
     MarketStore,
-    PositionStore,
     PositionSnapshotStore,
+    PositionStore,
     PostgresActivityStore,
     PostgresClosedPositionStore,
     PostgresEnrichmentStore,
     PostgresLeaderboardStore,
     PostgresMarketLinkStore,
     PostgresMarketStore,
-    PostgresPositionStore,
     PostgresPositionSnapshotStore,
+    PostgresPositionStore,
     PostgresPriceSnapshotStore,
     PostgresWalletBetStore,
-    PostgresWalletHydrationStore,
     PostgresWalletCheckpointStore,
+    PostgresWalletHydrationStore,
     PostgresWalletValueStore,
     PriceSnapshotStore,
     WalletBetStore,
@@ -827,8 +827,8 @@ def _fetched_at_age_seconds(fetched_at: str) -> float | None:
         normalized = fetched_at.replace("Z", "+00:00")
         dt = datetime.fromisoformat(normalized)
         if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
-        return (datetime.now(timezone.utc) - dt).total_seconds()
+            dt = dt.replace(tzinfo=UTC)
+        return (datetime.now(UTC) - dt).total_seconds()
     except ValueError:
         return None
 
@@ -1978,7 +1978,7 @@ DEEP_DEFAULT_DORMANT_DAYS = 90
 
 
 def _utcnow_iso() -> str:
-    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    return datetime.now(UTC).isoformat().replace("+00:00", "Z")
 
 
 def _load_review_state(path: Path) -> dict[str, PolymarketWalletReviewState]:
@@ -2939,7 +2939,7 @@ def prune_review_state(
     skilled = _load_skilled_wallets(enrichment_path)
     open_positions = _load_wallets_with_open_positions(positions_path)
     last_activity = _load_last_activity_by_wallet(enrichment_path)
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     cutoff_ts = int((now - timedelta(days=dormant_days)).timestamp())
     archived = 0
 
@@ -3436,7 +3436,7 @@ def main(argv: list[str] | None = None) -> int:
             addresses = list(args.address)
             wl_path = args.watchlist or _watchlist_path()
             addresses.extend(_load_watchlist(wl_path))
-            addresses = sorted(set(a for a in addresses if a))
+            addresses = sorted({a for a in addresses if a})
             if not addresses:
                 log.error(
                     "no wallets to ingest — run 'seed-watchlist' first, pass --address, "

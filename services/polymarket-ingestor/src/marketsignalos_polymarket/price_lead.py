@@ -35,7 +35,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 # condition_id -> [(fetched_at_iso, yes_price, closed)] sorted by fetched_at.
 # Structurally identical to skill_computation._PriceHistory (redeclared here
@@ -57,11 +57,13 @@ def parse_iso_ts(iso: str) -> int:
     if not iso:
         return 0
     try:
-        parsed = datetime.fromisoformat(iso.replace("Z", "+00:00"))
+        # fromisoformat has understood a trailing "Z" since 3.11; the package
+        # targets 3.12, so the old .replace() shim is dead weight.
+        parsed = datetime.fromisoformat(iso)
     except ValueError:
         return 0
     if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=timezone.utc)
+        parsed = parsed.replace(tzinfo=UTC)
     return int(parsed.timestamp())
 
 

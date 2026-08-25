@@ -4,7 +4,7 @@ import asyncio
 import logging
 import threading
 from collections import deque
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any, cast
 
 from fastapi import APIRouter, HTTPException
@@ -35,7 +35,7 @@ _log_buffer: deque[str] = deque(maxlen=_LOG_TAIL_MAXLEN)
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 class IngestorStatus(BaseModel):
@@ -68,7 +68,10 @@ class _BufferHandler(logging.Handler):
     def emit(self, record: logging.LogRecord) -> None:
         try:
             self._buffer.append(self.format(record))
-        except Exception:
+        except Exception:  # noqa: BLE001 — required Handler.emit contract
+            # A logging handler must never let an exception escape into the
+            # code that logged; the stdlib's own handlers catch bare Exception
+            # here and route it to handleError for exactly this reason.
             self.handleError(record)
 
 
@@ -157,12 +160,12 @@ def _execute_pipeline_sync(pipeline_callable: Any) -> None:
         # stale cache is recoverable and self-heals on the next fingerprint
         # change, so a failure here must not abort the status update above.
         try:
-            from marketsignalos_api.services.skilled_bets import (  # noqa: PLC0415
+            from marketsignalos_api.services.skilled_bets import (
                 invalidate_cache,
             )
 
             invalidate_cache()
-        except Exception:  # noqa: BLE001
+        except Exception:
             log.warning("could not invalidate skilled_bets cache", exc_info=True)
 
         # Post-ingest signal passes, in dependency order:
@@ -175,28 +178,28 @@ def _execute_pipeline_sync(pipeline_callable: Any) -> None:
         # /signals/*/refresh|run endpoint.
         if exit_code == 0:
             try:
-                from marketsignalos_api.services.signal_ledger import (  # noqa: PLC0415
+                from marketsignalos_api.services.signal_ledger import (
                     update_signal_ledger,
                 )
 
                 update_signal_ledger()
-            except Exception:  # noqa: BLE001
+            except Exception:
                 log.warning("could not update signal ledger", exc_info=True)
             try:
-                from marketsignalos_api.services.exit_signals import (  # noqa: PLC0415
+                from marketsignalos_api.services.exit_signals import (
                     update_exit_signals,
                 )
 
                 update_exit_signals()
-            except Exception:  # noqa: BLE001
+            except Exception:
                 log.warning("could not update exit signals", exc_info=True)
             try:
-                from marketsignalos_api.services.notifications import (  # noqa: PLC0415
+                from marketsignalos_api.services.notifications import (
                     run_notification_pass,
                 )
 
                 run_notification_pass()
-            except Exception:  # noqa: BLE001
+            except Exception:
                 log.warning("could not run notification pass", exc_info=True)
     finally:
         _detach_log_capture(handler)
@@ -229,7 +232,7 @@ def _run_ingestor_sync() -> None:
     docs/0002-cross-exchange-decision.md).
     """
     try:
-        from marketsignalos_polymarket.runner import run_pipeline  # noqa: PLC0415
+        from marketsignalos_polymarket.runner import run_pipeline
     except ImportError as exc:
         _record_import_failure(exc)
         return
@@ -239,7 +242,7 @@ def _run_ingestor_sync() -> None:
 def _run_deep_ingestor_sync() -> None:
     """Runs the deep review pipeline (categorized leaderboard sweep + prune)."""
     try:
-        from marketsignalos_polymarket.runner import run_deep_pipeline  # noqa: PLC0415
+        from marketsignalos_polymarket.runner import run_deep_pipeline
     except ImportError as exc:
         _record_import_failure(exc)
         return
@@ -303,7 +306,7 @@ async def trigger_ingestor_run() -> JSONResponse:
     which returns 409.
     """
     try:
-        from marketsignalos_polymarket.runner import run_pipeline  # noqa: F401, PLC0415
+        from marketsignalos_polymarket.runner import run_pipeline  # noqa: F401
     except ImportError as exc:
         log.error("polymarket pipeline not importable: %s", exc)
         raise HTTPException(
@@ -332,7 +335,7 @@ async def trigger_deep_ingestor_run() -> JSONResponse:
     already in flight.
     """
     try:
-        from marketsignalos_polymarket.runner import run_deep_pipeline  # noqa: F401, PLC0415
+        from marketsignalos_polymarket.runner import run_deep_pipeline  # noqa: F401
     except ImportError as exc:
         log.error("polymarket pipeline not importable: %s", exc)
         raise HTTPException(
@@ -359,7 +362,7 @@ class WatchlistAddRequest(BaseModel):
 def get_watchlist() -> dict[str, Any]:
     """Current wallet watchlist (manual + auto-seeded, merged)."""
     try:
-        from marketsignalos_polymarket.runner import run_list_watchlist  # noqa: PLC0415
+        from marketsignalos_polymarket.runner import run_list_watchlist
     except ImportError as exc:
         raise HTTPException(
             status_code=500,
@@ -377,7 +380,7 @@ def add_watchlist_wallet(body: WatchlistAddRequest) -> JSONResponse:
     pipeline run. Returns 409 while a pipeline run is in flight to avoid
     racing its watchlist rewrite."""
     try:
-        from marketsignalos_polymarket.runner import (  # noqa: PLC0415
+        from marketsignalos_polymarket.runner import (
             run_add_watchlist_wallet,
         )
     except ImportError as exc:
@@ -410,7 +413,7 @@ def trigger_prune_wallets(
     polymarket_wallet_review_state.jsonl.
     """
     try:
-        from marketsignalos_polymarket.runner import run_prune_wallets  # noqa: PLC0415
+        from marketsignalos_polymarket.runner import run_prune_wallets
     except ImportError as exc:
         log.error("polymarket pipeline not importable: %s", exc)
         raise HTTPException(

@@ -30,6 +30,7 @@ concentrated as a sports bot).
 """
 from __future__ import annotations
 
+import itertools
 import math
 import statistics
 from collections import Counter
@@ -202,7 +203,7 @@ def compute_trader_style(
 
     # Cadence — median inter-trade gap.
     median_gap = 0.0
-    gaps = [b.timestamp - a.timestamp for a, b in zip(trades, trades[1:])]
+    gaps = [b.timestamp - a.timestamp for a, b in itertools.pairwise(trades)]
     if len(gaps) >= _MIN_GAPS_FOR_CADENCE:
         median_gap = float(statistics.median(gaps))
         scores.append(_cadence_score(median_gap))
@@ -244,8 +245,10 @@ def compute_trader_style(
         archetype = "unclassified"
         automation_score = 0.0
         drivers = [
-            "insufficient history for style classification "
-            f"({trade_count} trades, {len(scores)} style signals)"
+            (
+                "insufficient history for style classification "
+                f"({trade_count} trades, {len(scores)} style signals)"
+            )
         ]
     elif automation_score >= SYSTEMATIC_THRESHOLD:
         archetype = "systematic"

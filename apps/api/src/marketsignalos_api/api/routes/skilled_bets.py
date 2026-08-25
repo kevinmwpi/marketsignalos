@@ -7,7 +7,6 @@ from pydantic import BaseModel, Field
 
 from marketsignalos_api.services.skilled_bets import compute_skilled_bets, summarize_skilled_bets
 
-
 router = APIRouter(prefix="/signals", tags=["signals"])
 
 

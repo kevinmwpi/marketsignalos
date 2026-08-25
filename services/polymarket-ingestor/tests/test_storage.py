@@ -30,8 +30,8 @@ from marketsignalos_polymarket.storage import (
     JsonlLeaderboardStore,
     JsonlMarketLinkStore,
     JsonlMarketStore,
-    JsonlPositionStore,
     JsonlPositionSnapshotStore,
+    JsonlPositionStore,
     JsonlWalletBetStore,
     JsonlWalletHydrationStore,
     JsonlWalletValueStore,
@@ -431,10 +431,9 @@ def test_wallet_bet_rewrite_is_atomic_on_failure(tmp_path: Path) -> None:
     store.write_bets([_wallet_bet("0xold", "0xc0")])
     before = path.read_text(encoding="utf-8")
 
-    with pytest.raises(RuntimeError):
-        with store.rewrite() as write_batch:
-            write_batch([_wallet_bet("0xnew", "0xc9")])
-            raise RuntimeError("simulated crash mid-rewrite")
+    with pytest.raises(RuntimeError), store.rewrite() as write_batch:
+        write_batch([_wallet_bet("0xnew", "0xc9")])
+        raise RuntimeError("simulated crash mid-rewrite")
 
     assert path.read_text(encoding="utf-8") == before
     assert not list(tmp_path.glob("*.tmp"))

@@ -23,7 +23,7 @@ dev = [
   # same versions so a check that passes in one job passes in the other.
   "mypy==2.3.1",
   "pytest",
-  "ruff==0.15.21",
+  "ruff==0.16.4",
   # tests/test_alert_rules.py parses ops/prometheus/alerts.yml so a renamed
   # collector fails CI instead of silently disarming an alert.
   "pyyaml",
@@ -39,6 +39,11 @@ where = ["src"]
 [tool.ruff]
 line-length = 100
 target-version = "py312"
+
+[tool.ruff.lint]
+# See the rationale in services/polymarket-ingestor/pyproject.toml — kept in
+# sync so the two packages lint under the same rules.
+ignore = ["TRY004"]
 
 [tool.mypy]
 python_version = "3.12"

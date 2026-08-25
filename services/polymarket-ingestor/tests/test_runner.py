@@ -7,18 +7,19 @@ from typing import Any
 import httpx
 import pytest
 
-from marketsignalos_polymarket.polymarket_client import (
-    PolymarketClient,
-    PolymarketClientConfig,
-)
 from marketsignalos_polymarket.kalshi_markets_fetch import (
     KalshiMarket,
     write_kalshi_markets_jsonl,
 )
 from marketsignalos_polymarket.models import PolymarketActivity, PolymarketMarket
+from marketsignalos_polymarket.polymarket_client import (
+    PolymarketClient,
+    PolymarketClientConfig,
+)
 from marketsignalos_polymarket.runner import (
     _activity_key,
     _build_stores,
+    _EconomicsPeriodEntry,
     _is_kalshi_parlay,
     _paginate_activity,
     _paginate_activity_window,
@@ -26,13 +27,12 @@ from marketsignalos_polymarket.runner import (
     _plan_market_backfill_fetches,
     _select_shallow_wallet_targets,
     _write_economics_cache,
-    _EconomicsPeriodEntry,
     parse_activity_row,
     parse_leaderboard_row,
     parse_market_row,
     parse_position_row,
-    run_match_markets,
     run_markets_backfill_from_activity,
+    run_match_markets,
     run_pipeline,
     run_wallets,
     seed_watchlist_from_leaderboard,
@@ -1002,7 +1002,7 @@ def test_add_watchlist_wallet_rejects_invalid_addresses(
 
 
 def test_shard_activity_by_wallet_partitions_and_preserves_order(tmp_path: Path) -> None:
-    from marketsignalos_polymarket.runner import (  # noqa: PLC0415
+    from marketsignalos_polymarket.runner import (
         _iter_activity_shards,
         _shard_activity_by_wallet,
     )

@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import math
+from datetime import UTC, datetime
 from typing import Any
-from datetime import datetime, timezone
 
 from marketsignalos_polymarket.bayesian_skill import (
     Bet,
@@ -38,7 +38,7 @@ from marketsignalos_polymarket.skill_computation import (
 def test_streaming_shards_match_single_shot() -> None:
     """Sharded streaming must produce byte-identical outputs to the
     single-shot path — sharding is a memory strategy, not a model change."""
-    from dataclasses import replace as _replace  # noqa: PLC0415
+    from dataclasses import replace as _replace
 
     wallets = ["0xw1", "0xw2", "0xw3"]
     activity: list[PolymarketActivity] = []
@@ -384,7 +384,7 @@ def test_enrichment_price_lead_from_post_entry_snapshots() -> None:
             active=True,
             closed=False,
             fetched_at=datetime.fromtimestamp(
-                entry_ts + 3600, tz=timezone.utc
+                entry_ts + 3600, tz=UTC
             ).isoformat(),
         )
         for i in range(3)

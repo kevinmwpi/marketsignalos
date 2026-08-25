@@ -23,7 +23,7 @@ import logging
 import os
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 log = logging.getLogger("marketsignalos.api.ingest_scheduler")
@@ -118,7 +118,7 @@ class IngestScheduler:
         interval_seconds = self._config.interval_minutes * 60.0
         delay = min(self._startup_delay_seconds, interval_seconds)
         while True:
-            self.next_run_at = datetime.now(timezone.utc) + timedelta(seconds=delay)
+            self.next_run_at = datetime.now(UTC) + timedelta(seconds=delay)
             await asyncio.sleep(delay)
             self.tick()
             delay = interval_seconds
@@ -165,7 +165,7 @@ def start_scheduler_from_env() -> IngestScheduler | None:
 
     # Imported here, not at module top: the ingestor route imports this
     # module for get_schedule_status, so a top-level import would be a cycle.
-    from marketsignalos_api.api.routes.ingestor import start_pipeline_run  # noqa: PLC0415
+    from marketsignalos_api.api.routes.ingestor import start_pipeline_run
 
     scheduler = IngestScheduler(config, start_pipeline_run)
     scheduler.start()

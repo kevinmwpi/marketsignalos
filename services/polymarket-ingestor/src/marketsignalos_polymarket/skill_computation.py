@@ -425,8 +425,7 @@ def _roll_up_wallet(
         if event.type == "TRADE":
             trade_count += 1
             total_volume += event.usdc_size
-        if event.timestamp > last_activity_ts:
-            last_activity_ts = event.timestamp
+        last_activity_ts = max(last_activity_ts, event.timestamp)
 
     records: list[_PositionRecord] = []
 
@@ -943,8 +942,7 @@ def compute_enrichment_outputs_streaming(
             if fit is not None:
                 weak_fits.append(fit)
             for bet in rollup.bets:
-                if bet.ts > now_ts:
-                    now_ts = bet.ts
+                now_ts = max(now_ts, bet.ts)
             styles_by_wallet[wallet] = compute_trader_style(
                 events, categories_by_condition=categories_by_condition,
             )

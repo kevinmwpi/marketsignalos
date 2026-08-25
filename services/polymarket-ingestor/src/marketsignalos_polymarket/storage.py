@@ -38,7 +38,6 @@ from .models import (
     PolymarketWalletValue,
 )
 
-
 # ── Protocols ─────────────────────────────────────────────────────────────────
 
 class LeaderboardStore(Protocol):

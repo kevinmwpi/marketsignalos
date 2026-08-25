@@ -303,7 +303,7 @@ def test_cookie_jar_never_accumulates() -> None:
         client.get_leaderboard()
     # Request building walks the whole jar, so it must stay empty — a jar
     # that grows per response degrades large backfills to a crawl.
-    assert len(client._client.cookies) == 0  # noqa: SLF001
+    assert len(client._client.cookies) == 0
     client.close()
 
 
