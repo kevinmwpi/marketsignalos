@@ -24,6 +24,7 @@ from __future__ import annotations
 import json
 import logging
 import math
+import threading
 import time
 from collections import Counter, defaultdict
 from collections.abc import Iterator
@@ -42,7 +43,11 @@ from marketsignalos_api._paths import (
     polymarket_positions_path,
     polymarket_wallet_values_path,
 )
-
+from marketsignalos_api.observability import (
+    feed_cache_events_total,
+    feed_compute_duration_seconds,
+    feed_signals,
+)
 from marketsignalos_api.services.external_urls import (
     kalshi_market_url,
     polymarket_market_url,
@@ -915,6 +920,22 @@ def _feed_cache_store(
         log.warning("skilled_bets feed cache write failed", exc_info=True)
 
 
+
+# Which layer actually produced the most recent uncached result, recorded by
+# the memoized function and read back by the public entry point. Thread-local
+# because sync FastAPI handlers run in a worker threadpool: a module global
+# would let two concurrent feed requests attribute each other's timings.
+_feed_source = threading.local()
+
+
+def _set_feed_source(source: str) -> None:
+    _feed_source.value = source
+
+
+def _get_feed_source() -> str:
+    return getattr(_feed_source, "value", "compute")
+
+
 @lru_cache(maxsize=32)
 def _compute_skilled_bets_cached(
     _fingerprint: tuple[tuple[str, int, int], ...],
@@ -941,8 +962,12 @@ def _compute_skilled_bets_cached(
     )
     spilled = _feed_cache_load(_fingerprint, params)
     if spilled is not None:
+        feed_cache_events_total.labels(layer="disk", result="hit").inc()
+        _set_feed_source("disk")
         log.info("skilled_bets served from disk cache (%d signals)", len(spilled))
         return spilled
+    feed_cache_events_total.labels(layer="disk", result="miss").inc()
+    _set_feed_source("compute")
     computed = tuple(
         _compute_skilled_bets(
             min_skill=min_skill,
@@ -1032,6 +1057,12 @@ def compute_skilled_bets(
     whose move_captured_pct meets or exceeds it are dropped entirely.
     Memoized on input-file fingerprint + params; see the caching note above.
     """
+    # Attribute the result to the layer that served it. The memo hit is
+    # detected from the lru_cache counter rather than from inside the function,
+    # because a hit never enters the body at all — the distinction that matters
+    # operationally, since only the compute path can take >900 s.
+    hits_before = _compute_skilled_bets_cached.cache_info().hits
+    started = time.perf_counter()
     cached = _compute_skilled_bets_cached(
         _inputs_fingerprint(),
         min_skill,
@@ -1043,6 +1074,15 @@ def compute_skilled_bets(
         require_positive_edge,
         max_move_captured,
     )
+    elapsed = time.perf_counter() - started
+    if _compute_skilled_bets_cached.cache_info().hits > hits_before:
+        feed_cache_events_total.labels(layer="memory", result="hit").inc()
+        source = "memory"
+    else:
+        feed_cache_events_total.labels(layer="memory", result="miss").inc()
+        source = _get_feed_source()
+    feed_compute_duration_seconds.labels(source=source).observe(elapsed)
+    feed_signals.set(len(cached))
     signals = list(cached)
     if limit is None:
         return signals

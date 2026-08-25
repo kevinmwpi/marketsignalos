@@ -10,6 +10,7 @@ requires-python = ">=3.12"
 dependencies = [
   "alembic>=1.13",
   "httpx",
+  "prometheus-client",
   "psycopg2-binary>=2.9",
   "sqlalchemy>=2.0",
 ]
@@ -19,9 +20,15 @@ marketsignalos-polymarket-ingestor = "marketsignalos_polymarket.runner:main"
 
 [project.optional-dependencies]
 dev = [
-  "mypy",
+  # Pinned deliberately. Both are gate-keeping linters run in CI, and both
+  # expand what they check between releases — ruff 0.16.0 (2026-07-23) widened
+  # its default rule set and turned a green main red without a single line of
+  # code changing. An unpinned linter makes CI a function of the calendar
+  # rather than of the commit. Bump these on purpose, with the fixes in the
+  # same PR.
+  "mypy==2.3.1",
   "pytest",
-  "ruff",
+  "ruff==0.15.21",
 ]
 
 [tool.setuptools]

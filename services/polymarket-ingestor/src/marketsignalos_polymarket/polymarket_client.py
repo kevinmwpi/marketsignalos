@@ -14,11 +14,14 @@ from __future__ import annotations
 
 import logging
 import os
+import time
 from dataclasses import dataclass
 from time import sleep
 from typing import Any, cast
 
 import httpx
+
+from . import metrics
 
 LB_API = "https://lb-api.polymarket.com"
 DATA_API = "https://data-api.polymarket.com"
@@ -55,6 +58,18 @@ def _graphql_errors_are_transient(errors: Any) -> bool:
         if "statement timeout" in lowered or "canceling statement" in lowered:
             return True
     return False
+
+
+
+def _status_outcome(status_code: int) -> str:
+    """Bounded outcome label for a response status."""
+    if status_code == 429:
+        return "rate_limited"
+    if status_code >= 500:
+        return "server_error"
+    if status_code >= 400:
+        return "client_error"
+    return "success"
 
 
 @dataclass(frozen=True, slots=True)
@@ -454,17 +469,78 @@ class PolymarketClient:
 
     # ── Internals ─────────────────────────────────────────────────────────────
 
+    def _send_instrumented(
+        self,
+        method: str,
+        url: str,
+        *,
+        params: dict[str, Any] | None = None,
+        json_body: dict[str, Any] | None = None,
+    ) -> httpx.Response:
+        """Build and send one upstream request, timing construction and
+        transport separately.
+
+        The split is load-bearing, not cosmetic. The 2026-07-10 stall lived
+        entirely inside request *construction* — httpx walks the whole cookie
+        jar to build each request — while the sockets stayed fast the entire
+        time. A single round-trip timer averages the two together and shows
+        only "requests got slow", which is what sent that investigation after
+        three wrong theories (sleep, deadlock, dead sockets). Timed apart, the
+        same failure is a one-glance read on which half regressed.
+        """
+        host, endpoint = metrics.split_endpoint(url)
+        kwargs: dict[str, Any] = {}
+        if params is not None:
+            kwargs["params"] = params
+        if json_body is not None:
+            kwargs["json"] = json_body
+
+        build_started = time.perf_counter()
+        request = self._client.build_request(method, url, **kwargs)
+        metrics.upstream_request_build_seconds.labels(host=host).observe(
+            time.perf_counter() - build_started
+        )
+
+        send_started = time.perf_counter()
+        try:
+            response = self._client.send(request)
+        except httpx.TransportError:
+            metrics.upstream_request_duration_seconds.labels(
+                host=host, endpoint=endpoint
+            ).observe(time.perf_counter() - send_started)
+            metrics.upstream_requests_total.labels(
+                host=host, endpoint=endpoint, outcome="transport_error"
+            ).inc()
+            raise
+        metrics.upstream_request_duration_seconds.labels(
+            host=host, endpoint=endpoint
+        ).observe(time.perf_counter() - send_started)
+        metrics.upstream_requests_total.labels(
+            host=host,
+            endpoint=endpoint,
+            outcome=_status_outcome(response.status_code),
+        ).inc()
+        # Sampled *before* the clear below, so the gauge reports what the
+        # response actually set. Measured after, it would read zero forever and
+        # silently stop guarding the regression it exists to catch.
+        metrics.http_client_cookie_jar_size.set(len(self._client.cookies.jar))
+        return response
+
     def _get_json(self, url: str, *, params: dict[str, Any] | None = None) -> Any:
         retryable = {429, 500, 502, 503, 504}
+        host, endpoint = metrics.split_endpoint(url)
         for attempt in range(self._config.max_retries + 1):
             try:
-                response = self._client.get(url, params=params)
+                response = self._send_instrumented("GET", url, params=params)
             except httpx.TransportError as exc:
                 # Timeouts / dropped connections otherwise abort an entire
                 # pipeline run. These GETs are idempotent, so retry them with
                 # the same backoff as a 5xx.
                 if attempt == self._config.max_retries:
                     raise
+                metrics.upstream_retries_total.labels(
+                    host=host, endpoint=endpoint, reason="transport_error"
+                ).inc()
                 log.warning(
                     "transient transport error (attempt %d/%d), retrying: %s",
                     attempt + 1,
@@ -483,6 +559,11 @@ class PolymarketClient:
                 return response.json()
             if attempt == self._config.max_retries:
                 response.raise_for_status()
+            metrics.upstream_retries_total.labels(
+                host=host,
+                endpoint=endpoint,
+                reason=_status_outcome(response.status_code),
+            ).inc()
             retry_after = response.headers.get("Retry-After")
             if retry_after and retry_after.isdigit():
                 sleep(float(retry_after))
@@ -496,13 +577,19 @@ class PolymarketClient:
         Retry-After). GraphQL surfaces query errors as HTTP 200 bodies, so we
         also raise on a populated `errors` array or a missing `data` object."""
         retryable = {429, 500, 502, 503, 504}
+        host, endpoint = metrics.split_endpoint(GOLDSKY_SUBGRAPH)
         for attempt in range(self._config.max_retries + 1):
             try:
-                response = self._client.post(GOLDSKY_SUBGRAPH, json={"query": query})
+                response = self._send_instrumented(
+                    "POST", GOLDSKY_SUBGRAPH, json_body={"query": query}
+                )
             except httpx.TransportError as exc:
                 # Read-only GraphQL query — safe to retry like _get_json.
                 if attempt == self._config.max_retries:
                     raise
+                metrics.upstream_retries_total.labels(
+                    host=host, endpoint=endpoint, reason="transport_error"
+                ).inc()
                 log.warning(
                     "subgraph transient transport error (attempt %d/%d), retrying: %s",
                     attempt + 1,
@@ -532,6 +619,9 @@ class PolymarketClient:
                         _graphql_errors_are_transient(errors)
                         and attempt < self._config.max_retries
                     ):
+                        metrics.upstream_retries_total.labels(
+                            host=host, endpoint=endpoint, reason="graphql_timeout"
+                        ).inc()
                         log.warning(
                             "subgraph transient error (attempt %d/%d), retrying: %s",
                             attempt + 1,
@@ -547,6 +637,11 @@ class PolymarketClient:
                 return cast(dict[str, Any], data)
             if attempt == self._config.max_retries:
                 response.raise_for_status()
+            metrics.upstream_retries_total.labels(
+                host=host,
+                endpoint=endpoint,
+                reason=_status_outcome(response.status_code),
+            ).inc()
             retry_after = response.headers.get("Retry-After")
             if retry_after and retry_after.isdigit():
                 sleep(float(retry_after))
