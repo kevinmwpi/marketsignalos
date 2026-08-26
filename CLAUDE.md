@@ -31,6 +31,7 @@ marketsignalOS/
 │   └── polymarket-ingestor/       Polymarket ingestion + Polymarket→Kalshi market matcher
 ├── docs/                          Architecture, PRD, ADRs, runbooks
 ├── ops/prometheus/alerts.yml      Alerting rules (incident regressions + SLOs)
+├── ops/grafana/                   Alloy scrape config + dashboard + Grafana Cloud runbook
 ├── scripts/                       Deployment entry points + discovery probes
 ├── .github/workflows/ci.yml       Python (lint/type/test) + Node (lint/build)
 ├── pyproject.toml                 Root Python tooling config (ruff, mypy, pytest paths)
@@ -238,6 +239,7 @@ The pipeline runs JSONL-first. Postgres is opt-in via `DATABASE_URL` (`Dual*` st
 - **Fast-lane poller** — `FASTLANE_EVERY_SECONDS` starts a second in-process loop that polls ONLY `/activity` for the top-N tailable wallets (by `rank_score`, boosted by `price_lead_score`) and webhook-delivers new BUY/SELL trades within one interval. Alert-only by design: it never writes the JSONL stores (the pipeline stays the sole writer and re-fetches the same events with dedupe); watermarks live in `fastlane_state.json`, first sight of a wallet initializes silently, and failed webhook POSTs retry the same batch (at-least-once)
 
 - **Observability** — `/metrics` exports real collectors instead of default process stats: request RED keyed on the route template, per-stage pipeline durations + RSS, a progress heartbeat that makes a wedged run detectable without an error, upstream request timing split into *construction* vs transport, and model-health gauges (`resolved_bets`, population prior mu/sigma2, skill saturation ratio). `ops/prometheus/alerts.yml` carries 13 rules: seven are regression guards derived one-for-one from the post-mortems in `docs/fix-lessons-learned.md` (each tagged with its incident date), six are SLOs. `apps/api/tests/test_alert_rules.py` fails CI if a rule references a metric nothing exports, so renaming a collector can't silently disarm an alert. Full inventory and per-alert runbooks in `docs/observability.md`
+- **Grafana Cloud delivery** — `ops/grafana/` carries the Alloy scrape config, a Dockerfile, a 20-panel dashboard, and a setup runbook. Grafana Cloud's hosted Prometheus is push-based, so Alloy runs as a second small service that scrapes the API's `/metrics` and `remote_write`s it (Grafana Agent is EOL as of 2025-11-01 and its config format does not carry over). `apps/api/tests/test_grafana_dashboard.py` fails CI if a panel queries a metric nothing exports, if a panel has no description, if panels overlap, or if a metric that can fire an alert has no panel to look at
 
 ### Pending / in progress
 - `/positions` pagination (currently caps at ~100 per wallet)
