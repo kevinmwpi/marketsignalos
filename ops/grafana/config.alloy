@@ -1,0 +1,51 @@
+// Grafana Alloy — scrapes the MarketSignalOS API and ships metrics to
+// Grafana Cloud.
+//
+// Runs as its own small service (Railway, Fly, a VM — anywhere with network
+// access to the API). Grafana Cloud's hosted Prometheus is push-based: it
+// does not reach out and scrape you, so something has to pull /metrics and
+// remote_write it. That something is this.
+//
+// Grafana Agent reached end-of-life on 2025-11-01; Alloy is its replacement
+// and the two configuration formats are NOT interchangeable.
+//
+// Required environment variables (see ops/grafana/README.md):
+//   MSOS_METRICS_TARGET      host:port of the API, e.g. msos.up.railway.app:443
+//   GRAFANA_CLOUD_PROM_URL   https://prometheus-<region>.grafana.net/api/prom/push
+//   GRAFANA_CLOUD_PROM_USER  numeric Grafana Cloud metrics instance ID
+//   GRAFANA_CLOUD_API_KEY    access policy token with metrics:write
+
+prometheus.scrape "marketsignalos_api" {
+	targets = [{
+		__address__      = sys.env("MSOS_METRICS_TARGET"),
+		__scheme__       = "https",
+		__metrics_path__ = "/metrics",
+		instance         = sys.env("MSOS_METRICS_TARGET"),
+	}]
+
+	job_name = "marketsignalos-api"
+
+	// 60s = 1 data point per minute, Grafana Cloud's billing unit. Every alert
+	// in ops/prometheus/alerts.yml is written to tolerate this: the shortest
+	// `for` is 5m and the shortest rate window is 10m, so no rule depends on
+	// sub-minute resolution.
+	scrape_interval = "60s"
+
+	// Generous relative to a normal /metrics render, but a Railway container
+	// that has scaled to zero pays a cold start on the first scrape, and a
+	// timed-out scrape looks identical to a down target.
+	scrape_timeout = "30s"
+
+	forward_to = [prometheus.remote_write.grafana_cloud.receiver]
+}
+
+prometheus.remote_write "grafana_cloud" {
+	endpoint {
+		url = sys.env("GRAFANA_CLOUD_PROM_URL")
+
+		basic_auth {
+			username = sys.env("GRAFANA_CLOUD_PROM_USER")
+			password = sys.env("GRAFANA_CLOUD_API_KEY")
+		}
+	}
+}
