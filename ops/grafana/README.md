@@ -132,6 +132,32 @@ can route to notification policies), point mimirtool at
 
 ---
 
+## Validating the config before you deploy
+
+`config.alloy` in this directory is checked against the real Alloy binary
+(v1.19.1): `alloy fmt` parses it and reports no formatting drift, and
+`alloy validate` resolves the component graph — including the `forward_to`
+reference from the scrape component to the remote_write receiver.
+
+To re-check after an edit:
+
+```bash
+# any recent release; ~550 MB extracted, so this is a local check, not a CI step
+curl -sSL -o alloy.zip \
+  https://github.com/grafana/alloy/releases/latest/download/alloy-linux-amd64.zip
+unzip -q alloy.zip && chmod +x alloy-linux-amd64
+
+./alloy-linux-amd64 fmt ops/grafana/config.alloy      # parses + canonical formatting
+MSOS_METRICS_TARGET=example:443 \
+GRAFANA_CLOUD_PROM_URL=https://example/api/prom/push \
+GRAFANA_CLOUD_PROM_USER=1 GRAFANA_CLOUD_API_KEY=x \
+  ./alloy-linux-amd64 validate ops/grafana/config.alloy
+```
+
+Both exit 0 on the committed config. They are not vacuous checks: swapping
+`sys.env()` for the deprecated `env()` exits 1 with a deprecation warning, and
+a typo in the `forward_to` target exits 1 with "component ... does not exist".
+
 ## Verifying it works
 
 In order, because each step depends on the one before:

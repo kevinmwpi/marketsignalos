@@ -16,36 +16,36 @@
 //   GRAFANA_CLOUD_API_KEY    access policy token with metrics:write
 
 prometheus.scrape "marketsignalos_api" {
-  targets = [{
-    __address__      = sys.env("MSOS_METRICS_TARGET"),
-    __scheme__       = "https",
-    __metrics_path__ = "/metrics",
-    instance         = sys.env("MSOS_METRICS_TARGET"),
-  }]
+	targets = [{
+		__address__      = sys.env("MSOS_METRICS_TARGET"),
+		__scheme__       = "https",
+		__metrics_path__ = "/metrics",
+		instance         = sys.env("MSOS_METRICS_TARGET"),
+	}]
 
-  job_name = "marketsignalos-api"
+	job_name = "marketsignalos-api"
 
-  // 60s = 1 data point per minute, Grafana Cloud's billing unit. Every alert
-  // in ops/prometheus/alerts.yml is written to tolerate this: the shortest
-  // `for` is 5m and the shortest rate window is 10m, so no rule depends on
-  // sub-minute resolution.
-  scrape_interval = "60s"
+	// 60s = 1 data point per minute, Grafana Cloud's billing unit. Every alert
+	// in ops/prometheus/alerts.yml is written to tolerate this: the shortest
+	// `for` is 5m and the shortest rate window is 10m, so no rule depends on
+	// sub-minute resolution.
+	scrape_interval = "60s"
 
-  // Generous relative to a normal /metrics render, but a Railway container
-  // that has scaled to zero pays a cold start on the first scrape, and a
-  // timed-out scrape looks identical to a down target.
-  scrape_timeout = "30s"
+	// Generous relative to a normal /metrics render, but a Railway container
+	// that has scaled to zero pays a cold start on the first scrape, and a
+	// timed-out scrape looks identical to a down target.
+	scrape_timeout = "30s"
 
-  forward_to = [prometheus.remote_write.grafana_cloud.receiver]
+	forward_to = [prometheus.remote_write.grafana_cloud.receiver]
 }
 
 prometheus.remote_write "grafana_cloud" {
-  endpoint {
-    url = sys.env("GRAFANA_CLOUD_PROM_URL")
+	endpoint {
+		url = sys.env("GRAFANA_CLOUD_PROM_URL")
 
-    basic_auth {
-      username = sys.env("GRAFANA_CLOUD_PROM_USER")
-      password = sys.env("GRAFANA_CLOUD_API_KEY")
-    }
-  }
+		basic_auth {
+			username = sys.env("GRAFANA_CLOUD_PROM_USER")
+			password = sys.env("GRAFANA_CLOUD_API_KEY")
+		}
+	}
 }
