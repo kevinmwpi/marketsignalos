@@ -230,6 +230,7 @@ grafana-data/
 # by re-running the Kalshi + Polymarket ingestors; would otherwise churn
 # the repo on every ingestion pass.
 services/ingestor/data/
+benchmark-output/
 
 # OS / IDE
 .DS_Store

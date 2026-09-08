@@ -1,5 +1,10 @@
 # MarketSignalOS
 
+Engineering/research development: [offline storage benchmark](docs/storage-benchmark.md),
+[research evidence and evaluation protocol](docs/research-credibility.md),
+and [operations runbook](docs/runbook.md). The Parquet prototype is opt-in and
+does not change production storage or claim validated trading alpha.
+
 MarketSignalOS identifies **skilled Polymarket wallets** from public wallet
 history, verifies that their edge is economically meaningful, and surfaces the
 BUY positions they still hold. For each tailable signal, the dashboard links to

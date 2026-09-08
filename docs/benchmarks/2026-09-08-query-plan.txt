@@ -1,0 +1,104 @@
+┌─────────────────────────────────────┐
+│┌───────────────────────────────────┐│
+││    Query Profiling Information    ││
+│└───────────────────────────────────┘│
+└─────────────────────────────────────┘
+EXPLAIN ANALYZE          SELECT count(*), count(*) FILTER (WHERE activity_type='TRADE' AND side='BUY'),                coalesce(fsum(usdc_size), 0), min(event_ts), max(event_ts)         FROM read_parquet('benchmark-output/2026-09-08-full/dataset/activity/**/*.parquet', hive_partitioning=true)         WHERE wallet_bucket=? AND wallet=? AND event_ts>=?
+┌────────────────────────────────────────────────┐
+│┌──────────────────────────────────────────────┐│
+││              Total Time: 0.0669s             ││
+│└──────────────────────────────────────────────┘│
+└────────────────────────────────────────────────┘
+┌───────────────────────────┐
+│           QUERY           │
+└─────────────┬─────────────┘
+┌─────────────┴─────────────┐
+│      EXPLAIN_ANALYZE      │
+│    ────────────────────   │
+│                           │
+│           0 rows          │
+│           0.00s           │
+└─────────────┬─────────────┘
+┌─────────────┴─────────────┐
+│         PROJECTION        │
+│    ────────────────────   │
+│        count_star()       │
+│ count_star() FILTER (WHERE│
+│   ((activity_type = CAST( │
+│ 'TRADE' AS VARCHAR)) AND  │
+│   (side = CAST('BUY' AS   │
+│         VARCHAR))))       │
+│ COALESCE(fsum(usdc_size), │
+│            0.0)           │
+│       min(event_ts)       │
+│       max(event_ts)       │
+│                           │
+│                           │
+│                           │
+│           1 row           │
+│           0.00s           │
+└─────────────┬─────────────┘
+┌─────────────┴─────────────┐
+│    UNGROUPED_AGGREGATE    │
+│    ────────────────────   │
+│        Aggregates:        │
+│        count_star()       │
+│ count_star() FILTER (WHERE│
+│       #0) Filter: #0      │
+│          fsum(#1)         │
+│          min(#2)          │
+│          max(#3)          │
+│                           │
+│                           │
+│                           │
+│           1 row           │
+│           0.01s           │
+└─────────────┬─────────────┘
+┌─────────────┴─────────────┐
+│         PROJECTION        │
+│    ────────────────────   │
+│ ((activity_type = 'TRADE')│
+│     AND (side = 'BUY'))   │
+│         usdc_size         │
+│          event_ts         │
+│          event_ts         │
+│                           │
+│                           │
+│                           │
+│       1,003,120 rows      │
+│           0.01s           │
+└─────────────┬─────────────┘
+┌─────────────┴─────────────┐
+│         TABLE_SCAN        │
+│    ────────────────────   │
+│         Function:         │
+│        READ_PARQUET       │
+│                           │
+│        Projections:       │
+│          event_ts         │
+│       activity_type       │
+│            side           │
+│         usdc_size         │
+│                           │
+│          Filters:         │
+│wallet='0x492494973c94e901e│
+│  3be9f75796dea83057cfac2' │
+│        event_ts>=0        │
+│                           │
+│       File Filters:       │
+│    (wallet_bucket = 19)   │
+│                           │
+│    Scanning Files: 1/64   │
+│    Total Files Read: 1    │
+│                           │
+│        Filename(s):       │
+│  benchmark-output\2026-09 │
+│ -08-full\dataset\activity │
+│  \wallet_bucket=19\data_0 │
+│          .parquet         │
+│                           │
+│                           │
+│                           │
+│       1,003,120 rows      │
+│           0.06s           │
+└───────────────────────────┘

@@ -19,6 +19,10 @@ dependencies = [
 marketsignalos-polymarket-ingestor = "marketsignalos_polymarket.runner:main"
 
 [project.optional-dependencies]
+benchmark = [
+  "duckdb==1.5.5",
+  "psutil==7.2.2",
+]
 dev = [
   # Pinned deliberately. Both are gate-keeping linters run in CI, and both
   # expand what they check between releases — ruff 0.16.0 (2026-07-23) widened
@@ -29,6 +33,7 @@ dev = [
   "mypy==2.3.1",
   "pytest",
   "ruff==0.16.4",
+  "types-psutil==7.2.2.20260906",
 ]
 
 [tool.setuptools]
