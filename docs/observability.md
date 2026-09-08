@@ -289,7 +289,41 @@ scrape_configs:
 
 `apps/api/tests/test_alert_rules.py` asserts that every `msos_*` metric named in
 `alerts.yml` is actually registered, so renaming a collector fails CI instead of
-silently disarming an alert.
+silently disarming an alert. `apps/api/tests/test_grafana_dashboard.py` does the
+same for the dashboard, and additionally asserts that every metric capable of
+firing an alert appears on some panel — when an alert pages, the first move is
+looking at the graph, so a metric that can page with nowhere to look is a gap in
+the loop rather than a missing panel.
+
+---
+
+## Production setup (Grafana Cloud)
+
+Alert rules in a repository cannot fire. Getting from instrumentation to actual
+monitoring takes one more component, because Grafana Cloud's hosted Prometheus
+is **push-based** — it does not reach out and scrape you:
+
+```
+Railway: API  ──/metrics──>  Grafana Alloy  ──remote_write──>  Grafana Cloud
+```
+
+Everything needed is in [`ops/grafana/`](../ops/grafana/):
+
+| File | Purpose |
+|---|---|
+| `config.alloy` | Scrape + remote_write config, parameterized by env vars |
+| `Dockerfile` | Alloy image with the config baked in |
+| `dashboard.json` | 20-panel dashboard, importable as-is |
+| `README.md` | Step-by-step setup, verification, and troubleshooting |
+
+Two notes that cost time if missed, both covered in that runbook: Grafana Agent
+reached end-of-life on 2025-11-01 and its YAML config format does not work with
+Alloy, and the scrape target is `host:port` with no scheme — on Railway the
+`:443` is required, and omitting it is the usual reason a target shows DOWN.
+
+The scrape interval is 60s (Grafana Cloud's billing unit). Every alert is
+written to tolerate that: the shortest `for` is 5m and the shortest rate window
+is 10m.
 
 ---
 
