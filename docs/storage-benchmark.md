@@ -134,8 +134,8 @@ limits. See [DuckDB's OOM guidance](https://duckdb.org/docs/current/guides/troub
 
 ## Migration decision
 
-A successful local query benchmark justifies testing an **optional Parquet
-read adapter** against JSONL, with shadow-result comparison. It does not justify
+The **optional Parquet read adapter** and [full enrichment comparison command](enrichment-shadow.md)
+are now implemented offline. They validate every score and bet record against JSONL. It does not justify
 immediately replacing the ingestion writer or deploying distributed compute.
 Before production migration, add:
 

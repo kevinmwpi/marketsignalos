@@ -1,0 +1,525 @@
+{
+  "status": "passed",
+  "started_at": "2026-09-08T19:39:08.343191+00:00",
+  "code": {
+    "git_head": "45b63f40b2b39ef838106b6ae97b4ffbc5cbfd31",
+    "package_source_sha256": "cfc584c58205989a36b654d04258a4d49585fe47df9ed7858832c54b9feedb65"
+  },
+  "scope": "all snapshot wallets; full two-pass enrichment",
+  "comparison": "Exact canonical JSON bytes in emitted order; exclude computed_at only",
+  "settings": {
+    "memory_mb": 512,
+    "threads": 2,
+    "rss_limit_mb": 4096,
+    "timeout_seconds": 3600
+  },
+  "measurements": [
+    {
+      "elapsed_seconds": 843.4712781000417,
+      "os_peak_rss_bytes": 3298050048,
+      "result": {
+        "rows_per_pass": [
+          16889639,
+          16889639
+        ],
+        "wallets": 833,
+        "bets": 923705,
+        "resolved_bets": 843461,
+        "tailable_wallets": 0,
+        "preparation_seconds": 250.05731629999354,
+        "scoring_seconds": 581.120357299922,
+        "outputs": {
+          "bets": {
+            "bytes": 424205361,
+            "mtime_ns": 1788895961039621000,
+            "sha256": "f231067884379b65108661908e1c1bdc4c9de3904f510c43f1a81af97c914fa8"
+          },
+          "enrichments": {
+            "bytes": 1878150,
+            "mtime_ns": 1788895961082684800,
+            "sha256": "01564d095e7945cee89895f3f278a0f0d66e9aee6b88530325f27e10a447dc5f"
+          }
+        }
+      },
+      "sampled_peak_rss_bytes": 3299356672,
+      "peak_rss_bytes": 3299356672,
+      "process_wall_seconds": 844.8076103000203,
+      "operation": "jsonl",
+      "reused_completed_baseline": true
+    },
+    {
+      "elapsed_seconds": 532.5245960999746,
+      "os_peak_rss_bytes": 3366871040,
+      "result": {
+        "rows_per_pass": [
+          16889639,
+          16889639
+        ],
+        "wallets": 833,
+        "bets": 923705,
+        "resolved_bets": 843461,
+        "tailable_wallets": 0,
+        "preparation_seconds": 0.06941730005200952,
+        "scoring_seconds": 518.1217643999262,
+        "outputs": {
+          "bets": {
+            "bytes": 424205361,
+            "mtime_ns": 1788896901730937300,
+            "sha256": "f231067884379b65108661908e1c1bdc4c9de3904f510c43f1a81af97c914fa8"
+          },
+          "enrichments": {
+            "bytes": 1878150,
+            "mtime_ns": 1788896901780205200,
+            "sha256": "01564d095e7945cee89895f3f278a0f0d66e9aee6b88530325f27e10a447dc5f"
+          }
+        }
+      },
+      "sampled_peak_rss_bytes": 3369877504,
+      "peak_rss_bytes": 3369877504,
+      "process_wall_seconds": 533.9960704001132,
+      "operation": "parquet"
+    }
+  ],
+  "inputs": {
+    "activity": {
+      "bytes": 8093504250,
+      "mtime_ns": 1781233407246531200,
+      "sha256": "0d88dca29b477f0fc55b5abf9d561fcfbe7e664688a01eedea95ff6bcd1386dc"
+    },
+    "markets": {
+      "bytes": 251253667,
+      "mtime_ns": 1781239142899366700,
+      "sha256": "857bfbc4d4a4a2fd3603e85c3bdf09e67af149e99ddb423c80151bb4d07a620e"
+    },
+    "leaderboard": {
+      "bytes": 25770230,
+      "mtime_ns": 1781193490277850700,
+      "sha256": "9cda29e4bcc2ee27c865c46128d039314fc3219dc7cad893bade73ce4e4c050f"
+    },
+    "hydration": {
+      "bytes": 2732903,
+      "mtime_ns": 1781235915059964900,
+      "sha256": "9d5c071dae4903bc0d0a00e3962f87dc4dcccc041b53273d966c0e33988dac2b"
+    },
+    "prices": {
+      "bytes": 18434358,
+      "mtime_ns": 1781239144428897500,
+      "sha256": "f61679c2cc6f2387ccfcdc38a3bde3cc96eaa236d9816fac53f51b88b39ed9e7"
+    }
+  },
+  "dataset": {
+    "rows": 16889639,
+    "wallets": 833,
+    "files": {
+      "manifest.json": {
+        "bytes": 7525,
+        "mtime_ns": 1788883654863782400,
+        "sha256": "c38556f858a78500738705bf88c31bbaa93dcff0000fc0fa4bd0d5927980b889"
+      },
+      "activity/wallet_bucket=0/data_0.parquet": {
+        "bytes": 25754842,
+        "mtime_ns": 1788883643255907300,
+        "sha256": "54c23aea44fbb3ff720cee72677fb2835b87e129c15ba1e28f0708b50992a942"
+      },
+      "activity/wallet_bucket=1/data_0.parquet": {
+        "bytes": 2993916,
+        "mtime_ns": 1788883644100742700,
+        "sha256": "def2b67de4a489788880aae2f0ab2b99e2d048933ce35c8ec1866b4fb47148ef"
+      },
+      "activity/wallet_bucket=10/data_0.parquet": {
+        "bytes": 4754067,
+        "mtime_ns": 1788883643532122800,
+        "sha256": "0efd077ad8b0775dc9798880d5c11fb26b7dbb05dee875c5e64a40dbf936acc6"
+      },
+      "activity/wallet_bucket=11/data_0.parquet": {
+        "bytes": 68651721,
+        "mtime_ns": 1788883642958702600,
+        "sha256": "075fe1c993d6773625ebcea7426d51c35b23c149e36717e7c2403343f666af0a"
+      },
+      "activity/wallet_bucket=12/data_0.parquet": {
+        "bytes": 63797505,
+        "mtime_ns": 1788883643132230800,
+        "sha256": "fbdb2df22e275e8e9a58956103b053c04a04a2cc5485f495d7f2fc0928cf89bd"
+      },
+      "activity/wallet_bucket=13/data_0.parquet": {
+        "bytes": 496971,
+        "mtime_ns": 1788883642991547100,
+        "sha256": "e606a897f137e5a8d9e76e25dbfc9fb777122735da9dfecd3665bd6cb1bd121f"
+      },
+      "activity/wallet_bucket=14/data_0.parquet": {
+        "bytes": 865989,
+        "mtime_ns": 1788883643641269800,
+        "sha256": "a2d582d876e2793f224900aaf212e4a8da52320ba560c515bf40321e4a2ca359"
+      },
+      "activity/wallet_bucket=15/data_0.parquet": {
+        "bytes": 39032811,
+        "mtime_ns": 1788883644303882100,
+        "sha256": "8d2635befdf3af7d157e05a67ca6de5dc809a71d5a6e10e9e39b47690870e253"
+      },
+      "activity/wallet_bucket=16/data_0.parquet": {
+        "bytes": 1128833,
+        "mtime_ns": 1788883642538065000,
+        "sha256": "4b6c16d55ee3caa4666e51cf29c575e489b6c79bc982051d2eb4890e250ee209"
+      },
+      "activity/wallet_bucket=17/data_0.parquet": {
+        "bytes": 2376592,
+        "mtime_ns": 1788883644301376200,
+        "sha256": "0d23e378f30b18ee4511144db1f57cb18dd940efbe382c021ae640b582b6e2c6"
+      },
+      "activity/wallet_bucket=18/data_0.parquet": {
+        "bytes": 751126,
+        "mtime_ns": 1788883643338146300,
+        "sha256": "c812915f11ff610a90d6463637c279636d380c3ebcc2bbc82fb63ce7e162ea0f"
+      },
+      "activity/wallet_bucket=19/data_0.parquet": {
+        "bytes": 67554002,
+        "mtime_ns": 1788883642793405600,
+        "sha256": "c5c823765140ef5de2a408d690a0fc1940bc61ab31417a819196225150539c24"
+      },
+      "activity/wallet_bucket=2/data_0.parquet": {
+        "bytes": 4578281,
+        "mtime_ns": 1788883642690669100,
+        "sha256": "796d21aab4555e39bcd297e1d75a97f74e04906b9d1825263b27688adeee2591"
+      },
+      "activity/wallet_bucket=20/data_0.parquet": {
+        "bytes": 2597200,
+        "mtime_ns": 1788883642793906100,
+        "sha256": "32ae441f9eb4cd23b0487f92bbe581dd4ab35fcdf58ec2c0f063bdd14fc1860d"
+      },
+      "activity/wallet_bucket=21/data_0.parquet": {
+        "bytes": 8752333,
+        "mtime_ns": 1788883643193830300,
+        "sha256": "977f7b2e412b4896a433eaab3079439c05811befce91a480045f8031923c8e60"
+      },
+      "activity/wallet_bucket=22/data_0.parquet": {
+        "bytes": 62442968,
+        "mtime_ns": 1788883642397764700,
+        "sha256": "9c9bbbc044fbe245a40bb657fe1f80adcc99a594b8220811423fa6f0d89084d8"
+      },
+      "activity/wallet_bucket=23/data_0.parquet": {
+        "bytes": 5712983,
+        "mtime_ns": 1788883642623049200,
+        "sha256": "2b324893e38ede0bd47558834a27c4d8e1de9cfdecbf3ad91a5d4f4180eae412"
+      },
+      "activity/wallet_bucket=24/data_0.parquet": {
+        "bytes": 120225,
+        "mtime_ns": 1788883644334269100,
+        "sha256": "ec43e8bba6f18ae0889321331990a24ccf3485bff535f836dfd11cb951f294fb"
+      },
+      "activity/wallet_bucket=25/data_0.parquet": {
+        "bytes": 8814686,
+        "mtime_ns": 1788883643885609200,
+        "sha256": "1c227c29fb72b5921deec0b915b0f18e9ad994292a6292d0e99556de827d903d"
+      },
+      "activity/wallet_bucket=26/data_0.parquet": {
+        "bytes": 22216921,
+        "mtime_ns": 1788883642397266400,
+        "sha256": "70794b4d82ad5bbb3a472f08b4d8dbfd23183ec556c210e01adada69aa93f64e"
+      },
+      "activity/wallet_bucket=27/data_0.parquet": {
+        "bytes": 5641582,
+        "mtime_ns": 1788883643768390400,
+        "sha256": "5ae3144eb9795860371db879ccae6a9204c3693b06585112b3e3e722996e5138"
+      },
+      "activity/wallet_bucket=28/data_0.parquet": {
+        "bytes": 8630602,
+        "mtime_ns": 1788883642657134900,
+        "sha256": "78e4b7031ec41483396013481071dd2280c9d7865882b7b70597f7f7be62b4ad"
+      },
+      "activity/wallet_bucket=29/data_0.parquet": {
+        "bytes": 3660428,
+        "mtime_ns": 1788883643615720400,
+        "sha256": "d25429c5e361772390eadf63ab28654f1ba649a310551af9cad1ffae2bb72d75"
+      },
+      "activity/wallet_bucket=3/data_0.parquet": {
+        "bytes": 14005686,
+        "mtime_ns": 1788883642748836900,
+        "sha256": "c38960b2caa11f188493ca83a03a5931a5fdfea32d2dba6f35173bef7cc3315c"
+      },
+      "activity/wallet_bucket=30/data_0.parquet": {
+        "bytes": 19247311,
+        "mtime_ns": 1788883643414303300,
+        "sha256": "067e4445678e19eb23e27fc9dda41bda7ac67d65543547aba41aa755eded7235"
+      },
+      "activity/wallet_bucket=31/data_0.parquet": {
+        "bytes": 1480477,
+        "mtime_ns": 1788883642792406200,
+        "sha256": "00def231007826a63a50e4e7cffa4420824114143be140707b1373788f64366c"
+      },
+      "activity/wallet_bucket=32/data_0.parquet": {
+        "bytes": 2662911,
+        "mtime_ns": 1788883642449485800,
+        "sha256": "f1419ca135ca105ba218b1efcc4dfac4039078c1c5b2b39152cb1938d28bacb4"
+      },
+      "activity/wallet_bucket=33/data_0.parquet": {
+        "bytes": 1457468,
+        "mtime_ns": 1788883643814728700,
+        "sha256": "cf86ccdb9d1064ca31080545b950b09c8879a273b691d59dfb00802df62a8c29"
+      },
+      "activity/wallet_bucket=34/data_0.parquet": {
+        "bytes": 1212571,
+        "mtime_ns": 1788883643304046800,
+        "sha256": "cdf112da6e4eb0c8dbd4da7deb52a620ab922bf30a2b47bfef974fe637efbe63"
+      },
+      "activity/wallet_bucket=35/data_0.parquet": {
+        "bytes": 3724011,
+        "mtime_ns": 1788883643591189200,
+        "sha256": "44f16fa67fd463a2b69c689f831a0d962252c6b3214d23a2ecacd60cc8f9e389"
+      },
+      "activity/wallet_bucket=36/data_0.parquet": {
+        "bytes": 13769790,
+        "mtime_ns": 1788883643421312300,
+        "sha256": "73eac39cb117dfd027b533b2f0073782b55e700b5695a6682dd3aff96ee5ae19"
+      },
+      "activity/wallet_bucket=37/data_0.parquet": {
+        "bytes": 5012371,
+        "mtime_ns": 1788883643577162300,
+        "sha256": "b7349d6e3c388a8d5331743311a430454abde0d5136fd0a52d0a2dbbbf350ea1"
+      },
+      "activity/wallet_bucket=38/data_0.parquet": {
+        "bytes": 253453,
+        "mtime_ns": 1788883644437299000,
+        "sha256": "7b509837df1f0013c5bd044dce8a41b33f4801b33ca0bc077cd0f7e2f2ea67f0"
+      },
+      "activity/wallet_bucket=39/data_0.parquet": {
+        "bytes": 67084926,
+        "mtime_ns": 1788883642449485800,
+        "sha256": "57069a9021d7dce9b37c79ba1c3308b919b01298d7458ed2a0d18003fa0f3ff9"
+      },
+      "activity/wallet_bucket=4/data_0.parquet": {
+        "bytes": 21072172,
+        "mtime_ns": 1788883642904201600,
+        "sha256": "7c57d4fc2312df7c3f35287076f338b20804de5a4beb544794a1a061b07fea97"
+      },
+      "activity/wallet_bucket=40/data_0.parquet": {
+        "bytes": 1450256,
+        "mtime_ns": 1788883643491436000,
+        "sha256": "49335a2325ad823b2815caec40a00f5a44ebe7e5c80718c2358496adeb2394d0"
+      },
+      "activity/wallet_bucket=41/data_0.parquet": {
+        "bytes": 21307397,
+        "mtime_ns": 1788883644388192000,
+        "sha256": "0385610a7e6226953c50cf6f6a6a6fd72cfd778f656e82be959703a492e6ae00"
+      },
+      "activity/wallet_bucket=42/data_0.parquet": {
+        "bytes": 34075783,
+        "mtime_ns": 1788883643066144200,
+        "sha256": "0f759970a8bf60e35fde4fa0387181ec500f6af8df29f3e524288a0ac0828c4d"
+      },
+      "activity/wallet_bucket=43/data_0.parquet": {
+        "bytes": 5633013,
+        "mtime_ns": 1788883642491957500,
+        "sha256": "b57f118913ba510bfa01dd6ab0bbc56d512ed62d4021c4198b4d4629e239bc4c"
+      },
+      "activity/wallet_bucket=44/data_0.parquet": {
+        "bytes": 16647665,
+        "mtime_ns": 1788883642563102100,
+        "sha256": "eec01b4bdf688942d03b4a2cce1fe4595006afe6e19a39b3039578cad88dad9c"
+      },
+      "activity/wallet_bucket=45/data_0.parquet": {
+        "bytes": 22357217,
+        "mtime_ns": 1788883642972225000,
+        "sha256": "64be16d64feab191daf15764e41cd64de9eef2447361e916d869732000a96eda"
+      },
+      "activity/wallet_bucket=46/data_0.parquet": {
+        "bytes": 1628493,
+        "mtime_ns": 1788883643943783500,
+        "sha256": "dd7c17a36105ed9454108b637dcd467c4d26a6c2bc122b79fcef03d3ce31695b"
+      },
+      "activity/wallet_bucket=47/data_0.parquet": {
+        "bytes": 7317444,
+        "mtime_ns": 1788883644134140100,
+        "sha256": "e3d3bb281a3aa9b32d511a60c9f1d035a5a799105748119f57c909b99a5ca638"
+      },
+      "activity/wallet_bucket=48/data_0.parquet": {
+        "bytes": 19674813,
+        "mtime_ns": 1788883642511533800,
+        "sha256": "269102f7ac9cf18545320d99eee1b6c74334ac5a231fd2eb5e2c4fbc8149a686"
+      },
+      "activity/wallet_bucket=49/data_0.parquet": {
+        "bytes": 6402163,
+        "mtime_ns": 1788883643305046500,
+        "sha256": "45d9ac7f56267af6c5947958d2d5ded615312fbaa6832f691255786d1befb39d"
+      },
+      "activity/wallet_bucket=5/data_0.parquet": {
+        "bytes": 7549831,
+        "mtime_ns": 1788883644425287600,
+        "sha256": "5c8fdb2716119edd8ae9d4f87a3e73ef84f0c561e8003d4ac2a5a03437b20f6f"
+      },
+      "activity/wallet_bucket=50/data_0.parquet": {
+        "bytes": 3690784,
+        "mtime_ns": 1788883642558092500,
+        "sha256": "f2e568bb2ca46deeddf3fa9a393c7959b9d920ac8729f61765ed25818813918b"
+      },
+      "activity/wallet_bucket=51/data_0.parquet": {
+        "bytes": 4024986,
+        "mtime_ns": 1788883642477578900,
+        "sha256": "e57d2694da36b541b6398cc64525696a8dcd18b1cce272b7e4115dc268335329"
+      },
+      "activity/wallet_bucket=52/data_0.parquet": {
+        "bytes": 11197656,
+        "mtime_ns": 1788883643642774100,
+        "sha256": "78e0acb94904b105ce69d6f7ca8385f76f55e41c8d06ee2afb3ff49551d2f2c3"
+      },
+      "activity/wallet_bucket=53/data_0.parquet": {
+        "bytes": 118806545,
+        "mtime_ns": 1788883642558593500,
+        "sha256": "d796648cc3fb2b50244b98c13f1da28d48fe1c452dbdc31ad335795709eee43c"
+      },
+      "activity/wallet_bucket=54/data_0.parquet": {
+        "bytes": 26341372,
+        "mtime_ns": 1788883644495910700,
+        "sha256": "5d4175db11f95df6fdfac4098c90b8371a2964e838bdcc61c5326a819058421e"
+      },
+      "activity/wallet_bucket=55/data_0.parquet": {
+        "bytes": 10207255,
+        "mtime_ns": 1788883643452160200,
+        "sha256": "a298ce8d81d3361126d8022f1de9e75d8c439add4833b56a79479a70b7223bad"
+      },
+      "activity/wallet_bucket=56/data_0.parquet": {
+        "bytes": 4077104,
+        "mtime_ns": 1788883642598478800,
+        "sha256": "36aea16f02a1c5719e1b52aaa564eb3ec9bb16cbb456c6d3571d25a4e3f34776"
+      },
+      "activity/wallet_bucket=57/data_0.parquet": {
+        "bytes": 49607091,
+        "mtime_ns": 1788883644074388200,
+        "sha256": "296f74a8c477e1a147a5b52d7f3073a7a1764f4363919496f6ab69973b7c7e77"
+      },
+      "activity/wallet_bucket=58/data_0.parquet": {
+        "bytes": 1790397,
+        "mtime_ns": 1788883642849563500,
+        "sha256": "93f35560c28fd999ce006b329d083e12bdb1cde0abdd6cc62fa4b97f728c843d"
+      },
+      "activity/wallet_bucket=59/data_0.parquet": {
+        "bytes": 15225493,
+        "mtime_ns": 1788883642487915300,
+        "sha256": "70aadd1ca9856e65114d6224c55edb826015dcf355c4b11e76ce59880ad82562"
+      },
+      "activity/wallet_bucket=6/data_0.parquet": {
+        "bytes": 8511562,
+        "mtime_ns": 1788883643590683700,
+        "sha256": "8767d6c61ac153a1764c9ee24b7883fa3bd00f4daaef1f33094749a9cdc90586"
+      },
+      "activity/wallet_bucket=60/data_0.parquet": {
+        "bytes": 2257958,
+        "mtime_ns": 1788883644218653800,
+        "sha256": "43061935a4df00becd3ad9ba9ba4d7ec8c644bc256c2d76f0753e99888cd8508"
+      },
+      "activity/wallet_bucket=61/data_0.parquet": {
+        "bytes": 632253,
+        "mtime_ns": 1788883642342235700,
+        "sha256": "6936f8297c487768156b5792a5b535dc6a5e2c46c88f64b108eb938db1591710"
+      },
+      "activity/wallet_bucket=62/data_0.parquet": {
+        "bytes": 3266686,
+        "mtime_ns": 1788883644339748200,
+        "sha256": "27d76c25170990503b30e17a81216e95d5ba77400d967de8e4f9cb2f49c33365"
+      },
+      "activity/wallet_bucket=63/data_0.parquet": {
+        "bytes": 2019870,
+        "mtime_ns": 1788883642323699800,
+        "sha256": "00a6ee682db25a378484a4db7373884bbf9fdfd943b920bfd67b07ec85df6853"
+      },
+      "activity/wallet_bucket=7/data_0.parquet": {
+        "bytes": 2237107,
+        "mtime_ns": 1788883643709822100,
+        "sha256": "32f91ead0298aee859758f3f3900aab193cd542082bb2dd5794962d70c07d3a5"
+      },
+      "activity/wallet_bucket=8/data_0.parquet": {
+        "bytes": 123277824,
+        "mtime_ns": 1788883644328760100,
+        "sha256": "66f7a94658aa1732c7f0a769639a2b2d110bdbf90f2808c9cdc4ae9b87176c19"
+      },
+      "activity/wallet_bucket=9/data_0.parquet": {
+        "bytes": 1520308,
+        "mtime_ns": 1788883644012158800,
+        "sha256": "16618d04934fda8e04fb2aaefb5aa34638f33c2aebce57d767593546626b5a4f"
+      }
+    }
+  },
+  "environment": {
+    "python": "3.12.10",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "duckdb": "1.5.5",
+    "psutil": "7.2.2",
+    "total_ram_bytes": 31845707776,
+    "logical_cpus": 24
+  },
+  "baseline_reuse": {
+    "previous_status": "failed",
+    "previous_error": "Worker parquet failed; see parquet.log",
+    "baseline_code": {
+      "git_head": "45b63f40b2b39ef838106b6ae97b4ffbc5cbfd31",
+      "package_source_sha256": "13c77d0d8f0bab3e08d484e616eff94d1bee4c8494c14187eb0c494f00141923"
+    },
+    "only_changed_module": "activity_reader.py",
+    "baseline_adapter_source": "\"\"\"Replay an immutable Parquet activity snapshot through the existing scorer.\n\nThis is an offline adapter, not a production store. The scorer still holds a\nwhole wallet bucket in Python; DuckDB's memory setting does not cap that memory.\n\"\"\"\nfrom __future__ import annotations\n\nimport json\nimport logging\nfrom collections.abc import Iterator\nfrom pathlib import Path\n\nfrom .activity_parquet import BUCKETS, connect, load_manifest, sql_literal\nfrom .models import PolymarketActivity\nfrom .runner import _activity_from_row\n\nlog = logging.getLogger(__name__)\n\n\nclass ParquetActivityReader:\n    \"\"\"Replay the legacy 64-bucket order, including duplicate rows and ties.\"\"\"\n\n    def __init__(self, dataset: Path, *, memory_mb: int = 512, threads: int = 2) -> None:\n        self.dataset = dataset.resolve(strict=True)\n        self.manifest = load_manifest(self.dataset)\n        self.memory_mb = memory_mb\n        self.threads = threads\n        self._inventory = self._snapshot()\n\n    def _snapshot(self) -> dict[str, tuple[int, int]]:\n        paths = [self.dataset / \"manifest.json\", *sorted(\n            (self.dataset / \"activity\").rglob(\"*.parquet\"))]\n        return {str(p): (p.stat().st_size, p.stat().st_mtime_ns) for p in paths}\n\n    def validate(self) -> None:\n        # Cheap mutation detection on every replay. The shadow command also\n        # hashes every input before and after the experiment.\n        if self._snapshot() != self._inventory:\n            raise RuntimeError(\"Parquet snapshot changed during scoring\")\n\n    def __call__(self) -> Iterator[list[PolymarketActivity]]:\n        self.validate()\n        glob = sql_literal((self.dataset / \"activity\" / \"**\" / \"*.parquet\").as_posix())\n        with connect(memory_mb=self.memory_mb, threads=self.threads) as db:\n            for bucket in range(BUCKETS):\n                db.execute(f\"\"\"\n                    SELECT raw_json FROM read_parquet({glob}, hive_partitioning=true)\n                    WHERE wallet_bucket=? ORDER BY source_record\n                \"\"\", [bucket])\n                records: list[PolymarketActivity] = []\n                while rows := db.fetchmany(4096):\n                    for (raw,) in rows:\n                        # Use the same conversion/defaults as the JSONL reader.\n                        record = _activity_from_row(json.loads(raw))\n                        if record is not None:\n                            records.append(record)\n                if bucket % 8 == 0 or bucket == BUCKETS - 1:\n                    log.info(\"parquet enrichment shard %d/%d rows=%d\",\n                             bucket + 1, BUCKETS, len(records))\n                yield records\n                del records\n        self.validate()\n",
+    "shared_package_hash_verified": true
+  },
+  "cache_policy": "local shared Windows host; OS cache not flushed; one JSONL baseline, then reader retry",
+  "outputs": {
+    "enrichments": {
+      "bytes": 1878150,
+      "sha256": "01564d095e7945cee89895f3f278a0f0d66e9aee6b88530325f27e10a447dc5f"
+    },
+    "bets": {
+      "bytes": 424205361,
+      "sha256": "f231067884379b65108661908e1c1bdc4c9de3904f510c43f1a81af97c914fa8"
+    }
+  },
+  "finished_at": "2026-09-08T19:48:41.394395+00:00",
+  "quality_gate_summary": {
+    "wallets": 833,
+    "data_quality_status": {
+      "untrusted": 708,
+      "trusted": 125
+    },
+    "tailability_status": {
+      "blocked": 833
+    },
+    "data_quality_reasons": {
+      "incomplete activity history": 11,
+      "missing 30-day economics": 17,
+      "incomplete market metadata": 701,
+      "incomplete current positions": 4,
+      "incomplete closed positions": 1,
+      "missing all-time economics": 2
+    },
+    "tailability_reasons": {
+      "incomplete activity history": 11,
+      "missing 30-day economics": 17,
+      "fewer than 10 closing-line observations": 632,
+      "incomplete market metadata": 701,
+      "negative or zero all-time PnL": 429,
+      "negative or zero all-time ROI": 429,
+      "closing-line value not confidently positive": 173,
+      "recent PnL below zero": 422,
+      "conservative edge is not positive": 799,
+      "recent forecast edge is negative": 476,
+      "forecast confidence below 80%": 788,
+      "incomplete current positions": 4,
+      "incomplete closed positions": 1,
+      "missing all-time economics": 2,
+      "fewer than 20 independent settled events": 405,
+      "fewer than 5 recent independent settled events": 302
+    }
+  },
+  "interpretation": {
+    "timing_repetitions": 1,
+    "predictive_validation": false,
+    "full_chain_archive": false,
+    "production_enabled": false,
+    "initial_failure": "DuckDB ORDER BY raw JSON exceeded 512 MiB; replaced by Python ordinal/model-reference sorting",
+    "log_timestamp_note": "Existing runner log formatter labels local clock Z on this Windows host; report timestamps use timezone-aware UTC and timings use perf_counter"
+  },
+  "validation": {
+    "verified_date": "2026-09-09",
+    "pytest_passed": 466,
+    "pytest_skipped": 1,
+    "skip_reason": "production metrics RSS source unavailable on Windows",
+    "ruff": "passed",
+    "mypy_linux_target": "passed",
+    "measured_package_hash_reverified": true
+  }
+}

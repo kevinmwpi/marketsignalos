@@ -116,14 +116,15 @@ def _worker(job: dict[str, Any]) -> dict[str, Any]:
 
 
 def measured_job(job: dict[str, Any], directory: Path, name: str, *,
-                 rss_limit_mb: int, timeout_seconds: int) -> dict[str, Any]:
+                 rss_limit_mb: int, timeout_seconds: int,
+                 worker_module: str = "marketsignalos_polymarket.storage_benchmark") -> dict[str, Any]:
     request = directory / f"{name}.job.json"
     response = directory / f"{name}.result.json"
     request.write_text(json.dumps(job), encoding="utf-8")
     peak = 0
     started = time.perf_counter()
     with (directory / f"{name}.log").open("w", encoding="utf-8") as errors, subprocess.Popen(
-        [sys.executable, "-m", "marketsignalos_polymarket.storage_benchmark",
+        [sys.executable, "-m", worker_module,
          "_worker", str(request), str(response)], stdout=errors, stderr=errors,
     ) as process:
         monitor = psutil.Process(process.pid)
@@ -206,13 +207,13 @@ def run_benchmark(source: Path, output: Path, *, repetitions: int = 3,
     dataset = reuse_dataset.resolve(strict=True) if reuse_dataset else output / "dataset"
     job: dict[str, Any] = {"source": str(source), "dataset": str(dataset),
                            "memory_mb": memory_mb, "threads": threads}
-    limits = {"rss_limit_mb": rss_limit_mb, "timeout_seconds": timeout_seconds}
     report: dict[str, Any] = {
         "status": "running", "started_at": datetime.now(UTC).isoformat(),
         "environment": {"python": platform.python_version(), "platform": platform.platform(),
                         "logical_cpus": psutil.cpu_count(),
                         "total_ram_bytes": psutil.virtual_memory().total},
-        "settings": {**job, **limits, "repetitions": repetitions},
+        "settings": {**job, "rss_limit_mb": rss_limit_mb,
+                     "timeout_seconds": timeout_seconds, "repetitions": repetitions},
         "cache_policy": "fresh child processes; OS page cache not flushed; alternating engine order",
         "scope": "local activity projection and aggregate workload; no API or full enrichment timing",
         "code_sha256": {name: hashlib.sha256(Path(__file__).with_name(name).read_bytes()).hexdigest()
@@ -225,7 +226,7 @@ def run_benchmark(source: Path, output: Path, *, repetitions: int = 3,
                 raise RuntimeError("Source fingerprint does not match reused dataset")
             build: dict[str, Any] = {"reused_dataset": str(dataset)}
         else:
-            build = measured_job({**job, "operation": "build"}, output, "build", **limits)
+            build = measured_job({**job, "operation": "build"}, output, "build", rss_limit_mb=rss_limit_mb, timeout_seconds=timeout_seconds)
             manifest = build.pop("result")
         report["dataset"] = manifest
         report["conversion"] = build
@@ -238,7 +239,7 @@ def run_benchmark(source: Path, output: Path, *, repetitions: int = 3,
             for engine in engines:
                 assert_source_unchanged(source, manifest["source_fingerprint"])
                 run = measured_job({**job, "operation": engine, "queries": queries},
-                                   output, f"{engine}-{repetition}", **limits)
+                                   output, f"{engine}-{repetition}", rss_limit_mb=rss_limit_mb, timeout_seconds=timeout_seconds)
                 result = run.pop("result")
                 if reference is None:
                     reference = result

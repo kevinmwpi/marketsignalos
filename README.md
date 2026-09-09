@@ -1,6 +1,7 @@
 # MarketSignalOS
 
 Engineering/research development: [offline storage benchmark](docs/storage-benchmark.md),
+[full enrichment comparison](docs/enrichment-shadow.md),
 [research evidence and evaluation protocol](docs/research-credibility.md),
 and [operations runbook](docs/runbook.md). The Parquet prototype is opt-in and
 does not change production storage or claim validated trading alpha.
