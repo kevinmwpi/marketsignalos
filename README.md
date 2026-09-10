@@ -1,5 +1,11 @@
 # MarketSignalOS
 
+The next product stage is a cloud-hosted wallet research platform. See the
+[platform direction and implementation stages](docs/platform-roadmap.md) and
+[prepared Railway deployment](docs/railway-deployment.md). The cloud pilot still
+uses JSONL with a persistent volume; database-first serving, complete chain
+coverage and population-level significance validation are not implemented yet.
+
 MarketSignalOS identifies **skilled Polymarket wallets** from public wallet
 history, verifies that their edge is economically meaningful, and surfaces the
 BUY positions they still hold. For each tailable signal, the dashboard links to
@@ -55,12 +61,15 @@ python -m venv .venv
 
 # Run the API
 $env:PYTHONPATH = "apps/api/src;services/polymarket-ingestor/src"
+# Explicit local-only opt-in for operator endpoints:
+$env:ALLOW_UNAUTHENTICATED_ADMIN = "1"
 .\.venv\Scripts\uvicorn marketsignalos_api.main:app --reload --port 8000
 
 # Run the web app (separate terminal)
 cd apps/web
 npm ci
 $env:NEXT_PUBLIC_API_BASE_URL = "http://localhost:8000"
+$env:SHOW_INGEST_CONTROLS = "1"
 npm run dev   # http://localhost:3000
 ```
 
@@ -72,8 +81,10 @@ Open `http://localhost:3000` and use the top-nav ingest controls:
   categorized leaderboard sweep, recent-trader discovery, wallet pruning,
   batched hydration, then the same market/enrichment/Kalshi refresh.
 
-No API keys are required; the pipeline uses public Polymarket and Kalshi
-endpoints. Optional `DATABASE_URL` enables Postgres dual-write.
+No upstream trading API keys are required; the pipeline uses public data.
+Operator HTTP actions require `ADMIN_API_TOKEN`, or the explicit local-only
+bypass above. Production builds hide the ingestion controls. Optional
+`DATABASE_URL` enables Postgres dual-write.
 
 ## CLI ingest workflows
 
@@ -103,6 +114,7 @@ flow and run order.
 | Method | Path | Returns |
 |---|---|---|
 | `GET` | `/health` | API liveness. |
+| `GET` | `/platform/status` | Public data freshness, last successful run and sampled coverage. |
 | `GET` | `/ingestor/status` | Current/last ingest state, progress, log tail, and last summary. |
 | `POST` | `/ingestor/run` | Starts the shallow Polymarket pipeline. |
 | `POST` | `/ingestor/run/deep` | Starts the deep research rebuild. |
@@ -159,9 +171,12 @@ npm run build
 
 ## Deploy API on Railway
 
-Single web process is defined in `Procfile` (`web: ./scripts/start-api.sh`).
-`railway.toml` selects Railpack and pins `/health` as the healthcheck. The
-service needs no required env vars. Optional `DATABASE_URL` enables Postgres
-dual-write/readiness for the ingestor path, and `FRONTEND_URL` adds an "Open
-dashboard" button to the API's landing page. See [`CLAUDE.md`](CLAUDE.md) for
-the full env-var table.
+Follow [the Railway deployment guide](docs/railway-deployment.md), with separate
+API and web services. Production requires a persistent `/data` volume,
+`POLYMARKET_DATA_DIR`, and `ADMIN_API_TOKEN` (32+ characters). The API is limited
+to one process/replica; its scheduler performs ingestion. The frontend uses
+`apps/web/railway.toml` and a server-only `API_BASE_URL`.
+
+`/health` reports liveness; `/platform/status` separately reports data recency.
+Private operator status and all POST actions require a bearer token. Run receipts
+survive restarts on the volume. No cloud resources are provisioned by these files.

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import threading
 from collections import deque
 from datetime import datetime, timezone
@@ -12,6 +13,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from marketsignalos_api.services.ingest_scheduler import get_schedule_status
+from marketsignalos_api.services.platform_status import persist_run
 
 log = logging.getLogger("marketsignalos.api.ingestor")
 router = APIRouter(prefix="/ingestor", tags=["ingestor"])
@@ -140,7 +142,6 @@ def _execute_pipeline_sync(pipeline_callable: Any) -> None:
             run_error = f"{type(exc).__name__}: {exc}"[:500]
 
         with _lock:
-            _state["running"] = False
             _state["last_finished_at"] = _now()
             _state["last_exit_code"] = exit_code
             if exit_code == 0 and run_error is None:
@@ -199,6 +200,11 @@ def _execute_pipeline_sync(pipeline_callable: Any) -> None:
             except Exception:  # noqa: BLE001
                 log.warning("could not run notification pass", exc_info=True)
     finally:
+        # Hold the running flag through post-ingest hooks: a second run must
+        # not rewrite snapshots while ledger/exits are still consuming them.
+        with _lock:
+            _state["running"] = False
+            persist_run(dict(_state))
         _detach_log_capture(handler)
 
 
@@ -216,6 +222,7 @@ def _record_import_failure(exc: ImportError) -> None:
             last_summary=None,
             progress=None,
         )
+        persist_run(dict(_state))
 
 
 def _run_ingestor_sync() -> None:
@@ -243,7 +250,22 @@ def _run_deep_ingestor_sync() -> None:
     except ImportError as exc:
         _record_import_failure(exc)
         return
-    _execute_pipeline_sync(run_deep_pipeline)
+    def configured_run(**kwargs: Any) -> Any:
+        settings = {
+            "wallet_batch_size": ("INGEST_DEEP_WALLET_BATCH_SIZE", 25),
+            "leaderboard_depth": ("INGEST_DEEP_LEADERBOARD_DEPTH", 100),
+            "recent_trader_limit": ("INGEST_RECENT_TRADER_LIMIT", 1000),
+            "recent_trader_max_pages": ("INGEST_RECENT_TRADER_MAX_PAGES", 20),
+        }
+        options: dict[str, int] = {}
+        for name, (env_name, default) in settings.items():
+            value = int(os.getenv(env_name, str(default)))
+            if value < 1:
+                raise ValueError(f"{env_name} must be a positive integer")
+            options[name] = value
+        return run_deep_pipeline(**options, **kwargs)
+
+    _execute_pipeline_sync(configured_run)
 
 
 def start_pipeline_run(kind: str) -> str | None:
@@ -256,6 +278,8 @@ def start_pipeline_run(kind: str) -> str | None:
     the started_at timestamp, or None when a run of either kind is already
     in flight.
     """
+    if kind not in {"shallow", "deep"}:
+        raise ValueError("Pipeline kind must be shallow or deep")
     runner = _run_ingestor_sync if kind == "shallow" else _run_deep_ingestor_sync
     with _lock:
         if _state["running"]:
@@ -271,6 +295,7 @@ def start_pipeline_run(kind: str) -> str | None:
         _state["progress"] = None
         _log_buffer.clear()
         _state["log_tail"] = []
+        persist_run(dict(_state))
 
     loop = asyncio.get_event_loop()
     loop.run_in_executor(None, runner)
@@ -298,9 +323,8 @@ def get_ingestor_status() -> IngestorStatus:
 async def trigger_ingestor_run() -> JSONResponse:
     """Trigger one pass of the Polymarket → Kalshi pipeline.
 
-    This is unauthenticated (uses only public APIs) so it needs no
-    pre-flight config check — the only failure mode is "already running",
-    which returns 409.
+    The app-wide operator dependency authorizes callers before dispatch.
+    The upstream data sources themselves require no trading credentials.
     """
     try:
         from marketsignalos_polymarket.runner import run_pipeline  # noqa: F401, PLC0415

@@ -1,5 +1,13 @@
 # CLAUDE.md — MarketSignalOS
 
+**2026-09 platform preparation:** [docs/railway-deployment.md](docs/railway-deployment.md)
+and [docs/platform-roadmap.md](docs/platform-roadmap.md) describe the current
+cloud pilot and next stages. Operator routes now require `ADMIN_API_TOKEN`;
+the public website hides ingest controls. Local development may explicitly use
+`ALLOW_UNAUTHENTICATED_ADMIN=1` plus `SHOW_INGEST_CONTROLS=1`. Production requires
+a persistent data directory and a 32+ character token. `/platform/status` is a
+public freshness/coverage endpoint; run receipts persist on the volume.
+
 ## What this project is
 
 MarketSignalOS identifies skilled Polymarket wallets, surfaces their currently-held positions, and classifies each bet by where it can actually be tailed (Polymarket first; approved Kalshi mirror as fallback).
@@ -54,7 +62,7 @@ cd apps/web
 npm ci
 ```
 
-**Environment variables (all optional):**
+**Environment variables (production requirements in the deployment guide):**
 
 | Variable | Where used | Notes |
 |---|---|---|
@@ -205,7 +213,7 @@ The pipeline runs JSONL-first. Postgres is opt-in via `DATABASE_URL` (`Dual*` st
 - **`run_pipeline()`** — single in-process orchestrator the web "Run ingest" button invokes. Seeds wallets across `day/week/month/all` windows (gracefully skipping any window the API rejects), pulls activity/positions/value, fetches Polymarket markets + Kalshi public markets, and runs the Polymarket→Kalshi market matcher. No env vars required.
 - **`/signals/skilled-bets`** — still-held BUY entries from wallets with `skill_likelihood ≥ 0.8`, each row carrying the Kalshi mirror (ticker, title, deep link, live YES price, match confidence) when a match exists
 - **SkilledBetsPanel + PolymarketLeaderboardPanel + IngestButton** mounted on `/` (the dashboard root)
-- **Ingest button** — pre-flight-free (no required env vars); log capture surfaces a `log_tail` and counts summary back to the UI
+- **Operator ingestion** — bearer-token protected HTTP controls; explicit local-only bypass and development buttons. Log capture surfaces a `log_tail` and counts summary to authorized operators.
 - **Polymarket Postgres write path** — Alembic schema (`services/polymarket-ingestor/alembic/`) covers 8 tables; `Dual*` store wrappers fan every write out to JSONL and Postgres when `DATABASE_URL` is set; API reads remain JSONL-only
 - **Kalshi parlay-ticker filter** — `_is_kalshi_parlay()` excludes `KXMVE*` multi-leg tickers from the matcher
 - **Recency-weighted edge (`forecast-v3`)** — a second Bayesian fit with each bet's likelihood weight decayed at a 180-day half-life; `recent_*` enrichment fields plus two new tailability gates (recent independent events ≥ 5; recent edge not negative)
@@ -235,7 +243,7 @@ Deployed on **Railway** via Railpack builder.
 
 - Single process defined in `Procfile`: `web: ./scripts/start-api.sh`
 - `scripts/start-api.sh` sets `PYTHONPATH=apps/api/src` and starts uvicorn on `$PORT`
-- Health check: `GET /health`, 60s initial delay, 10 restart retries
+- Health check: `GET /health`, 60s healthcheck timeout, 10 restart retries
 - `railway.toml` controls builder + health check config
 - The Next.js app is a separate deployment (Vercel or a second Railway service). Set `NEXT_PUBLIC_API_BASE_URL` on the frontend to the API URL; optionally set `FRONTEND_URL` on the API so its landing page links back.
 
