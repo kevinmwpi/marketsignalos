@@ -1,5 +1,10 @@
 # CLAUDE.md — MarketSignalOS
 
+> **Read [`docs/handoff-blueprint.md`](docs/handoff-blueprint.md) before starting any
+> build work.** It is the authoritative staged plan: what to build in what order,
+> the entry gate and acceptance evidence for each stage, the invariants that hold
+> everywhere, and the kill criteria. It supersedes any older architecture plan.
+
 ## What this project is
 
 MarketSignalOS identifies skilled Polymarket wallets, surfaces their currently-held positions, and classifies each bet by where it can actually be tailed (Polymarket first; approved Kalshi mirror as fallback).
@@ -276,6 +281,7 @@ Deployed on **Railway** via Railpack builder.
 
 | File | Contents |
 |---|---|
+| `docs/handoff-blueprint.md` | **Authoritative build reference.** Corrected architecture, staged plan with entry gates and acceptance evidence, invariants, data contracts, kill criteria |
 | `docs/prd.md` | Product requirements, MVP scope, success metrics |
 | `docs/architecture.md` | High-level data flow and key principles |
 | `docs/0001-tech-stack.md` | ADR explaining stack choices |
