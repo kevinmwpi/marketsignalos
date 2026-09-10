@@ -1,5 +1,9 @@
 # Runbook
 
+For the separate, one-shot worker under the $15/month design target, see
+[lean pilot controls and recovery](lean-pilot.md). It is locally implemented;
+cloud activation and public API snapshot consumption remain pending.
+
 This is the operational entry point. Use the maintained
 [observability guide and per-alert runbooks](observability.md) for all 13 rules,
 and [Grafana Cloud delivery](../ops/grafana/README.md) to provision the existing

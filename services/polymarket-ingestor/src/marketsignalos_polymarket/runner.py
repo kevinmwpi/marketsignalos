@@ -459,6 +459,25 @@ class _ActivityPaginationResult:
     boundary_complete: bool = True
 
 
+@dataclass(slots=True)
+class _ActivityRequestBudget:
+    """Shared budget for activity API calls, including timestamp boundary pages.
+
+    HTTP retries inside the client are separate attempts. Other wallet endpoints
+    and market metadata are outside this activity-only budget.
+    """
+
+    remaining: int
+    hit_limit: bool = False
+
+    def take(self) -> bool:
+        if self.remaining <= 0:
+            self.hit_limit = True
+            return False
+        self.remaining -= 1
+        return True
+
+
 def _activity_key(event: PolymarketActivity) -> tuple[str, str, int, str]:
     return (
         event.transaction_hash,
@@ -478,6 +497,7 @@ def _paginate_activity_window(
     end_timestamp: int | None = None,
     max_boundary_offset: int = 3000,
     on_page: Callable[[list[PolymarketActivity]], None] | None = None,
+    request_budget: _ActivityRequestBudget | None = None,
 ) -> _ActivityPaginationResult:
     """Walk /activity through descending timestamp windows.
 
@@ -505,6 +525,8 @@ def _paginate_activity_window(
     exhausted = False
     boundary_complete = True
     for _page in range(max_pages):
+        if request_budget is not None and not request_budget.take():
+            break
         raw = client.get_wallet_activity(address, limit=page_size, end=cursor)
         if not raw:
             exhausted = True
@@ -530,6 +552,9 @@ def _paginate_activity_window(
 
         offset = 0
         while offset <= max_boundary_offset:
+            if request_budget is not None and not request_budget.take():
+                boundary_complete = False
+                break
             boundary_raw = client.get_wallet_activity(
                 address,
                 limit=page_size,
@@ -548,6 +573,8 @@ def _paginate_activity_window(
             offset += page_size
         else:
             boundary_complete = False
+            break
+        if not boundary_complete:
             break
         cursor = oldest - 1
 
@@ -1030,6 +1057,7 @@ def _hydrate_single_wallet(
     try_subgraph_backfill: bool,
     rate_limiter: HostRateLimiter | None,
     write_lock: threading.Lock | None,
+    max_activity_requests: int | None = None,
 ) -> _WalletHydrationTotals:
     state = hydration_by_wallet.get(addr.lower()) or PolymarketWalletHydration(
         proxy_wallet=addr.lower()
@@ -1042,6 +1070,11 @@ def _hydrate_single_wallet(
     # never double-write; peak memory per wallet stays at one page.
     activity_written = 0
     newest_ts: int | None = None
+    activity_budget = (
+        _ActivityRequestBudget(max_activity_requests)
+        if max_activity_requests is not None else None
+    )
+    recent_complete = since is None
 
     def _sink(events: list[PolymarketActivity]) -> None:
         nonlocal activity_written, newest_ts
@@ -1068,14 +1101,16 @@ def _hydrate_single_wallet(
         if since is not None:
             if rate_limiter is not None:
                 rate_limiter.wait()
-            _paginate_activity_window(
+            recent = _paginate_activity_window(
                 client,
                 addr,
                 page_size=activity_page_size,
                 max_pages=max_pages,
                 since_timestamp=since,
                 on_page=_sink,
+                request_budget=activity_budget,
             )
+            recent_complete = recent.exhausted and recent.boundary_complete
 
         if full_backfill:
             state.activity_history_complete = False
@@ -1091,14 +1126,24 @@ def _hydrate_single_wallet(
                 since_timestamp=None,
                 end_timestamp=state.oldest_activity_cursor_timestamp,
                 on_page=_sink,
+                request_budget=activity_budget,
             )
             if history.oldest_timestamp is not None:
-                state.oldest_activity_cursor_timestamp = history.oldest_timestamp - 1
+                # A budget can stop inside a timestamp shared by many events.
+                # Revisit that timestamp next run instead of dropping its tail.
+                state.oldest_activity_cursor_timestamp = history.oldest_timestamp - (
+                    0 if activity_budget is not None and not history.boundary_complete else 1
+                )
             state.activity_history_complete = history.exhausted and history.boundary_complete
-            if not history.boundary_complete:
+            if not history.boundary_complete and not (
+                activity_budget is not None and activity_budget.hit_limit
+            ):
                 state.errors.append("activity boundary exceeded offset safety bound")
 
-        if try_subgraph_backfill and not state.activity_history_complete:
+        if (
+            try_subgraph_backfill and activity_budget is None
+            and not state.activity_history_complete
+        ):
             _extend_activity_via_subgraph(
                 client,
                 addr,
@@ -1108,6 +1153,12 @@ def _hydrate_single_wallet(
                 rate_limiter=rate_limiter,
                 on_page=_sink,
             )
+        if activity_budget is not None:
+            if not recent_complete:
+                state.activity_history_complete = False
+                state.errors.append("recent activity refresh incomplete; checkpoint retained")
+            if activity_budget.hit_limit:
+                state.errors.append("activity request budget reached")
     except Exception as exc:  # noqa: BLE001
         state.activity_history_complete = False
         state.errors.append(f"activity: {exc}")
@@ -1122,7 +1173,7 @@ def _hydrate_single_wallet(
         nonlocal positions_written, values_written
         # Activity rows were already streamed to disk during pagination; here we
         # only advance the checkpoint to the newest timestamp we saw.
-        if newest_ts is not None:
+        if newest_ts is not None and (activity_budget is None or recent_complete):
             stores.checkpoints.set_last_timestamp(addr, newest_ts)
             state.newest_activity_timestamp = max(
                 state.newest_activity_timestamp or 0, newest_ts
@@ -1242,9 +1293,17 @@ def run_wallets(
     exhaust_activity: bool = False,
     try_subgraph_backfill: bool = False,
     wallet_concurrency: int | None = None,
+    max_activity_requests_per_wallet: int | None = None,
     progress_cb: ProgressCallback | None = None,
 ) -> tuple[int, int, int]:
-    """Hydrate wallets while persisting fail-closed trust inputs."""
+    """Hydrate wallets while persisting fail-closed trust inputs.
+
+    An explicit activity request budget covers recent/history/boundary calls,
+    disables subgraph fallback, and retains a checkpoint after a partial recent
+    refresh. It does not cap other endpoints, retries, wall time, or RAM.
+    """
+    if max_activity_requests_per_wallet is not None and max_activity_requests_per_wallet < 1:
+        raise ValueError("max_activity_requests_per_wallet must be positive")
     if not addresses:
         return 0, 0, 0
 
@@ -1273,6 +1332,7 @@ def run_wallets(
             try_subgraph_backfill=try_subgraph_backfill or exhaust_activity,
             rate_limiter=rate_limiter,
             write_lock=write_lock,
+            max_activity_requests=max_activity_requests_per_wallet,
         )
 
     if concurrency <= 1 or total == 1:
@@ -2094,6 +2154,30 @@ def _select_shallow_wallet_targets(
     return sorted(watchlist_set)
 
 
+def _oldest_polled_wallet_batch(
+    wallets: list[str], *, stores: _Stores, batch_size: int,
+) -> list[str]:
+    """Rotate a bounded batch within the shallow pipeline's eligible cohort."""
+    hydration = stores.hydration.load_hydration()
+
+    def _key(wallet: str) -> tuple[float, str]:
+        state = hydration.get(wallet.lower())
+        timestamp = float("-inf")
+        if state and state.last_refreshed_at:
+            try:
+                refreshed = datetime.fromisoformat(state.last_refreshed_at)
+                if refreshed.tzinfo is None:
+                    refreshed = refreshed.replace(tzinfo=UTC)
+                timestamp = refreshed.timestamp()
+            except ValueError:
+                pass
+        # Unknown timestamps go first; wallet breaks ties deterministically.
+        # Completed hydration records every attempt, including partial results.
+        return (timestamp, wallet.lower())
+
+    return sorted(wallets, key=_key)[:batch_size]
+
+
 def _load_last_activity_by_wallet(enrichment_path: Path) -> dict[str, int]:
     """Most-recent activity timestamp per wallet, sourced from enrichment.
     Wallets not present here are treated as `last_activity_at = None`."""
@@ -2224,6 +2308,15 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
     )
     pl.add_argument("--leaderboard-limit", type=int, default=50)
+    pl.add_argument("--skip-enrichment", action="store_true",
+                    help="Collect data without recomputing or publishing wallet scores")
+    pl.add_argument("--wallet-batch-size", type=int, default=None,
+                    help="Cap the eligible wallet cohort; oldest-polled wallets go first")
+    pl.add_argument("--max-pages-per-wallet", type=int, default=40,
+                    help="Activity timestamp windows per recent/history pass (not a request cap)")
+    pl.add_argument("--max-activity-requests-per-wallet", type=int, default=None,
+                    help="Cap activity API calls including boundary pages; excludes HTTP retries "
+                         "and other endpoints; disables subgraph fallback")
     pl.add_argument("--include-kalshi", action="store_true",
                     help="Also run the Kalshi fetch + match step "
                          "(off by default — Polymarket-only otherwise)")
@@ -2343,6 +2436,11 @@ class PipelineResult:
     # Set when a deep run completes as a *partial success* (circuit breaker
     # tripped mid-sweep). Surfaced to the UI; exit code stays 0.
     warning: str | None = None
+    # False means existing enrichment and quality counters were not refreshed.
+    enrichment_performed: bool = True
+    wallets_polled: int = 0
+    wallets_with_errors: int = 0
+    activity_budget_exhausted_wallets: int = 0
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -2356,6 +2454,10 @@ class PipelineResult:
             "markets_written": self.markets_written,
             "markets_backfilled": self.markets_backfilled,
             "enrichment_wallets": self.enrichment_wallets,
+            "enrichment_performed": self.enrichment_performed,
+            "wallets_polled": self.wallets_polled,
+            "wallets_with_errors": self.wallets_with_errors,
+            "activity_budget_exhausted_wallets": self.activity_budget_exhausted_wallets,
             "kalshi_markets": self.kalshi_markets,
             "market_links": self.market_links,
             "trusted_wallets": self.trusted_wallets,
@@ -2401,6 +2503,9 @@ def run_pipeline(
     skip_kalshi: bool = True,
     include_profit_leaderboard: bool = False,
     refresh_reference: bool | None = None,
+    skip_enrichment: bool = False,
+    wallet_batch_size: int | None = None,
+    max_activity_requests_per_wallet: int | None = None,
     client: PolymarketClient | None = None,
     progress_cb: ProgressCallback | None = None,
 ) -> PipelineResult:
@@ -2419,7 +2524,9 @@ def run_pipeline(
         3. Fetch resolved-market metadata (closed=True) for skill scoring,
            plus backfill any condition_ids referenced by activity that
            weren't in the page set.
-        4. Recompute per-wallet enrichment (win rate, skill likelihood).
+        4. Recompute per-wallet enrichment (win rate, skill likelihood), unless
+           skip_enrichment=True. Skipping leaves all existing score outputs
+           untouched and reports enrichment_performed=False.
         5. (Opt-in, off by default) Fetch Kalshi's public /markets and run
            the Polymarket → Kalshi title matcher to populate
            market_links.jsonl. This step is skipped by default
@@ -2431,6 +2538,12 @@ def run_pipeline(
     All public APIs hit here are unauthenticated, so this function needs
     zero env-var configuration to run.
     """
+    if wallet_batch_size is not None and wallet_batch_size < 1:
+        raise ValueError("wallet_batch_size must be positive")
+    if max_activity_requests_per_wallet is not None and max_activity_requests_per_wallet < 1:
+        raise ValueError("max_activity_requests_per_wallet must be positive")
+    if max_pages_per_wallet < 1:
+        raise ValueError("max_pages_per_wallet must be positive")
     attempts = list(windows or _DEFAULT_WINDOWS)
     stores = _build_stores(_data_dir())
     owns_client = client is None
@@ -2516,6 +2629,10 @@ def run_pipeline(
         # 2. Per-wallet activity/positions/value — shallow runs only hot wallets
         # (open positions, skilled/tailable, pinned) to keep steady-state cheap.
         wallet_targets = _select_shallow_wallet_targets(merged, stores=stores)
+        if wallet_batch_size is not None:
+            wallet_targets = _oldest_polled_wallet_batch(
+                wallet_targets, stores=stores, batch_size=wallet_batch_size,
+            )
         log.info(
             "pipeline step=wallets watchlist=%d selected=%d",
             len(merged),
@@ -2530,6 +2647,7 @@ def run_pipeline(
                 addresses=wallet_targets,
                 activity_page_size=activity_page_size,
                 max_pages_per_wallet=max_pages_per_wallet,
+                max_activity_requests_per_wallet=max_activity_requests_per_wallet,
                 progress_cb=progress_cb,
             )
 
@@ -2566,19 +2684,29 @@ def run_pipeline(
             log.info("pipeline skip reference refresh (fresh cache)")
 
         # 4. Compute on-chain skill enrichment
-        log.info("pipeline step=enrichment")
-        _emit({"stage": "enrichment"})
-        enrichment_written = run_enrichment(stores)
-        quality = _quality_counts(stores)
-        skill_watchlist_added = _merge_skill_qualified_wallets_into_watchlist(
-            enrichment_path=_data_dir() / "polymarket_wallet_enrichment.jsonl",
-            watchlist_path=_watchlist_path(),
-        )
-        if skill_watchlist_added:
-            log.info(
-                "pipeline skill-qualified wallets merged into watchlist count=%d",
-                skill_watchlist_added,
+        enrichment_written = 0
+        if not skip_enrichment:
+            log.info("pipeline step=enrichment")
+            _emit({"stage": "enrichment"})
+            enrichment_written = run_enrichment(stores)
+            skill_watchlist_added = _merge_skill_qualified_wallets_into_watchlist(
+                enrichment_path=_data_dir() / "polymarket_wallet_enrichment.jsonl",
+                watchlist_path=_watchlist_path(),
             )
+            if skill_watchlist_added:
+                log.info(
+                    "pipeline skill-qualified wallets merged into watchlist count=%d",
+                    skill_watchlist_added,
+                )
+        else:
+            log.info("pipeline skip enrichment (collection-only run; existing scores unchanged)")
+        quality = _quality_counts(stores)
+        hydration = stores.hydration.load_hydration()
+        wallet_errors = [
+            hydration[wallet.lower()].errors
+            if wallet.lower() in hydration else ["missing hydration result"]
+            for wallet in wallet_targets
+        ]
 
         result = PipelineResult(
             windows_attempted=attempts,
@@ -2591,6 +2719,12 @@ def run_pipeline(
             markets_written=markets_written,
             markets_backfilled=markets_backfilled,
             enrichment_wallets=enrichment_written,
+            enrichment_performed=not skip_enrichment,
+            wallets_polled=len(wallet_targets),
+            wallets_with_errors=sum(bool(errors) for errors in wallet_errors),
+            activity_budget_exhausted_wallets=sum(
+                "activity request budget reached" in errors for errors in wallet_errors
+            ),
             kalshi_markets=kalshi_written,
             market_links=links_written,
             trusted_wallets=quality["trusted_wallets"],
@@ -3495,6 +3629,10 @@ def main(argv: list[str] | None = None) -> int:
                 leaderboard_limit=args.leaderboard_limit,
                 skip_kalshi=not args.include_kalshi,
                 include_profit_leaderboard=args.include_profit,
+                skip_enrichment=args.skip_enrichment,
+                wallet_batch_size=args.wallet_batch_size,
+                max_pages_per_wallet=args.max_pages_per_wallet,
+                max_activity_requests_per_wallet=args.max_activity_requests_per_wallet,
                 client=client,
             )
         elif args.mode == "deep-pipeline":

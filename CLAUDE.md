@@ -2,6 +2,11 @@
 
 ## What this project is
 
+Current delivery constraint: target $15/month on Railway Hobby. Prepare and
+review a concrete deployment before paid provisioning. After each development
+pass, summarize what was built, validation, remaining work, and cloud activation
+status. See `docs/lean-pilot.md` for implemented controls and known limitations.
+
 MarketSignalOS identifies skilled Polymarket wallets, surfaces their currently-held positions, and classifies each bet by where it can actually be tailed (Polymarket first; approved Kalshi mirror as fallback).
 
 **Core value:** scan Polymarket leaderboards + skill-qualified wallets → score by Bayesian forecast edge → show actionable open BUY positions with tradability classification (`poly_direct`, `kalshi_mirror`, `on_chain_only`, `closed`).

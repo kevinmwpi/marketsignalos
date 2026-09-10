@@ -19,6 +19,9 @@ dependencies = [
 marketsignalos-polymarket-ingestor = "marketsignalos_polymarket.runner:main"
 
 [project.optional-dependencies]
+pilot = [
+  "psutil==7.2.2",
+]
 benchmark = [
   "duckdb==1.5.5",
   "psutil==7.2.2",

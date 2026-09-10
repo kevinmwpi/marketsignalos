@@ -1,0 +1,11 @@
+{
+  "collect_every_seconds": 3600,
+  "score_every_seconds": 86400,
+  "wallet_batch_size": 20,
+  "activity_requests_per_wallet": 10,
+  "leaderboard_limit": 25,
+  "cycle_timeout_seconds": 1200,
+  "daily_runtime_seconds": 3600,
+  "rss_limit_mb": 4096,
+  "log_limit_mb": 8
+}
