@@ -1,6 +1,6 @@
 # Lean pilot: $15 monthly design target
 
-Status after the 2026-09-09 development pass: implemented locally and tested;
+Status after the 2026-09-09/10 development pass: implemented locally and tested;
 not deployed or measured on Railway. No cloud services, schedules, billing
 limits, or paid data subscriptions were created. The current public API does
 not yet consume these new score snapshots.
@@ -145,18 +145,25 @@ See the [storage benchmark](storage-benchmark.md) and
 This pass adds collection-only operation, rotating batches, activity-call limits,
 persisted stage cadence and runtime reservations, resource receipts, overlap and
 deadline guards, and validated local score publication. It does not provision
-Railway or update the live website.
+Railway or update the live website. The integration branch also includes the
+earlier platform preparation: private operator endpoints, public freshness
+status, restart receipts, website refresh, and API/web deployment templates.
+Merge fixes preserve the newer metrics/fast-lane support, forward watchlist
+request bodies and caller credentials, hide operator controls publicly, and
+configure authenticated Alloy scraping. These components still need live
+deployment, scrape, and alert-delivery verification.
 
 Next passes, in order:
 
 1. Make raw collection restart-safe and memory-bounded: replace the in-memory
    dedupe index with transactional storage; prove checkpoint recovery and define
-   retention. Add a small offline end-to-end pilot fixture and then a bounded
-   fresh-data pilot with quality and resource reports.
+   retention. An offline fixture now exercises real scoring through the pilot;
+   next run a bounded fresh-data pilot with quality and resource reports.
 2. Publish complete serving snapshots including positions, markets, coverage,
    and separate source/score timestamps. Switch API reads to a pinned generation
-   with parity tests, rollback, and explicit stale states. Integrate the earlier
-   uncommitted operator-authentication and deployment preparation work carefully.
+   with parity tests, rollback, and explicit stale states. The earlier operator
+   authentication and deployment preparation are now integrated on the feature
+   branch; the public API still reads the legacy JSONL serving files.
 3. Exchange snapshots through cloud storage, add retention and restore tests,
    then prepare/review the Railway worker and lightweight serving deployment.
    Activate billing controls and delivery-tested operational alerts only with
@@ -170,3 +177,19 @@ Every development pass should report what was built, what was verified, what
 remains, and whether any cloud cost was actually incurred. Infrastructure fit
 and forecasting evidence are separate acceptance criteria; the monthly budget
 does not assume profits from following trades.
+
+## Verification for this integrated pass
+
+- 534 backend/ingestor tests passed; one existing production-RSS test was
+  skipped because its RSS source is unavailable on Windows.
+- Ruff passed for both Python packages; strict mypy passed for the API and
+  ingestor; frontend ESLint and the Next.js production build passed.
+- New tests cover independent cadence, partial/failed success timestamps,
+  interrupted-run reservations, midnight accounting, overlap locks, subprocess
+  timeout/RSS limits, the orphan-worker deadline, snapshot publication failures,
+  and real scoring through a small offline pilot fixture.
+- The existing timing test now checks requested limiter spacing with a
+  controlled clock instead of failing at a Windows wall-clock tick boundary.
+- No live collection, Railway provisioning, billing-limit change, or live
+  Grafana scrape/notification was performed. Binary validation of the updated
+  Alloy bearer-token configuration remains a predeployment check.

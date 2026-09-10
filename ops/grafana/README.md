@@ -79,10 +79,15 @@ Set these variables on the **Alloy** service:
 
 ```
 MSOS_METRICS_TARGET      = <your-api>.up.railway.app:443
+MSOS_METRICS_BEARER_TOKEN = <the API ADMIN_API_TOKEN, stored as a secret>
 GRAFANA_CLOUD_PROM_URL   = <from step 2>
 GRAFANA_CLOUD_PROM_USER  = <from step 2>
 GRAFANA_CLOUD_API_KEY    = <from step 2>
 ```
+
+The API now protects `/metrics`. The scrape bearer token belongs only in Alloy's
+secret configuration; it is separate from the Grafana remote-write token. See
+[Alloy scrape authentication](https://grafana.com/docs/alloy/latest/reference/components/prometheus/prometheus.scrape/).
 
 Start command:
 
@@ -134,10 +139,10 @@ can route to notification policies), point mimirtool at
 
 ## Validating the config before you deploy
 
-`config.alloy` in this directory is checked against the real Alloy binary
-(v1.19.1): `alloy fmt` parses it and reports no formatting drift, and
-`alloy validate` resolves the component graph — including the `forward_to`
-reference from the scrape component to the remote_write receiver.
+The earlier config was checked against Alloy v1.19.1 with `alloy fmt` and
+`alloy validate`, including the `forward_to` receiver reference. The newly added
+bearer-token argument matches the official scrape documentation; re-run binary
+validation with the token variable supplied before deploying this revision.
 
 To re-check after an edit:
 
@@ -149,12 +154,13 @@ unzip -q alloy.zip && chmod +x alloy-linux-amd64
 
 ./alloy-linux-amd64 fmt ops/grafana/config.alloy      # parses + canonical formatting
 MSOS_METRICS_TARGET=example:443 \
+MSOS_METRICS_BEARER_TOKEN=validation-placeholder \
 GRAFANA_CLOUD_PROM_URL=https://example/api/prom/push \
 GRAFANA_CLOUD_PROM_USER=1 GRAFANA_CLOUD_API_KEY=x \
   ./alloy-linux-amd64 validate ops/grafana/config.alloy
 ```
 
-Both exit 0 on the committed config. They are not vacuous checks: swapping
+Both exited 0 on the earlier config. These checks detect errors: swapping
 `sys.env()` for the deprecated `env()` exits 1 with a deprecation warning, and
 a typo in the `forward_to` target exits 1 with "component ... does not exist".
 

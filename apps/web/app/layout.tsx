@@ -3,7 +3,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "MarketSignalOS",
-  description: "Prediction market surveillance dashboard",
+  description: "Track Polymarket wallets, historical forecasting edge, and their open positions.",
 };
 
 export default function RootLayout({

@@ -1,43 +1,38 @@
-# API (FastAPI)
+# MarketSignalOS API
 
-## Run locally
+FastAPI serves public wallet research feeds and private operator controls.
+See the repository [quick start](../../README.md) and
+[Railway deployment guide](../../docs/railway-deployment.md).
 
-From the repository root:
+## Access
+
+Public GET routes include `/health`, `/platform/status`,
+`/signals/skilled-bets`, `/signals/skilled-bets/summary`,
+`/signals/polymarket-leaderboard`, `/signals/wallets/{wallet}`,
+`/signals/ledger`, `/signals/market-consensus`, and `/signals/exits`.
+The complete current schema is available at `/docs`.
+
+All POST routes, `/ingestor/status`, `/signals/notifications/status`, and
+`/metrics` require `Authorization: Bearer <ADMIN_API_TOKEN>`.
+Without a configured token these controls return 503. Local development can
+explicitly set `ALLOW_UNAUTHENTICATED_ADMIN=1`; production ignores this bypass.
+
+## Storage and scheduling
+
+The API reads JSONL from `POLYMARKET_DATA_DIR`. The optional Postgres ingestion
+mirror is not its read store. Railway requires a persistent volume, one worker
+and one replica. `INGEST_EVERY_MINUTES` enables the in-process scheduler, and
+`INGEST_DEEP_EVERY_N_RUNS` sets the discovery cadence. Run receipts persist on disk.
+
+`/health` reports process liveness. `/platform/status` reports processing
+freshness and sampled coverage, without exposing private logs or error messages.
+
+## Verification
+
+From the repository root, with both Python packages installed:
 
 ```powershell
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-pip install --upgrade pip
-cd apps/api
-pip install -e ".[dev]"
-```
-
-Start the API from `apps/api`:
-
-```powershell
-uvicorn marketsignalos_api.main:app --reload
-```
-
-## Endpoints
-
-- `GET /` serves the Railway-friendly landing page with a leaderboard table and quick links to docs/health
-- `GET /health` returns `{"status":"ok"}`
-- `GET /metrics` returns Prometheus metrics text format
-- `GET /signals/trades?limit=50` returns latest ingested normalized trades from local store
-- `GET /signals/leaderboard?fresh_days=30&min_resolved=20&limit=50` returns ranked accounts based on skill-vs-luck scoring and insider-like enrichment
-- `GET /signals/orderflow?limit=50&min_odds_jump=10&min_size_zscore=2.5&min_large_quantity=100` flags unusual orderflow events such as sudden odds moves and outsized bets
-- `GET /signals/opportunities?fresh_days=30&min_resolved=20&limit=12` returns a synthesized research queue ranked by statistical probability, evidence confluence, and confidence
-
-## Run tests
-
-From `apps/api`:
-
-```bash
-pytest -q
-```
-
-If you prefer to run tests from the repository root instead, use:
-
-```bash
-python -m pytest -q apps/api/tests
+.\.venv\Scripts\python.exe -m pytest -q apps/api services/polymarket-ingestor
+.\.venv\Scripts\ruff.exe check .
+.\.venv\Scripts\mypy.exe apps/api
 ```

@@ -2,6 +2,7 @@ export const dynamic = "force-dynamic";
 
 import ExitSignalsPanel, { type ExitSignal } from "./components/ExitSignalsPanel";
 import IngestButton from "./components/IngestButton";
+import FeedRefresh from "./components/FeedRefresh";
 import PolymarketLeaderboardPanel, { type PolymarketWalletSkill } from "./components/PolymarketLeaderboardPanel";
 import SkilledBetsPanel, { type SkilledBet } from "./components/SkilledBetsPanel";
 import WatchlistForm from "./components/WatchlistForm";
@@ -9,6 +10,12 @@ import WatchlistForm from "./components/WatchlistForm";
 type ApiResult<T> = {
   data: T | null;
   error?: string;
+};
+
+type PlatformStatus = {
+  freshness: "recent" | "stale" | "degraded" | "unavailable" | "updating";
+  last_success_at: string | null;
+  ingestion_running: boolean;
 };
 
 type SkilledBetsSummary = {
@@ -31,7 +38,7 @@ function apiUrl(apiBase: string, path: string): string {
 
 async function fetchJson<T>(url: string, label: string): Promise<ApiResult<T>> {
   try {
-    const response = await fetch(url, { cache: "no-store" });
+    const response = await fetch(url, { cache: "no-store", signal: AbortSignal.timeout(10_000) });
     if (!response.ok) {
       return { data: null, error: `${label} returned ${response.status}` };
     }
@@ -46,8 +53,9 @@ async function getDashboardData(apiBase: string): Promise<{
   skilledBets: ApiResult<SkilledBet[]>;
   skilledBetsSummary: ApiResult<SkilledBetsSummary>;
   exitSignals: ApiResult<ExitSignal[]>;
+  platformStatus: ApiResult<PlatformStatus>;
 }> {
-  const [polymarketLeaderboard, skilledBets, skilledBetsSummary, exitSignals] =
+  const [polymarketLeaderboard, skilledBets, skilledBetsSummary, exitSignals, platformStatus] =
     await Promise.all([
       fetchJson<PolymarketWalletSkill[]>(
         apiUrl(
@@ -71,9 +79,10 @@ async function getDashboardData(apiBase: string): Promise<{
         apiUrl(apiBase, "/signals/exits?limit=10"),
         "exit-signals API",
       ),
+      fetchJson<PlatformStatus>(apiUrl(apiBase, "/platform/status"), "data status API"),
     ]);
 
-  return { polymarketLeaderboard, skilledBets, skilledBetsSummary, exitSignals };
+  return { polymarketLeaderboard, skilledBets, skilledBetsSummary, exitSignals, platformStatus };
 }
 
 function ErrorBanner({ errors }: { errors: string[] }) {
@@ -102,17 +111,20 @@ function formatSnapshotAge(unixSeconds: number): string {
 }
 
 export default async function Home() {
-  const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8080";
-  const { polymarketLeaderboard, skilledBets, skilledBetsSummary, exitSignals } =
+  const apiBase = process.env.API_BASE_URL ?? process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8080";
+  const showControls = process.env.NODE_ENV !== "production" && process.env.SHOW_INGEST_CONTROLS === "1";
+  const { polymarketLeaderboard, skilledBets, skilledBetsSummary, exitSignals, platformStatus } =
     await getDashboardData(apiBase);
   const polymarketLeaderboardRows = polymarketLeaderboard.data ?? [];
   const bets = skilledBets.data ?? [];
   const summary = skilledBetsSummary.data;
   const exits = exitSignals.data ?? [];
-  const errors = [polymarketLeaderboard.error, skilledBets.error, skilledBetsSummary.error].filter(
+  const errors = [polymarketLeaderboard.error, skilledBets.error, skilledBetsSummary.error,
+    exitSignals.error, platformStatus.error].filter(
     (error): error is string => Boolean(error),
   );
   const isLive = errors.length === 0;
+  const freshness = platformStatus.data?.freshness ?? "unavailable";
   const uniqueWallets = new Set(bets.map((b) => b.proxy_wallet)).size;
   const capitalHeld = bets.reduce((acc, b) => acc + b.current_position_value_usdc, 0);
   const actionableOnPoly = summary?.feed_poly_direct ?? bets.filter((b) => b.tradability === "poly_direct").length;
@@ -121,6 +133,7 @@ export default async function Home() {
 
   return (
     <div className="min-h-screen bg-[#fafafa]">
+      <FeedRefresh />
       <nav className="sticky top-0 z-10 border-b border-zinc-200 bg-white/95 backdrop-blur-sm">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-3">
           <div className="flex items-center gap-2.5">
@@ -135,9 +148,7 @@ export default async function Home() {
             </span>
           </div>
           <div className="flex items-center gap-4">
-            <WatchlistForm />
-            <IngestButton mode="shallow" />
-            <IngestButton mode="deep" />
+            {showControls && <><WatchlistForm /><IngestButton mode="shallow" /><IngestButton mode="deep" /></>}
             <div className="flex items-center gap-2">
               <span
                 className={`h-1.5 w-1.5 rounded-full ${isLive ? "bg-emerald-500" : "bg-amber-400"}`}
@@ -151,11 +162,12 @@ export default async function Home() {
       <main className="mx-auto max-w-7xl px-6 pb-16 pt-8">
         <div className="mb-8">
           <h1 className="text-2xl font-semibold tracking-tight text-zinc-900">
-            Skilled wallet bets
+            Polymarket wallet signals
           </h1>
           <p className="mt-1.5 max-w-2xl text-sm text-zinc-500">
-            Actionable tails from verified Polymarket wallets. Primary path is Polymarket;
-            approved Kalshi mirrors appear only as a fallback when Polymarket is unavailable.
+            Track open positions from wallets with evidence of historical forecasting edge.
+            Scores compare outcomes with entry prices; they do not establish insider knowledge
+            or the chance that a new trade will win.
           </p>
           {summary?.latest_signal_at ? (
             <p className="mt-2 text-xs text-zinc-400">
@@ -165,6 +177,18 @@ export default async function Home() {
         </div>
 
         <ErrorBanner errors={errors} />
+        <div className={`mb-6 rounded-lg border px-4 py-3 text-sm ${freshness === "recent"
+          ? "border-zinc-200 bg-white text-zinc-600"
+          : "border-amber-200 bg-amber-50 text-amber-900"}`}>
+          <p className="font-medium">Data {freshness === "recent" ? "recently refreshed" : freshness}</p>
+          <p className="mt-1 text-xs">
+            {platformStatus.data?.last_success_at
+              ? `Last successful pipeline: ${new Date(platformStatus.data.last_success_at).toISOString().replace("T", " ").replace(/\.\d+Z$/, " UTC")}. `
+              : "No successful pipeline refresh has been recorded yet. "}
+            Coverage is a sample of discovered wallets. Positions reflect the latest collected
+            snapshots. This page refreshes every minute while visible.
+          </p>
+        </div>
         {summary && summary.rebuilding > 0 && (
           <div className="mb-6 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
             <span className="text-sm font-semibold text-amber-800">Rebuild in progress: </span>
