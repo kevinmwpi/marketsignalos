@@ -5,7 +5,7 @@
 #
 # On Railway, set this file as the service's Dockerfile path and leave the
 # build context at the repo root.
-FROM grafana/alloy:latest
+FROM grafana/alloy:v1.19.2
 
 COPY ops/grafana/config.alloy /etc/alloy/config.alloy
 

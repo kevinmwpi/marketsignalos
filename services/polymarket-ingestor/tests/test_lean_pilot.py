@@ -32,7 +32,10 @@ class Clock:
 
 
 def state_at(data_dir: Path) -> dict[str, Any]:
-    return json.loads((data_dir / ".lean-pilot" / "state.json").read_text(encoding="utf-8"))
+    state: dict[str, Any] = json.loads(
+        (data_dir / ".lean-pilot" / "state.json").read_text(encoding="utf-8")
+    )
+    return state
 
 
 def test_collection_and_scoring_have_independent_durable_cadences(tmp_path: Path) -> None:

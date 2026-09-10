@@ -69,7 +69,10 @@ def score(job: dict[str, Any]) -> dict[str, Any]:
     if job["operation"] == "jsonl":
         paths = _shard_activity_by_wallet(inputs["activity"], shard_count=BUCKETS,
                                           tmp_dir=output / "shards")
-        factory = lambda: _iter_activity_shards(paths)
+        def jsonl_shards() -> Iterator[list[PolymarketActivity]]:
+            return _iter_activity_shards(paths)
+
+        factory = jsonl_shards
     elif job["operation"] == "parquet":
         factory = ParquetActivityReader(Path(job["dataset"]), memory_mb=job["memory_mb"],
                                        threads=job["threads"])

@@ -191,5 +191,7 @@ does not assume profits from following trades.
 - The existing timing test now checks requested limiter spacing with a
   controlled clock instead of failing at a Windows wall-clock tick boundary.
 - No live collection, Railway provisioning, billing-limit change, or live
-  Grafana scrape/notification was performed. Binary validation of the updated
-  Alloy bearer-token configuration remains a predeployment check.
+  Grafana scrape/notification was performed. The subsequent
+  [Stage 0 pass](gate-attrition.md) completed Alloy bearer-token binary validation,
+  root type-check repairs, and qualification attrition analysis. Live Grafana
+  scrape/notification checks and Railway activation remain outstanding.

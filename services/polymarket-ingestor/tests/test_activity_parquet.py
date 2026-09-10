@@ -3,6 +3,8 @@ from __future__ import annotations
 import importlib
 import importlib.util
 import json
+import subprocess
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -71,6 +73,46 @@ def test_as_of_excludes_late_backfill_future_event_and_unknown_observation(tmp_p
     assert benchmark.jsonl_queries(source, [query]) == [expected]
     with pytest.raises(ValueError, match="timezone"):
         parquet.query_activity(output, WALLET, as_of="2024-01-02")
+
+
+def test_fresh_process_uses_empty_extension_directory_without_downloads(tmp_path: Path) -> None:
+    # A fresh process must not inherit an extension another test loaded. Explicit
+    # offsets represent the same UTC instant, on both sides of an as-of boundary.
+    source = _write(tmp_path, [
+        _row(fetched_at="2024-01-01T01:00:00+01:00"),
+        _row(fetched_at="2023-12-31T19:00:00-05:00"),
+        _row(fetched_at="2024-01-01T01:00:01+01:00"),
+    ])
+    script = """
+import sys
+from pathlib import Path
+import duckdb
+from marketsignalos_polymarket.activity_parquet import build_dataset, connect, query_activity
+from marketsignalos_polymarket.storage_benchmark import jsonl_queries
+source, output, wallet = Path(sys.argv[1]), Path(sys.argv[2]), sys.argv[3]
+extensions = output.parent / 'empty-extensions'
+extensions.mkdir()
+original_connect = duckdb.connect
+def without_cache(database, config):
+    return original_connect(database, config={**config, 'extension_directory': str(extensions)})
+duckdb.connect = without_cache
+with connect() as db:
+    settings = db.execute('''SELECT value FROM duckdb_settings()
+        WHERE name IN ('autoinstall_known_extensions', 'autoload_known_extensions')''').fetchall()
+    assert settings == [('false',), ('false',)], settings
+manifest = build_dataset(source, output)
+assert manifest['unknown_observed_at_rows'] == 0
+query = dict(wallet=wallet, since=0, as_of='2024-01-01T00:00:00Z')
+expected = [2, 2, 2.5, 1704067200, 1704067200]
+assert query_activity(output, **query) == expected
+assert jsonl_queries(source, [query]) == [expected]
+assert list(extensions.iterdir()) == []
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", script, str(source), str(tmp_path / "offline"), WALLET],
+        capture_output=True, text=True, timeout=30, check=False,
+    )
+    assert result.returncode == 0, result.stderr
 
 
 @pytest.mark.parametrize("bad", [{"proxy_wallet": "bad"}, {"timestamp": None},

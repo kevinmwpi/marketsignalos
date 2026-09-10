@@ -139,17 +139,19 @@ can route to notification policies), point mimirtool at
 
 ## Validating the config before you deploy
 
-The earlier config was checked against Alloy v1.19.1 with `alloy fmt` and
-`alloy validate`, including the `forward_to` receiver reference. The newly added
-bearer-token argument matches the official scrape documentation; re-run binary
-validation with the token variable supplied before deploying this revision.
+The bearer-token config was formatted and checked with Alloy v1.19.2 on Windows
+on 2026-09-10: `alloy fmt -t` and `alloy validate` both exited 0 with placeholder
+credentials. The Dockerfile now pins that release. This validates configuration,
+including the `forward_to` receiver reference; a live authenticated scrape, remote
+write, and alert delivery still require deployment checks. See
+[validation evidence](../../docs/gate-attrition.md).
 
 To re-check after an edit:
 
 ```bash
-# any recent release; ~550 MB extracted, so this is a local check, not a CI step
+# pinned release; this is a local check, not a CI step
 curl -sSL -o alloy.zip \
-  https://github.com/grafana/alloy/releases/latest/download/alloy-linux-amd64.zip
+  https://github.com/grafana/alloy/releases/download/v1.19.2/alloy-linux-amd64.zip
 unzip -q alloy.zip && chmod +x alloy-linux-amd64
 
 ./alloy-linux-amd64 fmt ops/grafana/config.alloy      # parses + canonical formatting
@@ -160,7 +162,7 @@ GRAFANA_CLOUD_PROM_USER=1 GRAFANA_CLOUD_API_KEY=x \
   ./alloy-linux-amd64 validate ops/grafana/config.alloy
 ```
 
-Both exited 0 on the earlier config. These checks detect errors: swapping
+Both checks exited 0 on the bearer-token config. Earlier negative checks showed that swapping
 `sys.env()` for the deprecated `env()` exits 1 with a deprecation warning, and
 a typo in the `forward_to` target exits 1 with "component ... does not exist".
 

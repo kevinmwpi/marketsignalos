@@ -33,7 +33,10 @@ def connect(*, database: str = ":memory:", memory_mb: int = 512,
         raise ValueError("Use at least 64 MiB and one thread")
     return duckdb.connect(database, config={
         "memory_limit": f"{memory_mb}MiB", "threads": str(threads),
-        "TimeZone": "UTC", "max_temp_directory_size": "32GiB",
+        # Explicit-offset timestamps use DuckDB's core UTC timestamp support.
+        # Setting TimeZone loads ICU and can trigger a download on a fresh host.
+        "autoinstall_known_extensions": "false", "autoload_known_extensions": "false",
+        "max_temp_directory_size": "32GiB",
     })
 
 

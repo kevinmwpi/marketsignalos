@@ -254,19 +254,19 @@ def _run_deep_ingestor_sync() -> None:
         _record_import_failure(exc)
         return
     def configured_run(**kwargs: Any) -> Any:
-        settings = {
-            "wallet_batch_size": ("INGEST_DEEP_WALLET_BATCH_SIZE", 25),
-            "leaderboard_depth": ("INGEST_DEEP_LEADERBOARD_DEPTH", 100),
-            "recent_trader_limit": ("INGEST_RECENT_TRADER_LIMIT", 1000),
-            "recent_trader_max_pages": ("INGEST_RECENT_TRADER_MAX_PAGES", 20),
-        }
-        options: dict[str, int] = {}
-        for name, (env_name, default) in settings.items():
+        def positive_env(env_name: str, default: int) -> int:
             value = int(os.getenv(env_name, str(default)))
             if value < 1:
                 raise ValueError(f"{env_name} must be a positive integer")
-            options[name] = value
-        return run_deep_pipeline(**options, **kwargs)
+            return value
+
+        return run_deep_pipeline(
+            wallet_batch_size=positive_env("INGEST_DEEP_WALLET_BATCH_SIZE", 25),
+            leaderboard_depth=positive_env("INGEST_DEEP_LEADERBOARD_DEPTH", 100),
+            recent_trader_limit=positive_env("INGEST_RECENT_TRADER_LIMIT", 1000),
+            recent_trader_max_pages=positive_env("INGEST_RECENT_TRADER_MAX_PAGES", 20),
+            **kwargs,
+        )
 
     _execute_pipeline_sync(configured_run)
 

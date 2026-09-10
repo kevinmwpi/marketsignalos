@@ -8,6 +8,11 @@ the public website hides ingest controls. Local development may explicitly use
 a persistent data directory and a 32+ character token. `/platform/status` is a
 public freshness/coverage endpoint; run receipts persist on the volume.
 
+> **Read [`docs/handoff-blueprint.md`](docs/handoff-blueprint.md) before starting any
+> build work.** It is the authoritative staged plan: what to build in what order,
+> the entry gate and acceptance evidence for each stage, the invariants that hold
+> everywhere, and the kill criteria. It supersedes any older architecture plan.
+
 ## What this project is
 
 Current delivery constraint: target $15/month on Railway Hobby. Prepare and
@@ -83,6 +88,14 @@ npm ci
 | `SIGNAL_WEBHOOK_URL` | API | When set, new skilled-bet signals and exit signals are POSTed here as JSON after each ingest (at-least-once; first pass after deploy never floods backlog) |
 | `INGEST_EVERY_MINUTES` | API | When >0, an in-process scheduler dispatches the same pipeline run as the "Run ingest" button on this interval (first run ~60s after boot; busy ticks skip) |
 | `INGEST_DEEP_EVERY_N_RUNS` | API | With the scheduler on, every Nth scheduled run is a **deep** discovery pass instead of a shallow refresh (0/unset = never deep) |
+| `INGEST_DEEP_WALLET_BATCH_SIZE` | API deep run | Positive wallet batch size; default 25 |
+| `INGEST_DEEP_LEADERBOARD_DEPTH` | API deep run | Positive leaderboard depth; default 100 |
+| `INGEST_RECENT_TRADER_LIMIT` | API deep run | Positive discovery wallet limit; default 1000 |
+| `INGEST_RECENT_TRADER_MAX_PAGES` | API deep run | Positive discovery page limit; default 20 |
+| `DATA_STALE_AFTER_MINUTES` | API | Freshness limit exposed by `/platform/status`; see deployment defaults |
+| `ADMIN_API_TOKEN` | API | Bearer credential required for operator routes, including metrics; never expose to public frontend |
+| `ALLOW_UNAUTHENTICATED_ADMIN` | API development | Explicit local-only operator bypass; forbidden in cloud mode |
+| `SHOW_INGEST_CONTROLS` | Web development | Local control visibility when `1`; production controls stay hidden. Use the authenticated terminal commands in `docs/railway-deployment.md` |
 | `FASTLANE_EVERY_SECONDS` | API | When >0, an in-process fast-lane poller fetches ONLY the activity feed for the top tailable wallets on this interval and webhook-delivers new BUY/SELL trades immediately (clamped to ≥30s; alert-only — never writes the JSONL stores) |
 | `FASTLANE_WALLETS` | API | Wallets the fast lane polls per tick, ranked by `rank_score` (default 25, capped at 100) |
 | `FASTLANE_MIN_ENTRY_USDC` | API | Fast-lane alerts ignore trades below this USDC size (default 0 = all) |
@@ -265,7 +278,9 @@ The pipeline runs JSONL-first. Postgres is opt-in via `DATABASE_URL` (`Dual*` st
 
 ## Deployment
 
-Deployed on **Railway** via Railpack builder.
+Deployment configuration targets **Railway** via Railpack builder. Current service
+activation and billing have not been verified by the Stage 0 pass; no new resources
+were provisioned. Keep the $15/month target and prepare-before-provisioning constraint.
 
 - Single process defined in `Procfile`: `web: ./scripts/start-api.sh`
 - `scripts/start-api.sh` sets `PYTHONPATH=apps/api/src` and starts uvicorn on `$PORT`
@@ -289,6 +304,15 @@ Deployed on **Railway** via Railpack builder.
 
 | File | Contents |
 |---|---|
+| `docs/handoff-blueprint.md` | **Authoritative build reference.** Corrected architecture, staged plan with entry gates and acceptance evidence, invariants, data contracts, kill criteria |
+| `docs/gate-attrition.md` | Stage 0 command, reproducibility, verification scope, and next steps |
+| `docs/benchmarks/2026-09-10-gate-attrition.md` | Frozen 833-wallet waterfall, overlap, counterfactuals, and scoped conclusion; JSON/notebook companions |
+| `docs/railway-deployment.md` | Cloud preparation and authenticated operator terminal commands |
+| `docs/platform-roadmap.md` | Backend/platform milestones and implementation status |
+| `docs/research-credibility.md` | Statistical evidence, point-in-time evaluation, and public-claim standards |
+| `docs/lean-pilot.md` | $15-target worker limits, recovery, and publication constraints |
+| `docs/storage-benchmark.md` | Offline activity JSONL/Parquet benchmark and source integrity |
+| `docs/enrichment-shadow.md` | Full scorer parity and memory measurements |
 | `docs/prd.md` | Product requirements, MVP scope, success metrics |
 | `docs/architecture.md` | High-level data flow and key principles |
 | `docs/0001-tech-stack.md` | ADR explaining stack choices |

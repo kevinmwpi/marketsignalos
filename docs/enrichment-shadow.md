@@ -29,6 +29,10 @@ The command copies ancillary context into `output/inputs`, records SHA-256 for a
 inputs and Parquet files, then launches each scoring engine in a fresh subprocess.
 It rechecks all hashes at completion. It does not construct the ingestion stores,
 load the activity deduplication index, call upstream APIs or send notifications.
+DuckDB connections explicitly disable extension auto-install and autoload. The
+prototype uses explicit-offset observation times without configuring the ICU-backed
+`TimeZone` option. An empty-extension-directory subprocess test verifies equivalent
+JSONL/Parquet cutoff behavior for positive and negative offsets.
 
 ## Equivalence contract
 
