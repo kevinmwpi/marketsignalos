@@ -18,6 +18,15 @@ Production thresholds and the feed are unchanged. The next research step is boun
 metadata-cause diagnosis for those candidates, subject to the remaining merge and
 deployment entry gates. The $15/month target and prepare-before-provisioning rule hold.
 
+**Stage 1 progress, 2026-09-10 local date:** the
+[metadata audit](benchmarks/2026-09-10-metadata-coverage.md) finds 537 stale coverage
+count/ratio tuples. Deriving coverage from the score's own inputs reduces metadata
+failures **701→592** and raises data-trusted wallets **125→226**; qualification
+remains **0→0**. The scorer repair and frozen gate replay preserve the legacy
+coverage rule. Of 20,560 uncovered wallet-condition pairs, 20,352 already have
+market rows and 208 do not. Settlement-proxy semantics and missing-fetch provenance
+remain open; see [the implementation runbook](metadata-coverage.md).
+
 **How to use this.** Stages run in order. Each stage has an **entry gate** — a
 condition that must already be true — and **acceptance evidence** — an artifact a
 reviewer can inspect to confirm the stage is done. Do not start a stage whose entry
@@ -413,15 +422,18 @@ not, is a hard `< 1.0` block the right semantics?
 
 **Build.**
 
-1. Merge `codex/lean-pilot-15-budget` after clearing the defects in §11. Its bounded
-   collection controls are prerequisites for everything below.
+1. Review the integrated `codex/lean-pilot-15-budget` after clearing §11. Its bounded
+   collection controls are already on this feature branch. Per the user's request,
+   continue isolated diagnostics and reviewable repairs there; main-branch merge
+   and cloud promotion remain separate delivery steps.
 2. Instrument *why* `metadata_coverage < 1.0`: which condition_ids referenced by
    activity have no row in `polymarket_markets.jsonl`, and why the backfill missed
    them (never fetched / Gamma 404 / category absent / pagination cap). Emit counts by
    reason — you cannot fix a coverage number you cannot decompose.
-3. Fix the largest reason bucket. The known candidate is `/positions` pagination
-   capping at ~100 per wallet (already listed as pending in `CLAUDE.md`), which
-   silently truncates large wallets — exactly the wallets most worth scoring.
+3. Fix confirmed causes. The 2026-09-10 pass repairs stale coverage inside scoring.
+   The remaining largest bucket is present-but-unsettled market records, requiring
+   an explicit coverage-contract decision. `/positions` pagination remains separate
+   work; it is not an input to this activity-condition coverage denominator.
 4. **Reconsider the semantics.** A hard block at `< 1.0` means one unresolvable market
    in a 4-year history permanently disqualifies a wallet. Consider a graded contract:
    coverage ≥ some threshold with the uncovered fraction *excluded from the fit and

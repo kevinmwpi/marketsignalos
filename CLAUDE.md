@@ -306,6 +306,8 @@ were provisioned. Keep the $15/month target and prepare-before-provisioning cons
 |---|---|
 | `docs/handoff-blueprint.md` | **Authoritative build reference.** Corrected architecture, staged plan with entry gates and acceptance evidence, invariants, data contracts, kill criteria |
 | `docs/gate-attrition.md` | Stage 0 command, reproducibility, verification scope, and next steps |
+| `docs/metadata-coverage.md` | Stage 1 stale-coverage repair, frozen audit, remaining coverage semantics, and reproduction |
+| `docs/benchmarks/2026-09-10-metadata-coverage.md` | 833-wallet coverage decomposition and same-input gate replay; JSON/notebook companions |
 | `docs/benchmarks/2026-09-10-gate-attrition.md` | Frozen 833-wallet waterfall, overlap, counterfactuals, and scoped conclusion; JSON/notebook companions |
 | `docs/railway-deployment.md` | Cloud preparation and authenticated operator terminal commands |
 | `docs/platform-roadmap.md` | Backend/platform milestones and implementation status |
