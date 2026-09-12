@@ -25,7 +25,9 @@ The default configuration is committed in `deploy/lean-pilot.json`:
 | Worker log guard | 8 MiB/run | Stop a noisy child before its log grows indefinitely |
 
 Activity budgets count client method calls, excluding the client's internal HTTP
-retries. Positions, economics, market metadata, and other endpoints are bounded
+retries. [Targeted metadata backfill](metadata-backfill.md) adds a ceiling of 100
+conditions/eight actual HTTP attempts, durable cooldowns, and partial-work receipts.
+Positions, economics, generic catalog pagination, and other endpoints are bounded
 by the whole-cycle deadline. Two concurrent wallets and the existing 2-RPS
 pacing setting reduce pressure; that setting is not a hard per-request RPS cap.
 Historical coverage remains incomplete when a cap is reached. Recent checkpoint

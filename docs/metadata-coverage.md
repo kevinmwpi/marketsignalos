@@ -79,9 +79,12 @@ evidence. No sources need to be uploaded or written to a cloud service.
 ## Remaining work and budget
 
 Separate metadata validity from resolution evidence in a versioned coverage
-contract, with a before/after qualification audit. Add bounded backfill attempt
-receipts so a genuinely missing record has an observed cause and a retry policy.
-Neither change should silently alter gates 7–13 or substitute present-day prices
+contract, with a before/after qualification audit. The
+[2026-09-12 backfill pass](metadata-backfill.md) adds bounded requests, durable
+attempt receipts, and a retry policy. An isolated current lookup returns 36 of
+the two candidates' 41 missing IDs; five are absent from both filtered responses.
+Historical absence causes remain unknown. Further changes must not silently alter
+gates 7–13 or substitute present-day prices
 for historical observations. These remain Stage 1 work; no candidate is being
 promoted to the public feed by this pass.
 

@@ -50,6 +50,7 @@ from .market_matcher import (
     NormalizedMarket,
     match_markets,
 )
+from .metadata_backfill import BackfillConfig, run_backfill
 from .models import (
     MarketLink,
     PolymarketActivity,
@@ -1497,6 +1498,7 @@ def run_markets_backfill_from_activity(
     stores: _Stores,
     *,
     open_market_ttl_seconds: int | None = None,
+    config: BackfillConfig | None = None,
 ) -> int:
     """
     Refresh condition_ids referenced in local activity through Gamma.
@@ -1508,9 +1510,6 @@ def run_markets_backfill_from_activity(
         str(r.get("condition_id", "")) for r in _iter_jsonl(stores.activity_path)
         if r.get("type") == "TRADE" and r.get("condition_id")
     }
-    if not activity_conds:
-        return 0
-
     ttl = (
         open_market_ttl_seconds
         if open_market_ttl_seconds is not None
@@ -1520,16 +1519,7 @@ def run_markets_backfill_from_activity(
     missing, stale_open = _plan_market_backfill_fetches(
         activity_conds, market_index, open_market_ttl_seconds=ttl,
     )
-    stale_only = [cond for cond in stale_open if cond not in missing]
     to_fetch = sorted(set(missing) | set(stale_open))
-
-    raw: list[dict[str, Any]] = []
-    if missing:
-        raw.extend(client.get_markets_by_condition_ids(missing, closed=True))
-        raw.extend(client.get_markets_by_condition_ids(missing, closed=False))
-    if stale_only:
-        raw.extend(client.get_markets_by_condition_ids(stale_only, closed=True))
-        raw.extend(client.get_markets_by_condition_ids(stale_only, closed=False))
 
     log.info(
         "markets_backfill activity_conds=%d missing=%d stale_open=%d "
@@ -1542,21 +1532,26 @@ def run_markets_backfill_from_activity(
         ttl,
     )
 
-    parsed = [parse_market_row(r) for r in raw]
-    written = stores.markets.write_markets(parsed) if parsed else 0
-    if parsed:
+    def persist(raw: list[dict[str, Any]]) -> int:
+        parsed = [parse_market_row(r) for r in raw]
+        written = stores.markets.write_markets(parsed)
         stores.price_snapshots.write_snapshots(_price_snapshots_from_markets(parsed))
-    _refresh_metadata_coverage(stores)
-    known_conds = {
-        str(row.get("condition_id", ""))
-        for row in _read_jsonl(stores.markets_path)
-        if row.get("condition_id")
-    }
-    log.info(
-        "markets_backfill fetched=%d written=%d covered=%d/%d",
-        len(raw), written, len(activity_conds & known_conds), len(activity_conds),
+        return written
+
+    report = run_backfill(
+        client, to_fetch, directory=stores.markets_path.parent / "metadata-backfill",
+        persist=persist, config=config or BackfillConfig(
+            max_conditions=int(os.getenv("METADATA_BACKFILL_MAX_CONDITIONS", "100")),
+            max_requests=int(os.getenv("METADATA_BACKFILL_MAX_REQUESTS", "8")),
+        ),
     )
-    return written
+    _refresh_metadata_coverage(stores)
+    log.info(
+        "markets_backfill status=%s requests=%d written=%d deferred_lookups=%d cooldown_lookups=%d",
+        report["status"], report["requests"], report["rows_written"],
+        report["deferred_lookups"], report["cooldown_lookups"],
+    )
+    return int(report["rows_written"])
 
 
 def run_reference_refresh(

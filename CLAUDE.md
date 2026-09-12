@@ -19,6 +19,8 @@ Current delivery constraint: target $15/month on Railway Hobby. Prepare and
 review a concrete deployment before paid provisioning. After each development
 pass, summarize what was built, validation, remaining work, and cloud activation
 status. See `docs/lean-pilot.md` for implemented controls and known limitations.
+See `docs/metadata-backfill.md` for bounded Gamma request receipts and the isolated
+candidate-coverage probe; present-day observations must not enter frozen scores.
 
 MarketSignalOS identifies skilled Polymarket wallets, surfaces their currently-held positions, and classifies each bet by where it can actually be tailed (Polymarket first; approved Kalshi mirror as fallback).
 

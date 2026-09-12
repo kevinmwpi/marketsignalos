@@ -27,6 +27,14 @@ coverage rule. Of 20,560 uncovered wallet-condition pairs, 20,352 already have
 market rows and 208 do not. Settlement-proxy semantics and missing-fetch provenance
 remain open; see [the implementation runbook](metadata-coverage.md).
 
+**Stage 1 progress, 2026-09-12:** [bounded backfill and attempt receipts](metadata-backfill.md)
+now cap each reference backfill at 100 conditions/eight actual HTTP attempts and
+persist retry/cooldown/interruption evidence. An isolated current Gamma probe
+returns 36 of the frozen candidates' 41 missing IDs; five are absent from both
+filtered responses. This does not determine historical fetch causes or repair
+frozen scores. Coverage/resolution semantics remain open. Validation: 596 tests
+passed, one Windows skip; lint and root type checks passed on both platforms.
+
 **How to use this.** Stages run in order. Each stage has an **entry gate** — a
 condition that must already be true — and **acceptance evidence** — an artifact a
 reviewer can inspect to confirm the stage is done. Do not start a stage whose entry
@@ -36,8 +44,9 @@ stage's evidence contradicts this document, update this document in the same com
 **Companion documents.** `docs/research-credibility.md` (evidence standards),
 `docs/platform-roadmap.md` (target architecture), `docs/lean-pilot.md` (budget
 worker), `docs/storage-benchmark.md` and `docs/enrichment-shadow.md` (storage
-evidence) currently exist **only on `codex/lean-pilot-15-budget`**. Merging that
-branch is a prerequisite for Stage 1.
+evidence) currently exist **only on `codex/lean-pilot-15-budget`**.
+Per the user's delivery instruction, Stage 1 diagnostics and repairs
+continue there; merging main is a separate delivery decision.
 
 ---
 
