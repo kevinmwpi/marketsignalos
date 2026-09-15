@@ -1,0 +1,1 @@
+- [API artifact path mounting](api-artifact-paths.md) — imported services must handle their full shared-proxy prefix.

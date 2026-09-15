@@ -10,7 +10,7 @@ name = "API Server"
 paths = ["/api"]
 
 [services.development]
-run = "pnpm --filter @workspace/api-server run dev"
+run = "PYTHONPATH=/home/runner/workspace/artifacts/api-server:/home/runner/workspace/.migration-backup/apps/api/src:/home/runner/workspace/.migration-backup/services/polymarket-ingestor/src python -m uvicorn api_adapter:app --host 0.0.0.0 --port $PORT"
 
 [services.production]
 

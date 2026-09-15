@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "MarketSignalOS Dashboard"
+description = "A market intelligence dashboard for reviewing prediction-market signals, skilled bets, exits, wallet performance, watchlists, and ingestion status."
+version = "1.0.0"
+id = "artifacts/marketsignalos-dashboard"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 23002
+
+[services.development]
+run = "pnpm --filter @workspace/marketsignalos-dashboard run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/marketsignalos-dashboard", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/marketsignalos-dashboard/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "23002"
+BASE_PATH = "/"

@@ -1,0 +1,14 @@
+[project]
+name = "repl-nix-workspace"
+version = "0.1.0"
+description = "Add your description here"
+requires-python = ">=3.13"
+dependencies = [
+    "alembic>=1.20.0",
+    "fastapi>=0.141.1",
+    "httpx>=0.28.1",
+    "prometheus-client>=0.26.0",
+    "psycopg2-binary>=2.9.13",
+    "sqlalchemy>=2.0.53",
+    "uvicorn>=0.53.0",
+]
