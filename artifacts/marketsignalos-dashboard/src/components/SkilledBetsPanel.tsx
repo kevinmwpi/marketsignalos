@@ -196,11 +196,10 @@ export default function SkilledBetsPanel({
   if (bets.length === 0) {
     return (
       <div className="rounded-lg border border-dashed border-zinc-300 bg-white p-10 text-center">
-        <p className="text-sm font-semibold text-zinc-900">No actionable skilled bets yet</p>
+        <p className="text-sm font-semibold text-zinc-900">No published positions match these filters</p>
         <p className="mt-1.5 text-xs leading-relaxed text-zinc-500">
-          No skilled wallets are holding positions you can tail on Polymarket or via an
-          approved Kalshi mirror. Run ingest to refresh, or widen filters with{" "}
-          <span className="font-mono">include_untradable=true</span> on the API.
+          Research data may still be awaiting collection or qualification. An empty
+          feed does not establish that no skilled wallets exist.
         </p>
       </div>
     );

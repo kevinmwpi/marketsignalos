@@ -48,7 +48,7 @@ function DashboardSkeleton() {
   );
 }
 
-function Header() {
+function Header({ status }: { status: "connecting" | "unavailable" | "connected" }) {
   return (
     <header className="border-b border-[hsl(var(--border))] bg-[hsl(var(--card))]">
       <div className="mx-auto flex max-w-[1520px] items-center justify-between gap-4 px-4 py-3 sm:px-6">
@@ -58,13 +58,13 @@ function Header() {
           </span>
           <span>
             <span className="block text-sm font-bold tracking-tight text-[hsl(var(--foreground))]">MarketSignalOS</span>
-            <span className="block font-mono text-[9px] uppercase tracking-[0.2em] text-[hsl(var(--muted-foreground))]">signal desk / live</span>
+            <span className="block font-mono text-[9px] uppercase tracking-[0.2em] text-[hsl(var(--muted-foreground))]">signal desk / research</span>
           </span>
         </Link>
         <div className="flex items-center gap-3">
           <span className="hidden font-mono text-[10px] uppercase tracking-widest text-[hsl(var(--muted-foreground))] sm:inline">Polymarket research terminal</span>
-          <span className="flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-1 font-mono text-[10px] font-semibold uppercase tracking-wider text-emerald-700">
-            <span className="h-1.5 w-1.5 rounded-full bg-emerald-600" /> online
+          <span role="status" className="flex items-center gap-1.5 rounded-full border border-[hsl(var(--border))] px-2 py-1 font-mono text-[10px] font-semibold uppercase tracking-wider">
+            API {status}
           </span>
         </div>
       </div>
@@ -73,6 +73,7 @@ function Header() {
 }
 
 export default function DashboardPage() {
+  const showControls = import.meta.env.DEV && import.meta.env.VITE_SHOW_INGEST_CONTROLS === "1";
   const [payload, setPayload] = useState<DashboardPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -118,14 +119,14 @@ export default function DashboardPage() {
 
   return (
     <div className="min-h-[100dvh] bg-[hsl(var(--background))] text-[hsl(var(--foreground))]">
-      <Header />
+      <Header status={error ? "unavailable" : loading ? "connecting" : "connected"} />
       <main className="mx-auto max-w-[1520px] space-y-6 px-4 pb-16 pt-5 sm:px-6">
         <div className="flex flex-col justify-between gap-4 border-b border-[hsl(var(--border))] pb-5 lg:flex-row lg:items-end">
           <div>
             <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.22em] text-[hsl(var(--muted-foreground))]">Research dashboard / 01</p>
             <h1 className="mt-1 text-2xl font-bold tracking-tight sm:text-3xl">Actionable skilled bets</h1>
             <p className="mt-1 max-w-2xl text-xs leading-relaxed text-[hsl(var(--muted-foreground))]">
-              Wallets with demonstrated edge, still-open positions, and a tradeable path to follow. Prices and qualification state are refreshed by the ingestor.
+              Historical wallet evidence and still-open positions. API connectivity does not establish fresh data or future trading performance.
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -155,7 +156,7 @@ export default function DashboardPage() {
             )}
           </div>
           <aside className="space-y-4">
-            <div className="rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-4">
+            {showControls && <div className="rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-4">
               <div className="flex items-center justify-between">
                 <div>
                   <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.18em] text-[hsl(var(--muted-foreground))]">Ingestion controls</p>
@@ -168,14 +169,14 @@ export default function DashboardPage() {
                 <IngestButton mode="deep" />
               </div>
               <p className="mt-3 text-[11px] leading-relaxed text-[hsl(var(--muted-foreground))]">Shallow keeps prices and positions current. Deep rebuilds the leaderboard matrix and review state.</p>
-            </div>
+            </div>}
             <ExitSignalsPanel exits={exits} />
-            <div className="rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-4">
+            {showControls && <div className="rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-4">
               <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.18em] text-[hsl(var(--muted-foreground))]">Wallet watchlist</p>
               <p className="mt-1 text-sm font-semibold">Pin a wallet for the next run</p>
               <p className="mt-1 mb-3 text-[11px] leading-relaxed text-[hsl(var(--muted-foreground))]">Addresses are hydrated and scored on the next ingest.</p>
               <WatchlistForm />
-            </div>
+            </div>}
           </aside>
         </section>
 
@@ -187,7 +188,7 @@ export default function DashboardPage() {
             </div>
             <Link href="/" className="font-mono text-[10px] font-semibold uppercase tracking-wider text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]" data-testid="link-leaderboard-top">top of desk</Link>
           </div>
-          {loading ? <div className="h-48 animate-pulse rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))]" /> : <PolymarketLeaderboardPanel rows={leaderboard} />}
+          {loading ? <div className="h-48 animate-pulse rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))]" /> : error ? <p role="status" className="text-sm text-red-700">Leaderboard unavailable while the API request is failing.</p> : <PolymarketLeaderboardPanel rows={leaderboard} />}
         </section>
       </main>
     </div>
