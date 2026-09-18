@@ -80,14 +80,14 @@ def test_operator_can_read_status_without_exposing_it_to_public(monkeypatch):
     assert "running" in response.json()
 
 
-def test_production_command_starts_python_api_outside_repo_directory(tmp_path):
+def test_launcher_starts_python_api_outside_repo_directory(tmp_path):
     config = tomllib.loads((ARTIFACT / ".replit-artifact/artifact.toml").read_text())
     service = config["services"][0]
     production = service["production"]
     assert production["build"]["args"] == ["uv", "sync", "--frozen", "--no-dev"]
     command = production["run"]["args"]
-    assert command == [".venv/bin/python", "artifacts/api-server/start.py"]
-    assert service["development"]["run"] == "python artifacts/api-server/start.py"
+    assert command == ["uv", "run", "--no-sync", "--offline", "python", "artifacts/api-server/start.py"]
+    assert service["development"]["run"] == "uv run --no-sync --offline python artifacts/api-server/start.py"
     assert production["health"]["startup"]["path"] == "/api/healthz"
     with socket.socket() as reserved:
         reserved.bind(("127.0.0.1", 0))
