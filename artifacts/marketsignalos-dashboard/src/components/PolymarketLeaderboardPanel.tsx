@@ -139,7 +139,7 @@ export default function PolymarketLeaderboardPanel({
             {rows.length === 0 ? (
               <tr>
                 <td className="px-4 py-4 text-xs text-zinc-400" colSpan={9}>
-                  No qualifying wallets yet. Run the Polymarket ingestor to populate.
+                  No published wallets match these filters. Research data may still be awaiting collection or qualification.
                 </td>
               </tr>
             ) : (

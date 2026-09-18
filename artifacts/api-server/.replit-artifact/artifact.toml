@@ -10,23 +10,27 @@ name = "API Server"
 paths = ["/api"]
 
 [services.development]
-run = "PYTHONPATH=/home/runner/workspace/artifacts/api-server:/home/runner/workspace/.migration-backup/apps/api/src:/home/runner/workspace/.migration-backup/services/polymarket-ingestor/src python -m uvicorn api_adapter:app --host 0.0.0.0 --port $PORT"
+run = "python artifacts/api-server/start.py"
 
 [services.production]
 
 [services.production.build]
-args = ["pnpm", "--filter", "@workspace/api-server", "run", "build"]
+args = ["uv", "sync", "--frozen", "--no-dev"]
 
 [services.production.build.env]
 NODE_ENV = "production"
 
 [services.production.run]
-# we don't run through pnpm to make startup faster in production
-args = ["node", "--enable-source-maps", "artifacts/api-server/dist/index.mjs"]
+# Preview and publishing must run the same imported Python API.
+args = [".venv/bin/python", "artifacts/api-server/start.py"]
 
 [services.production.run.env]
 PORT = "8080"
 NODE_ENV = "production"
+APP_ENV = "production"
+INGEST_EVERY_MINUTES = "0"
+FASTLANE_EVERY_SECONDS = "0"
+INGEST_POLYMARKET = "0"
 
 [services.production.health.startup]
 path = "/api/healthz"
