@@ -10,7 +10,7 @@ name = "API Server"
 paths = ["/api"]
 
 [services.development]
-run = "python artifacts/api-server/start.py"
+run = "uv run --no-sync --offline python artifacts/api-server/start.py"
 
 [services.production]
 
@@ -21,8 +21,9 @@ args = ["uv", "sync", "--frozen", "--no-dev"]
 NODE_ENV = "production"
 
 [services.production.run]
-# Preview and publishing must run the same imported Python API.
-args = [".venv/bin/python", "artifacts/api-server/start.py"]
+# Use the same environment as uv sync (Replit sets it to .pythonlibs).
+# Starting a published instance must not install packages or access the network.
+args = ["uv", "run", "--no-sync", "--offline", "python", "artifacts/api-server/start.py"]
 
 [services.production.run.env]
 PORT = "8080"
