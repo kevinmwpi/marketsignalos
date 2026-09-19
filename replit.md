@@ -2,6 +2,15 @@
 
 Public research dashboard for historical Polymarket wallet evidence and open positions.
 
+## Public research data
+
+The dashboard also serves a bounded, dated snapshot from
+`artifacts/marketsignalos-dashboard/public/data/research-snapshot.json`. This public
+asset is copied into the Vite build and loads independently of the signal API.
+It shows volume-selected wallets with skill explicitly not evaluated. It never feeds
+or relaxes the qualified signal filters. Follow `docs/research-snapshot.md` to collect,
+review, commit, sync and republish a new capture; a page refresh does not run ingestion.
+
 ## Runtime and routing
 
 - Frontend: React/Vite in `artifacts/marketsignalos-dashboard`, published as static files.
