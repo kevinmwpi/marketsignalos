@@ -7,6 +7,7 @@ import PolymarketLeaderboardPanel, {
 } from "@/components/PolymarketLeaderboardPanel";
 import SkilledBetsPanel, { type SkilledBet } from "@/components/SkilledBetsPanel";
 import WatchlistForm from "@/components/WatchlistForm";
+import ResearchCandidatesPanel from "@/components/ResearchCandidatesPanel";
 
 type DashboardPayload = {
   skilled_bets?: SkilledBet[];
@@ -124,9 +125,9 @@ export default function DashboardPage() {
         <div className="flex flex-col justify-between gap-4 border-b border-[hsl(var(--border))] pb-5 lg:flex-row lg:items-end">
           <div>
             <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.22em] text-[hsl(var(--muted-foreground))]">Research dashboard / 01</p>
-            <h1 className="mt-1 text-2xl font-bold tracking-tight sm:text-3xl">Actionable skilled bets</h1>
+            <h1 className="mt-1 text-2xl font-bold tracking-tight sm:text-3xl">Polymarket wallet research</h1>
             <p className="mt-1 max-w-2xl text-xs leading-relaxed text-[hsl(var(--muted-foreground))]">
-              Historical wallet evidence and still-open positions. API connectivity does not establish fresh data or future trading performance.
+              Explore observed holdings and trades, then assess the evidence. API connectivity does not establish fresh data or future trading performance.
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -143,6 +144,12 @@ export default function DashboardPage() {
           </div>
         </div>
 
+        <ResearchCandidatesPanel />
+
+        <div className="pt-3">
+          <h2 className="text-lg font-semibold">Actionable skilled bets</h2>
+          <p className="mt-1 text-xs text-[hsl(var(--muted-foreground))]">Only wallets that pass the historical evidence and position filters appear here. The research snapshot does not qualify a signal.</p>
+        </div>
         <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]" aria-label="Signal feed">
           <div className="min-w-0">
             {loading ? <DashboardSkeleton /> : error ? (
@@ -184,7 +191,7 @@ export default function DashboardPage() {
           <div className="flex items-end justify-between gap-3">
             <div>
               <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.18em] text-[hsl(var(--muted-foreground))]">Leaderboard / posterior evidence</p>
-              <p className="mt-1 text-xs text-[hsl(var(--muted-foreground))]">Research candidates ranked by forecast skill and conservative edge.</p>
+              <p className="mt-1 text-xs text-[hsl(var(--muted-foreground))]">Qualified wallets ranked by forecast skill and conservative edge.</p>
             </div>
             <Link href="/" className="font-mono text-[10px] font-semibold uppercase tracking-wider text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]" data-testid="link-leaderboard-top">top of desk</Link>
           </div>
