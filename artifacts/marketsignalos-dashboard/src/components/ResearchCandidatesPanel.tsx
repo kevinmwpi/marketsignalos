@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
 import {
-  loadResearchSnapshot,
-  snapshotUrl,
   type ResearchPosition,
-  type ResearchSnapshot,
   type ResearchTrade,
   type ResearchWallet,
 } from "@/lib/research-snapshot";
+import {
+  loadResearchSnapshot,
+  retainNewest,
+  type LoadedResearchSnapshot,
+} from "@/lib/research-snapshot-loader";
 
 const money = (value: number | null) =>
   value === null
@@ -145,7 +147,9 @@ function Sample({
 }
 
 export default function ResearchCandidatesPanel() {
-  const [snapshot, setSnapshot] = useState<ResearchSnapshot | null>(null);
+  const [loaded, setLoaded] = useState<LoadedResearchSnapshot | null>(null);
+  const snapshot = loaded?.snapshot;
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
   const [revision, setRevision] = useState(0);
   const [search, setSearch] = useState("");
@@ -155,14 +159,18 @@ export default function ResearchCandidatesPanel() {
     const timeout = window.setTimeout(() => controller.abort(), 15_000);
     let active = true;
     setError(false);
+    setLoading(true);
     void loadResearchSnapshot(controller.signal)
       .then((data) => {
-        if (active) setSnapshot(data);
+        if (active) setLoaded((previous) => retainNewest(previous, data));
       })
       .catch(() => {
         if (active) setError(true);
       })
-      .finally(() => window.clearTimeout(timeout));
+      .finally(() => {
+        window.clearTimeout(timeout);
+        if (active) setLoading(false);
+      });
     return () => {
       active = false;
       controller.abort();
@@ -171,6 +179,13 @@ export default function ResearchCandidatesPanel() {
   }, [revision]);
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === "visible")
+        setRevision((value) => value + 1);
+    }, 15 * 60_000);
     return () => window.clearInterval(timer);
   }, []);
   const wallets = useMemo(
@@ -182,7 +197,8 @@ export default function ResearchCandidatesPanel() {
       ) ?? [],
     [snapshot, search],
   );
-  const stale = snapshot && now - Date.parse(snapshot.started_at) > 86_400_000;
+  const stale =
+    snapshot && now - Date.parse(snapshot.started_at) > 8 * 3_600_000;
 
   return (
     <section
@@ -198,6 +214,14 @@ export default function ResearchCandidatesPanel() {
           <span className="rounded-full border border-[hsl(var(--border))] px-3 py-1 font-mono text-[10px] uppercase">
             Dated snapshot · skill not evaluated
           </span>
+          <button
+            type="button"
+            disabled={loading}
+            onClick={() => setRevision((value) => value + 1)}
+            className="rounded border border-[hsl(var(--border))] px-3 py-2 text-xs disabled:opacity-50"
+          >
+            {loading ? "Checking capture…" : "Refresh research data"}
+          </button>
         </div>
         <p className={`mt-2 max-w-4xl text-sm leading-relaxed ${muted}`}>
           A small sample selected from Polymarket’s daily volume leaderboard.
@@ -216,6 +240,13 @@ export default function ResearchCandidatesPanel() {
               Retry snapshot
             </button>
           </div>
+        )}
+        {loaded?.degraded && !error && (
+          <p role="status" className="mt-3 text-sm">
+            The latest scheduled capture could not be confirmed. Showing the{" "}
+            {loaded.source === "bundled" ? "bundled" : "previously loaded"}{" "}
+            capture below.
+          </p>
         )}
         {!snapshot && !error && (
           <p role="status" className="mt-4 text-sm">
@@ -239,11 +270,13 @@ export default function ResearchCandidatesPanel() {
               market availability and executable prices are unverified.
             </p>
             <p className={`mt-2 text-xs ${muted}`}>
-              Refresh requires a new collection and publication. Reloading this
-              page does not run ingestion.{" "}
+              Collection is scheduled every six hours. This page checks for
+              updates every 15 minutes while open and visible. Refresh research
+              data checks the latest published capture; it does not start
+              ingestion.{" "}
               <a
                 className="underline"
-                href={snapshotUrl}
+                href={loaded?.url}
                 target="_blank"
                 rel="noopener noreferrer"
               >
@@ -255,8 +288,8 @@ export default function ResearchCandidatesPanel() {
                 role="status"
                 className="mt-3 rounded border border-amber-400/40 bg-amber-400/10 p-3 text-sm"
               >
-                This capture is over 24 hours old. Treat it as historical
-                observations.
+                This capture is over eight hours old; the scheduled refresh may
+                be overdue. Treat it as historical observations.
               </p>
             )}
             <label
