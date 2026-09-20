@@ -6,10 +6,15 @@ Public research dashboard for historical Polymarket wallet evidence and open pos
 
 The dashboard also serves a bounded, dated snapshot from
 `artifacts/marketsignalos-dashboard/public/data/research-snapshot.json`. This public
-asset is copied into the Vite build and loads independently of the signal API.
+asset is copied into the Vite build as a fallback. The frontend loads the latest valid
+capture from GitHub's `codex/research-snapshots` data branch, independently of the signal API.
 It shows volume-selected wallets with skill explicitly not evaluated. It never feeds
-or relaxes the qualified signal filters. Follow `docs/research-snapshot.md` to collect,
-review, commit, sync and republish a new capture; a page refresh does not run ingestion.
+or relaxes the qualified signal filters. GitHub Actions collects every six hours with
+no Codex/model calls. The page checks for updates every 15 minutes while visible and
+offers “Refresh research data”; neither starts ingestion. Failed scheduled captures
+preserve the previous complete capture. See `docs/research-snapshot.md` for operations,
+manual fallback publication and schedule limitations. This UI update requires one Replit
+republish; later scheduled data captures do not require redeployments.
 
 ## Runtime and routing
 

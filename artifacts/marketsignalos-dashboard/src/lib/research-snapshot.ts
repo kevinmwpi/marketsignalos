@@ -67,17 +67,3 @@ export type ResearchSnapshot = z.infer<typeof researchSnapshotSchema>;
 export type ResearchWallet = ResearchSnapshot["wallets"][number];
 export type ResearchTrade = z.infer<typeof trade>;
 export type ResearchPosition = z.infer<typeof position>;
-export const snapshotUrl = `${import.meta.env.BASE_URL}data/research-snapshot.json`;
-
-export async function loadResearchSnapshot(
-  signal: AbortSignal,
-): Promise<ResearchSnapshot> {
-  const response = await fetch(snapshotUrl, { cache: "no-store", signal });
-  if (!response.ok)
-    throw new Error(`Snapshot unavailable (${response.status})`);
-  const result = researchSnapshotSchema.parse(await response.json());
-  if (Date.parse(result.generated_at) > Date.now() + 300_000) {
-    throw new Error("Snapshot capture time is in the future");
-  }
-  return result;
-}
