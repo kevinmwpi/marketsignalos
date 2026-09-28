@@ -40,21 +40,23 @@ No secret is required for public reads. Leave `VITE_API_BASE_URL` unset for same
 
 ## Operator access and data
 
-All write methods and private status/metrics endpoints require a server-side `ADMIN_API_TOKEN` of at least 32 characters, supplied as `Authorization: Bearer ...`. When no token is configured they return 503; when configured, missing or incorrect credentials return 401. These are intentional responses, not the routing bug. Ingestion and watchlist controls are hidden in production. No public operator login is implemented.
+The published service sets `API_READ_ONLY=1`. All write methods and private status/metrics endpoints return 503 even if operator credentials are present. Public reads need no token. Startup refuses background collection settings in this mode. Ingestion and watchlist controls remain hidden in production. No public operator login is implemented.
+
+A separate operator deployment uses the backend's strict production validation: a server-side `ADMIN_API_TOKEN` of at least 32 characters, an absolute data directory, a persistent Railway volume when applicable, and one worker. Operator calls use `Authorization: Bearer ...`; never put that credential in the frontend.
 
 Scheduled ingestion and fast-lane collection are disabled in the published service configuration. This repair restores public reads without starting a collection workload. It provisions no resources and changes no spending settings.
 
 The imported API reads JSONL from `POLYMARKET_DATA_DIR`; a fresh checkout does not include research datasets. Empty feeds do not prove that no skilled wallets exist. `API connected` indicates request success, not fresh data or profitable signals. An optional `DATABASE_URL` enables a mirror; it does not make PostgreSQL the API's read store.
 
-Before enabling collection, reconcile the newer `codex/lean-pilot-15-budget` implementation and establish durable storage with a single writer/replica. Its freshness gates, budget controls, run receipts, and research improvements were not included in Replit's import of the older main. Keep the $15/month target and review the concrete hosting/storage setup before paid provisioning. Do not merge the two different directory layouts wholesale.
+The integration branch reconciles `codex/lean-pilot-15-budget` into the Python package locations used by this adapter. Public freshness status, budget controls, run receipts, and research diagnostics are available there; collection stays disabled on Replit. See `docs/lean-pilot-integration.md` for merge evidence and the current paths. Establish durable storage with a single writer, retention and recovery before activating the pilot. The $15/month target and prepare-before-paid-provisioning instruction still apply.
 
 ## Local verification
 
 From the repository root:
 
 ```sh
-uv sync --frozen --no-dev
-uv run --frozen --with pytest python -m pytest artifacts/api-server/tests -q
+uv sync --frozen
+uv run --no-sync pytest -q
 pnpm install --frozen-lockfile --ignore-scripts
 pnpm --filter @workspace/marketsignalos-dashboard run typecheck
 PORT=23002 BASE_PATH=/ NODE_ENV=production pnpm --filter @workspace/marketsignalos-dashboard run build

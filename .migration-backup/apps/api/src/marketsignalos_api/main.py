@@ -4,7 +4,7 @@ import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, PlainTextResponse
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
@@ -19,15 +19,18 @@ from marketsignalos_api.api.routes.polymarket import router as polymarket_router
 from marketsignalos_api.api.routes.signal_ledger import router as signal_ledger_router
 from marketsignalos_api.api.routes.skilled_bets import router as skilled_bets_router
 from marketsignalos_api.api.routes.wallets import router as wallets_router
+from marketsignalos_api.cloud_config import validate_cloud_config
 from marketsignalos_api.observability import (
     PrometheusMiddleware,
     register_pipeline_metrics,
 )
+from marketsignalos_api.security import require_operator
 from marketsignalos_api.services.fastlane import start_fastlane_from_env, stop_fastlane
 from marketsignalos_api.services.ingest_scheduler import (
     start_scheduler_from_env,
     stop_scheduler,
 )
+from marketsignalos_api.services.platform_status import restore_run
 
 
 @asynccontextmanager
@@ -39,7 +42,16 @@ async def _lifespan(_app: FastAPI) -> AsyncIterator[None]:
 
     Pipeline collectors are registered here too so every series exists from
     boot rather than appearing after the first ingest."""
+    from marketsignalos_api.api.routes.ingestor import _lock, _state
+
+    validate_cloud_config()
     register_pipeline_metrics()
+    receipt = restore_run()
+    with _lock:
+        for key in ("running", "kind", "last_started_at", "last_finished_at",
+                    "last_exit_code", "last_summary"):
+            if key in receipt:
+                _state[key] = receipt[key]
     start_scheduler_from_env()
     start_fastlane_from_env()
     try:
@@ -125,6 +137,7 @@ def create_app() -> FastAPI:
         title="MarketSignalOS API",
         version="0.1.0",
         lifespan=_lifespan,
+        dependencies=[Depends(require_operator)],
     )
 
     # Registered before CORS so it is the outermost middleware and therefore

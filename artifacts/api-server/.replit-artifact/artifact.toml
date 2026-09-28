@@ -29,6 +29,7 @@ args = ["uv", "run", "--no-sync", "--offline", "python", "artifacts/api-server/s
 PORT = "8080"
 NODE_ENV = "production"
 APP_ENV = "production"
+API_READ_ONLY = "1"
 INGEST_EVERY_MINUTES = "0"
 FASTLANE_EVERY_SECONDS = "0"
 INGEST_POLYMARKET = "0"

@@ -423,6 +423,27 @@ class PolymarketClient:
 
     # ── Markets (Gamma) ───────────────────────────────────────────────────────
 
+    def get_markets_once(
+        self, condition_ids: list[str], *, closed: bool, limit: int = 100,
+    ) -> list[dict[str, Any]]:
+        """One transport attempt. The bounded backfill owns durable retry scheduling."""
+        if not condition_ids or len(condition_ids) > 25 or not 1 <= limit <= 100:
+            raise ValueError("A targeted request needs 1-25 conditions and a limit of 1-100")
+        try:
+            response = self._send_instrumented(
+                "GET", f"{GAMMA_API}/markets",
+                params={"condition_ids": condition_ids, "closed": str(closed).lower(),
+                        "limit": limit},
+                follow_redirects=False,
+            )
+            response.raise_for_status()
+            payload = response.json()
+        finally:
+            self._client.cookies.clear()
+        if not isinstance(payload, list) or any(not isinstance(row, dict) for row in payload):
+            raise ValueError("Expected a list of market objects")
+        return cast(list[dict[str, Any]], payload)
+
     def get_markets(
         self,
         *,
@@ -481,6 +502,7 @@ class PolymarketClient:
         *,
         params: dict[str, Any] | None = None,
         json_body: dict[str, Any] | None = None,
+        follow_redirects: bool | None = None,
     ) -> httpx.Response:
         """Build and send one upstream request, timing construction and
         transport separately.
@@ -508,7 +530,8 @@ class PolymarketClient:
 
         send_started = time.perf_counter()
         try:
-            response = self._client.send(request)
+            response = (self._client.send(request) if follow_redirects is None
+                        else self._client.send(request, follow_redirects=follow_redirects))
         except httpx.TransportError:
             metrics.upstream_request_duration_seconds.labels(
                 host=host, endpoint=endpoint

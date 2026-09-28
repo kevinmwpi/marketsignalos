@@ -28,6 +28,10 @@ def isolated_data(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("FASTLANE_EVERY_SECONDS", "0")
     monkeypatch.setenv("INGEST_POLYMARKET", "0")
     monkeypatch.delenv("ADMIN_API_TOKEN", raising=False)
+    monkeypatch.delenv("API_READ_ONLY", raising=False)
+    monkeypatch.delenv("RAILWAY_ENVIRONMENT_ID", raising=False)
+    monkeypatch.delenv("ALLOW_UNAUTHENTICATED_ADMIN", raising=False)
+    monkeypatch.setenv("APP_ENV", "development")
 
 
 def test_mounted_lifespan_runs_and_real_product_routes_return_json(monkeypatch: pytest.MonkeyPatch):
@@ -80,6 +84,18 @@ def test_operator_can_read_status_without_exposing_it_to_public(monkeypatch):
     assert "running" in response.json()
 
 
+def test_public_serving_blocks_operator_even_with_valid_credentials(monkeypatch):
+    monkeypatch.setenv("API_READ_ONLY", "1")
+    token = "test-token-" * 4
+    monkeypatch.setenv("ADMIN_API_TOKEN", token)
+    client = TestClient(adapter.app)
+    headers = {"Authorization": f"Bearer {token}"}
+    for path, method in (("/api/ingestor/status", "GET"), ("/api/ingestor/run", "POST"),
+                         ("/api/signals/fastlane/run", "POST")):
+        assert client.request(method, path, headers=headers).status_code == 503
+    assert client.get("/api/platform/status").status_code == 200
+
+
 def test_launcher_starts_python_api_outside_repo_directory(tmp_path):
     config = tomllib.loads((ARTIFACT / ".replit-artifact/artifact.toml").read_text())
     service = config["services"][0]
@@ -89,6 +105,7 @@ def test_launcher_starts_python_api_outside_repo_directory(tmp_path):
     assert command == ["uv", "run", "--no-sync", "--offline", "python", "artifacts/api-server/start.py"]
     assert service["development"]["run"] == "uv run --no-sync --offline python artifacts/api-server/start.py"
     assert production["health"]["startup"]["path"] == "/api/healthz"
+    assert production["run"]["env"]["API_READ_ONLY"] == "1"
     with socket.socket() as reserved:
         reserved.bind(("127.0.0.1", 0))
         port = reserved.getsockname()[1]
@@ -116,6 +133,7 @@ def test_launcher_starts_python_api_outside_repo_directory(tmp_path):
                 assert client.get("/api/signals/skilled-bets?limit=1").json() == []
                 assert client.get("/api/signals/polymarket-leaderboard?limit=1").json() == []
                 assert client.get("/api/ingestor/status").status_code == 503
+                assert client.get("/api/platform/status").json()["freshness"] == "unavailable"
                 assert (tmp_path / "data" / "skilled_bets_feed_cache.json").is_file()
         finally:
             process.terminate()

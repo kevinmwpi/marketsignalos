@@ -55,3 +55,11 @@ Thumbs.db
 # Replit
 .cache/
 .local/
+
+# Local operator secrets and generated pilot/benchmark data
+.env
+.env.local
+.mypy_cache/
+.integration-venv/
+services/ingestor/data/
+*.egg-info/

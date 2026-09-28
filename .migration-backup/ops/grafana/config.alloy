@@ -11,6 +11,7 @@
 //
 // Required environment variables (see ops/grafana/README.md):
 //   MSOS_METRICS_TARGET      host:port of the API, e.g. msos.up.railway.app:443
+//   MSOS_METRICS_BEARER_TOKEN API operator token, stored as an Alloy secret
 //   GRAFANA_CLOUD_PROM_URL   https://prometheus-<region>.grafana.net/api/prom/push
 //   GRAFANA_CLOUD_PROM_USER  numeric Grafana Cloud metrics instance ID
 //   GRAFANA_CLOUD_API_KEY    access policy token with metrics:write
@@ -24,6 +25,8 @@ prometheus.scrape "marketsignalos_api" {
 	}]
 
 	job_name = "marketsignalos-api"
+
+	bearer_token = sys.env("MSOS_METRICS_BEARER_TOKEN")
 
 	// 60s = 1 data point per minute, Grafana Cloud's billing unit. Every alert
 	// in ops/prometheus/alerts.yml is written to tolerate this: the shortest

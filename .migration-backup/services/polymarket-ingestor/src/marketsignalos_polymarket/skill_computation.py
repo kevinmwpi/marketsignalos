@@ -52,6 +52,11 @@ from .bayesian_skill import (
     rank_score,
     weak_prior_fit,
 )
+from .metadata_coverage import (
+    activity_conditions,
+    market_coverage_index,
+    refresh_hydration_metadata,
+)
 from .models import (
     PolymarketActivity,
     PolymarketLeaderboardEntry,
@@ -799,6 +804,9 @@ def compute_wallet_enrichment(
     with 5 wins / 5 losses on 50¢ markets still posts a near-zero edge
     rather than a sample-mean-driven extreme value.
     """
+    hydration = refresh_hydration_metadata(
+        hydration, activity_conditions(activity), market_coverage_index(markets_by_condition.values())
+    )
     rollup = _roll_up_wallet(
         wallet,
         activity,
@@ -906,6 +914,9 @@ def compute_enrichment_outputs_streaming(
          shrinkage step that prevents 5/5 wallets from looking elite.
     """
     _started = time.perf_counter()
+    # Coverage must describe this scoring snapshot, not the last collection run.
+    # Build once and reuse while the existing wallet shards are in memory.
+    coverage_index = market_coverage_index(markets)
     # Build the markets index — keep the most recently fetched per condition_id.
     markets_by_condition: dict[str, PolymarketMarket] = {}
     for market in markets:
@@ -976,7 +987,10 @@ def compute_enrichment_outputs_streaming(
             )
             recent_ess = effective_sample_size(recent_bets)
             clv_stats, per_record_clv = _records_clv(rollup.records, history)
-            hydration = (hydration_by_wallet or {}).get(rollup.wallet)
+            hydration = refresh_hydration_metadata(
+                (hydration_by_wallet or {}).get(rollup.wallet),
+                activity_conditions(events), coverage_index,
+            )
             style = styles_by_wallet.get(rollup.wallet)
             lead = compute_price_lead(
                 _lead_bets_from_records(rollup.records, markets_by_condition),

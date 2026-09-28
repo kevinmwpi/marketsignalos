@@ -1,0 +1,1335 @@
+{
+  "schema_version": 1,
+  "status": "passed",
+  "score_version": "forecast-v4",
+  "generated_at": "2026-09-10T22:35:55.515644+00:00",
+  "scope": "All wallets in the frozen enrichment shadow output; diagnostic only",
+  "provenance": {
+    "snapshot": {
+      "name": "enrichments.jsonl",
+      "bytes": 1878150,
+      "sha256": "01564d095e7945cee89895f3f278a0f0d66e9aee6b88530325f27e10a447dc5f"
+    },
+    "shadow_benchmark": {
+      "name": "2026-09-08-enrichment-shadow.json",
+      "sha256": "3b27d30552b88e14d76b10ea3d256ccb769eb031f05ac9481889fda74c1721df"
+    },
+    "scoring_code": {
+      "git_head": "45b63f40b2b39ef838106b6ae97b4ffbc5cbfd31",
+      "package_source_sha256": "cfc584c58205989a36b654d04258a4d49585fe47df9ed7858832c54b9feedb65"
+    },
+    "upstream_fingerprints_from_benchmark": {
+      "activity": {
+        "bytes": 8093504250,
+        "mtime_ns": 1781233407246531200,
+        "sha256": "0d88dca29b477f0fc55b5abf9d561fcfbe7e664688a01eedea95ff6bcd1386dc"
+      },
+      "markets": {
+        "bytes": 251253667,
+        "mtime_ns": 1781239142899366700,
+        "sha256": "857bfbc4d4a4a2fd3603e85c3bdf09e67af149e99ddb423c80151bb4d07a620e"
+      },
+      "leaderboard": {
+        "bytes": 25770230,
+        "mtime_ns": 1781193490277850700,
+        "sha256": "9cda29e4bcc2ee27c865c46128d039314fc3219dc7cad893bade73ce4e4c050f"
+      },
+      "hydration": {
+        "bytes": 2732903,
+        "mtime_ns": 1781235915059964900,
+        "sha256": "9d5c071dae4903bc0d0a00e3962f87dc4dcccc041b53273d966c0e33988dac2b"
+      },
+      "prices": {
+        "bytes": 18434358,
+        "mtime_ns": 1781239144428897500,
+        "sha256": "f61679c2cc6f2387ccfcdc38a3bde3cc96eaa236d9816fac53f51b88b39ed9e7"
+      }
+    },
+    "diagnostic_source_sha256": "a37e8ae1d4352309a6d0b1f623c23d5338c25d5574c7f278890c73511a8ee899"
+  },
+  "analysis": {
+    "wallets": 833,
+    "tailable_wallets": 0,
+    "trusted_wallets": 125,
+    "waterfall": [
+      {
+        "gate": 1,
+        "label": "Complete activity history",
+        "entering": 833,
+        "removed": 11,
+        "remaining": 822,
+        "isolated_failures": 11,
+        "not_evaluated": 0,
+        "only_failure": 0
+      },
+      {
+        "gate": 2,
+        "label": "Complete current positions",
+        "entering": 822,
+        "removed": 3,
+        "remaining": 819,
+        "isolated_failures": 4,
+        "not_evaluated": 0,
+        "only_failure": 0
+      },
+      {
+        "gate": 3,
+        "label": "Complete closed positions",
+        "entering": 819,
+        "removed": 0,
+        "remaining": 819,
+        "isolated_failures": 1,
+        "not_evaluated": 0,
+        "only_failure": 0
+      },
+      {
+        "gate": 4,
+        "label": "Complete all-time economics",
+        "entering": 819,
+        "removed": 1,
+        "remaining": 818,
+        "isolated_failures": 2,
+        "not_evaluated": 0,
+        "only_failure": 0
+      },
+      {
+        "gate": 5,
+        "label": "Complete 30-day economics",
+        "entering": 818,
+        "removed": 12,
+        "remaining": 806,
+        "isolated_failures": 17,
+        "not_evaluated": 0,
+        "only_failure": 0
+      },
+      {
+        "gate": 6,
+        "label": "Complete market metadata",
+        "entering": 806,
+        "removed": 681,
+        "remaining": 125,
+        "isolated_failures": 701,
+        "not_evaluated": 0,
+        "only_failure": 2
+      },
+      {
+        "gate": 7,
+        "label": "Independent settled events >=20",
+        "entering": 125,
+        "removed": 83,
+        "remaining": 42,
+        "isolated_failures": 405,
+        "not_evaluated": 0,
+        "only_failure": 0
+      },
+      {
+        "gate": 8,
+        "label": "Forecast confidence >=80%",
+        "entering": 42,
+        "removed": 38,
+        "remaining": 4,
+        "isolated_failures": 788,
+        "not_evaluated": 0,
+        "only_failure": 0
+      },
+      {
+        "gate": 9,
+        "label": "Conservative forecast edge >0",
+        "entering": 4,
+        "removed": 1,
+        "remaining": 3,
+        "isolated_failures": 799,
+        "not_evaluated": 0,
+        "only_failure": 0
+      },
+      {
+        "gate": 10,
+        "label": "Positive all-time PnL/ROI and nonnegative 30-day PnL",
+        "entering": 3,
+        "removed": 2,
+        "remaining": 1,
+        "isolated_failures": 528,
+        "not_evaluated": 0,
+        "only_failure": 0
+      },
+      {
+        "gate": 11,
+        "label": "Recent independent events >=5",
+        "entering": 1,
+        "removed": 0,
+        "remaining": 1,
+        "isolated_failures": 302,
+        "not_evaluated": 0,
+        "only_failure": 0
+      },
+      {
+        "gate": 12,
+        "label": "Recent forecast edge >=0 when gate 11 passes",
+        "entering": 1,
+        "removed": 0,
+        "remaining": 1,
+        "isolated_failures": 476,
+        "not_evaluated": 302,
+        "only_failure": 0
+      },
+      {
+        "gate": 13,
+        "label": "CLV sample >=10 and lower bound >0",
+        "entering": 1,
+        "removed": 1,
+        "remaining": 0,
+        "isolated_failures": 805,
+        "not_evaluated": 0,
+        "only_failure": 1
+      }
+    ],
+    "counterfactuals": {
+      "data_gates_suspended": 2,
+      "metadata_gate_suspended": 2,
+      "clv_minimum_five": {
+        "qualified_min": 0,
+        "qualified_max": 0,
+        "ambiguous_eligible_wallets": 0
+      }
+    },
+    "failure_groups": {
+      "coverage_only": 2,
+      "model_or_economics_only": 125,
+      "both": 706,
+      "neither": 0
+    },
+    "model_economic_failure_histogram": {
+      "0": 2,
+      "1": 22,
+      "2": 19,
+      "3": 20,
+      "4": 120,
+      "5": 397,
+      "6": 253
+    },
+    "failure_patterns": [
+      {
+        "gates": [
+          6,
+          8,
+          9,
+          10,
+          12,
+          13
+        ],
+        "wallets": 217
+      },
+      {
+        "gates": [
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          13
+        ],
+        "wallets": 152
+      },
+      {
+        "gates": [
+          6,
+          8,
+          9,
+          12,
+          13
+        ],
+        "wallets": 90
+      },
+      {
+        "gates": [
+          6,
+          7,
+          8,
+          9,
+          11,
+          13
+        ],
+        "wallets": 76
+      },
+      {
+        "gates": [
+          6,
+          7,
+          8,
+          9,
+          10,
+          12,
+          13
+        ],
+        "wallets": 48
+      },
+      {
+        "gates": [
+          7,
+          8,
+          9,
+          10,
+          11,
+          13
+        ],
+        "wallets": 42
+      },
+      {
+        "gates": [
+          6,
+          7,
+          8,
+          9,
+          12,
+          13
+        ],
+        "wallets": 36
+      },
+      {
+        "gates": [
+          8,
+          9,
+          10,
+          12,
+          13
+        ],
+        "wallets": 27
+      },
+      {
+        "gates": [
+          7,
+          8,
+          9,
+          11,
+          13
+        ],
+        "wallets": 25
+      },
+      {
+        "gates": [
+          6,
+          13
+        ],
+        "wallets": 13
+      },
+      {
+        "gates": [
+          8,
+          9,
+          12,
+          13
+        ],
+        "wallets": 11
+      },
+      {
+        "gates": [
+          6,
+          8,
+          9,
+          12
+        ],
+        "wallets": 10
+      },
+      {
+        "gates": [
+          7,
+          8,
+          9,
+          10,
+          12,
+          13
+        ],
+        "wallets": 9
+      },
+      {
+        "gates": [
+          6,
+          10,
+          13
+        ],
+        "wallets": 7
+      },
+      {
+        "gates": [
+          7,
+          8,
+          9,
+          12,
+          13
+        ],
+        "wallets": 7
+      },
+      {
+        "gates": [
+          6,
+          9,
+          13
+        ],
+        "wallets": 6
+      },
+      {
+        "gates": [
+          6,
+          8,
+          9,
+          10,
+          13
+        ],
+        "wallets": 4
+      },
+      {
+        "gates": [
+          6,
+          8,
+          9,
+          13
+        ],
+        "wallets": 4
+      },
+      {
+        "gates": [
+          5,
+          6,
+          8,
+          9,
+          12,
+          13
+        ],
+        "wallets": 3
+      },
+      {
+        "gates": [
+          6,
+          7,
+          8,
+          9,
+          12
+        ],
+        "wallets": 3
+      },
+      {
+        "gates": [
+          6,
+          8,
+          9,
+          10,
+          12
+        ],
+        "wallets": 3
+      },
+      {
+        "gates": [
+          1,
+          5,
+          6,
+          13
+        ],
+        "wallets": 2
+      },
+      {
+        "gates": [
+          1,
+          6,
+          8,
+          9,
+          12,
+          13
+        ],
+        "wallets": 2
+      },
+      {
+        "gates": [
+          6
+        ],
+        "wallets": 2
+      },
+      {
+        "gates": [
+          6,
+          7,
+          8,
+          9,
+          11
+        ],
+        "wallets": 2
+      },
+      {
+        "gates": [
+          6,
+          9,
+          10,
+          13
+        ],
+        "wallets": 2
+      },
+      {
+        "gates": [
+          6,
+          10
+        ],
+        "wallets": 2
+      },
+      {
+        "gates": [
+          10,
+          13
+        ],
+        "wallets": 2
+      },
+      {
+        "gates": [
+          1,
+          2,
+          6,
+          8,
+          9,
+          10,
+          12,
+          13
+        ],
+        "wallets": 1
+      },
+      {
+        "gates": [
+          1,
+          5,
+          13
+        ],
+        "wallets": 1
+      },
+      {
+        "gates": [
+          1,
+          6,
+          8,
+          9,
+          10,
+          12,
+          13
+        ],
+        "wallets": 1
+      },
+      {
+        "gates": [
+          1,
+          6,
+          10,
+          13
+        ],
+        "wallets": 1
+      },
+      {
+        "gates": [
+          1,
+          6,
+          13
+        ],
+        "wallets": 1
+      },
+      {
+        "gates": [
+          1,
+          9,
+          13
+        ],
+        "wallets": 1
+      },
+      {
+        "gates": [
+          1,
+          13
+        ],
+        "wallets": 1
+      },
+      {
+        "gates": [
+          2,
+          3,
+          4,
+          5,
+          6,
+          8,
+          9,
+          10,
+          12
+        ],
+        "wallets": 1
+      },
+      {
+        "gates": [
+          2,
+          6,
+          8,
+          9,
+          10,
+          12
+        ],
+        "wallets": 1
+      },
+      {
+        "gates": [
+          2,
+          6,
+          8,
+          9,
+          12
+        ],
+        "wallets": 1
+      },
+      {
+        "gates": [
+          4,
+          5,
+          6,
+          8,
+          9,
+          10,
+          12,
+          13
+        ],
+        "wallets": 1
+      },
+      {
+        "gates": [
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          13
+        ],
+        "wallets": 1
+      },
+      {
+        "gates": [
+          5,
+          6,
+          7,
+          8,
+          9,
+          11,
+          13
+        ],
+        "wallets": 1
+      },
+      {
+        "gates": [
+          5,
+          6,
+          8,
+          9,
+          10,
+          12,
+          13
+        ],
+        "wallets": 1
+      },
+      {
+        "gates": [
+          5,
+          6,
+          8,
+          9,
+          13
+        ],
+        "wallets": 1
+      },
+      {
+        "gates": [
+          5,
+          6,
+          9,
+          12,
+          13
+        ],
+        "wallets": 1
+      },
+      {
+        "gates": [
+          5,
+          7,
+          8,
+          9,
+          10,
+          11,
+          13
+        ],
+        "wallets": 1
+      },
+      {
+        "gates": [
+          5,
+          7,
+          8,
+          9,
+          11,
+          13
+        ],
+        "wallets": 1
+      },
+      {
+        "gates": [
+          5,
+          8,
+          9,
+          10,
+          12,
+          13
+        ],
+        "wallets": 1
+      },
+      {
+        "gates": [
+          5,
+          13
+        ],
+        "wallets": 1
+      },
+      {
+        "gates": [
+          6,
+          7,
+          8,
+          9,
+          10,
+          12
+        ],
+        "wallets": 1
+      },
+      {
+        "gates": [
+          6,
+          8,
+          9
+        ],
+        "wallets": 1
+      },
+      {
+        "gates": [
+          6,
+          8,
+          9,
+          10
+        ],
+        "wallets": 1
+      },
+      {
+        "gates": [
+          6,
+          8,
+          9,
+          10,
+          11,
+          13
+        ],
+        "wallets": 1
+      },
+      {
+        "gates": [
+          9,
+          13
+        ],
+        "wallets": 1
+      },
+      {
+        "gates": [
+          13
+        ],
+        "wallets": 1
+      }
+    ],
+    "pairwise_failures": [
+      {
+        "first": 1,
+        "second": 2,
+        "wallets": 1
+      },
+      {
+        "first": 1,
+        "second": 3,
+        "wallets": 0
+      },
+      {
+        "first": 1,
+        "second": 4,
+        "wallets": 0
+      },
+      {
+        "first": 1,
+        "second": 5,
+        "wallets": 3
+      },
+      {
+        "first": 1,
+        "second": 6,
+        "wallets": 8
+      },
+      {
+        "first": 1,
+        "second": 7,
+        "wallets": 0
+      },
+      {
+        "first": 1,
+        "second": 8,
+        "wallets": 4
+      },
+      {
+        "first": 1,
+        "second": 9,
+        "wallets": 5
+      },
+      {
+        "first": 1,
+        "second": 10,
+        "wallets": 3
+      },
+      {
+        "first": 1,
+        "second": 11,
+        "wallets": 0
+      },
+      {
+        "first": 1,
+        "second": 12,
+        "wallets": 4
+      },
+      {
+        "first": 1,
+        "second": 13,
+        "wallets": 11
+      },
+      {
+        "first": 2,
+        "second": 3,
+        "wallets": 1
+      },
+      {
+        "first": 2,
+        "second": 4,
+        "wallets": 1
+      },
+      {
+        "first": 2,
+        "second": 5,
+        "wallets": 1
+      },
+      {
+        "first": 2,
+        "second": 6,
+        "wallets": 4
+      },
+      {
+        "first": 2,
+        "second": 7,
+        "wallets": 0
+      },
+      {
+        "first": 2,
+        "second": 8,
+        "wallets": 4
+      },
+      {
+        "first": 2,
+        "second": 9,
+        "wallets": 4
+      },
+      {
+        "first": 2,
+        "second": 10,
+        "wallets": 3
+      },
+      {
+        "first": 2,
+        "second": 11,
+        "wallets": 0
+      },
+      {
+        "first": 2,
+        "second": 12,
+        "wallets": 4
+      },
+      {
+        "first": 2,
+        "second": 13,
+        "wallets": 1
+      },
+      {
+        "first": 3,
+        "second": 4,
+        "wallets": 1
+      },
+      {
+        "first": 3,
+        "second": 5,
+        "wallets": 1
+      },
+      {
+        "first": 3,
+        "second": 6,
+        "wallets": 1
+      },
+      {
+        "first": 3,
+        "second": 7,
+        "wallets": 0
+      },
+      {
+        "first": 3,
+        "second": 8,
+        "wallets": 1
+      },
+      {
+        "first": 3,
+        "second": 9,
+        "wallets": 1
+      },
+      {
+        "first": 3,
+        "second": 10,
+        "wallets": 1
+      },
+      {
+        "first": 3,
+        "second": 11,
+        "wallets": 0
+      },
+      {
+        "first": 3,
+        "second": 12,
+        "wallets": 1
+      },
+      {
+        "first": 3,
+        "second": 13,
+        "wallets": 0
+      },
+      {
+        "first": 4,
+        "second": 5,
+        "wallets": 2
+      },
+      {
+        "first": 4,
+        "second": 6,
+        "wallets": 2
+      },
+      {
+        "first": 4,
+        "second": 7,
+        "wallets": 0
+      },
+      {
+        "first": 4,
+        "second": 8,
+        "wallets": 2
+      },
+      {
+        "first": 4,
+        "second": 9,
+        "wallets": 2
+      },
+      {
+        "first": 4,
+        "second": 10,
+        "wallets": 2
+      },
+      {
+        "first": 4,
+        "second": 11,
+        "wallets": 0
+      },
+      {
+        "first": 4,
+        "second": 12,
+        "wallets": 2
+      },
+      {
+        "first": 4,
+        "second": 13,
+        "wallets": 1
+      },
+      {
+        "first": 5,
+        "second": 6,
+        "wallets": 12
+      },
+      {
+        "first": 5,
+        "second": 7,
+        "wallets": 4
+      },
+      {
+        "first": 5,
+        "second": 8,
+        "wallets": 12
+      },
+      {
+        "first": 5,
+        "second": 9,
+        "wallets": 13
+      },
+      {
+        "first": 5,
+        "second": 10,
+        "wallets": 6
+      },
+      {
+        "first": 5,
+        "second": 11,
+        "wallets": 4
+      },
+      {
+        "first": 5,
+        "second": 12,
+        "wallets": 8
+      },
+      {
+        "first": 5,
+        "second": 13,
+        "wallets": 16
+      },
+      {
+        "first": 6,
+        "second": 7,
+        "wallets": 320
+      },
+      {
+        "first": 6,
+        "second": 8,
+        "wallets": 664
+      },
+      {
+        "first": 6,
+        "second": 9,
+        "wallets": 673
+      },
+      {
+        "first": 6,
+        "second": 10,
+        "wallets": 446
+      },
+      {
+        "first": 6,
+        "second": 11,
+        "wallets": 233
+      },
+      {
+        "first": 6,
+        "second": 12,
+        "wallets": 421
+      },
+      {
+        "first": 6,
+        "second": 13,
+        "wallets": 673
+      },
+      {
+        "first": 7,
+        "second": 8,
+        "wallets": 405
+      },
+      {
+        "first": 7,
+        "second": 9,
+        "wallets": 405
+      },
+      {
+        "first": 7,
+        "second": 10,
+        "wallets": 254
+      },
+      {
+        "first": 7,
+        "second": 11,
+        "wallets": 301
+      },
+      {
+        "first": 7,
+        "second": 12,
+        "wallets": 104
+      },
+      {
+        "first": 7,
+        "second": 13,
+        "wallets": 399
+      },
+      {
+        "first": 8,
+        "second": 9,
+        "wallets": 788
+      },
+      {
+        "first": 8,
+        "second": 10,
+        "wallets": 514
+      },
+      {
+        "first": 8,
+        "second": 11,
+        "wallets": 302
+      },
+      {
+        "first": 8,
+        "second": 12,
+        "wallets": 475
+      },
+      {
+        "first": 8,
+        "second": 13,
+        "wallets": 764
+      },
+      {
+        "first": 9,
+        "second": 10,
+        "wallets": 516
+      },
+      {
+        "first": 9,
+        "second": 11,
+        "wallets": 302
+      },
+      {
+        "first": 9,
+        "second": 12,
+        "wallets": 476
+      },
+      {
+        "first": 9,
+        "second": 13,
+        "wallets": 775
+      },
+      {
+        "first": 10,
+        "second": 11,
+        "wallets": 197
+      },
+      {
+        "first": 10,
+        "second": 12,
+        "wallets": 312
+      },
+      {
+        "first": 10,
+        "second": 13,
+        "wallets": 519
+      },
+      {
+        "first": 11,
+        "second": 12,
+        "wallets": 0
+      },
+      {
+        "first": 11,
+        "second": 13,
+        "wallets": 300
+      },
+      {
+        "first": 12,
+        "second": 13,
+        "wallets": 456
+      }
+    ],
+    "rounded_metric_distributions": {
+      "all_wallets": {
+        "independent_settled_events": {
+          "n": 833,
+          "min": 0.0,
+          "p10": 0.0,
+          "median": 22.0,
+          "p90": 1125.2,
+          "max": 32830.0
+        },
+        "forecast_skill_likelihood": {
+          "n": 833,
+          "min": 0.0,
+          "p10": 0.0928668,
+          "median": 0.188951,
+          "p90": 0.3330892,
+          "max": 1.0
+        },
+        "forecast_edge_lower_bound": {
+          "n": 833,
+          "min": -0.576666,
+          "p10": -0.2729102,
+          "median": -0.252458,
+          "p90": -0.1549494,
+          "max": 0.309868
+        },
+        "all_time_pnl_usdc": {
+          "n": 833,
+          "min": -3629598.55,
+          "p10": -9485.494,
+          "median": -4.62,
+          "p90": 31835.306,
+          "max": 4786258.25
+        },
+        "all_time_roi": {
+          "n": 833,
+          "min": -0.34742505,
+          "p10": -0.02007695,
+          "median": -0.00010521,
+          "p90": 0.02373496,
+          "max": 0.54310694
+        },
+        "pnl_30d_usdc": {
+          "n": 833,
+          "min": -919304.77,
+          "p10": -1121.172,
+          "median": -0.11,
+          "p90": 2875.65,
+          "max": 470342.42
+        },
+        "recent_independent_events": {
+          "n": 833,
+          "min": 0.0,
+          "p10": 0.0,
+          "median": 16.112,
+          "p90": 939.74966,
+          "max": 27556.2179
+        },
+        "recent_edge_mean": {
+          "n": 833,
+          "min": -0.437773,
+          "p10": -0.1097764,
+          "median": -0.088177,
+          "p90": -0.0453304,
+          "max": 0.341042
+        },
+        "clv_sample_size": {
+          "n": 833,
+          "min": 0.0,
+          "p10": 0.0,
+          "median": 2.0,
+          "p90": 34.0,
+          "max": 691.0
+        },
+        "clv_lower_bound": {
+          "n": 833,
+          "min": -0.797909,
+          "p10": -0.1549214,
+          "median": -0.008348,
+          "p90": 0.0008212,
+          "max": 0.480577
+        }
+      },
+      "trusted_wallets": {
+        "independent_settled_events": {
+          "n": 125,
+          "min": 0.0,
+          "p10": 0.0,
+          "median": 4.0,
+          "p90": 450.2,
+          "max": 14489.0
+        },
+        "forecast_skill_likelihood": {
+          "n": 125,
+          "min": 0.000546,
+          "p10": 0.1393274,
+          "median": 0.188951,
+          "p90": 0.2783482,
+          "max": 1.0
+        },
+        "forecast_edge_lower_bound": {
+          "n": 125,
+          "min": -0.346119,
+          "p10": -0.2607294,
+          "median": -0.252662,
+          "p90": -0.2086478,
+          "max": 0.167419
+        },
+        "all_time_pnl_usdc": {
+          "n": 125,
+          "min": -3629598.55,
+          "p10": -5289.776,
+          "median": -13.62,
+          "p90": 27828.068,
+          "max": 688397.34
+        },
+        "all_time_roi": {
+          "n": 125,
+          "min": -0.09299599,
+          "p10": -0.0141357,
+          "median": -0.0005,
+          "p90": 0.03189029,
+          "max": 0.33833429
+        },
+        "pnl_30d_usdc": {
+          "n": 125,
+          "min": -919304.77,
+          "p10": -558.278,
+          "median": 0.15,
+          "p90": 4963.524,
+          "max": 304870.83
+        },
+        "recent_independent_events": {
+          "n": 125,
+          "min": 0.0,
+          "p10": 0.0,
+          "median": 3.4392,
+          "p90": 444.09958,
+          "max": 9819.3949
+        },
+        "recent_edge_mean": {
+          "n": 125,
+          "min": -0.183097,
+          "p10": -0.0974798,
+          "median": -0.088177,
+          "p90": -0.0618212,
+          "max": 0.232959
+        },
+        "clv_sample_size": {
+          "n": 125,
+          "min": 0.0,
+          "p10": 0.0,
+          "median": 0.0,
+          "p90": 1.0,
+          "max": 12.0
+        },
+        "clv_lower_bound": {
+          "n": 125,
+          "min": -0.091519,
+          "p10": -0.0016896,
+          "median": 0.0,
+          "p90": 0.0,
+          "max": 0.000652
+        }
+      }
+    },
+    "reasons": {
+      "closing-line value not confidently positive": 173,
+      "conservative edge is not positive": 799,
+      "fewer than 10 closing-line observations": 632,
+      "fewer than 20 independent settled events": 405,
+      "fewer than 5 recent independent settled events": 302,
+      "forecast confidence below 80%": 788,
+      "incomplete activity history": 11,
+      "incomplete closed positions": 1,
+      "incomplete current positions": 4,
+      "incomplete market metadata": 701,
+      "missing 30-day economics": 17,
+      "missing all-time economics": 2,
+      "negative or zero all-time PnL": 429,
+      "negative or zero all-time ROI": 429,
+      "recent PnL below zero": 422,
+      "recent forecast edge is negative": 476
+    },
+    "checks": {
+      "unique_wallet_keys": true,
+      "known_score_version_and_reasons": true,
+      "stored_status_and_reason_parity": true,
+      "rounded_metric_intervals_compatible_with_reasons": true
+    }
+  },
+  "limitations": [
+    "Historical, selected wallet cohort; this is not a live feed or a representative census.",
+    "Suspending data gates does not repair missing inputs or refit scores; it is not a causal estimate of what complete data would do.",
+    "Baseline gates use stored pre-rounding rejection reasons. Gate 12 is not evaluated when gate 11 fails. Gate 13's confidence test is conditional on sufficient CLV sample.",
+    "Margins use rounded serialized metrics. The CLV-5 counterfactual reports a range if rounding prevents an exact decision; its positive lower-bound requirement is retained.",
+    "Forecast posterior confidence is model-dependent, not a calibrated population-wide false-discovery guarantee. No prospective, fee-adjusted copying profit is established.",
+    "Raw activity and market files were hashed in the linked shadow benchmark, not rehashed by this diagnostic. This run verifies the derived score file and benchmark receipt."
+  ]
+}

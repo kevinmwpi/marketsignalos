@@ -378,15 +378,31 @@ def test_rate_limiter_observes_wait_time() -> None:
     assert _sample("msos_rate_limiter_wait_seconds_count") == before + 2
 
 
-def test_rate_limiter_still_spaces_requests() -> None:
+def test_rate_limiter_still_spaces_requests(monkeypatch: pytest.MonkeyPatch) -> None:
     """Instrumentation must not change the limiter's actual behaviour."""
-    import time as _time
+    from types import SimpleNamespace
+
+    from marketsignalos_polymarket import rate_limiter
+
+    clock = [100.0]
+    sleeps: list[float] = []
+
+    def sleep(seconds: float) -> None:
+        sleeps.append(seconds)
+        clock[0] += seconds
+
+    # Patch the limiter's clock only; OS tick resolution should not decide
+    # whether the requested spacing and instrumentation preserve the contract.
+    monkeypatch.setattr(rate_limiter, "time", SimpleNamespace(
+        monotonic=lambda: clock[0], sleep=sleep,
+    ))
 
     limiter = HostRateLimiter(rps=50.0)
     limiter.wait()
-    started = _time.monotonic()
     limiter.wait()
-    assert _time.monotonic() - started >= 0.015
+    limiter.wait()
+    assert sleeps == pytest.approx([0.02, 0.02])
+    assert clock[0] == pytest.approx(100.04)
 
 
 # ── RSS ──────────────────────────────────────────────────────────────────────
