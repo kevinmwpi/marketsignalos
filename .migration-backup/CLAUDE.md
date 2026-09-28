@@ -311,6 +311,7 @@ were provisioned. Keep the $15/month target and prepare-before-provisioning cons
 | `docs/metadata-coverage.md` | Stage 1 stale-coverage repair, frozen audit, remaining coverage semantics, and reproduction |
 | `docs/benchmarks/2026-09-10-metadata-coverage.md` | 833-wallet coverage decomposition and same-input gate replay; JSON/notebook companions |
 | `docs/benchmarks/2026-09-10-gate-attrition.md` | Frozen 833-wallet waterfall, overlap, counterfactuals, and scoped conclusion; JSON/notebook companions |
+| `docs/benchmarks/2026-09-28-prior-floor.md` | Stage 0 follow-up: prior variance floor, any-prior qualifier bound, estimator refit (`prior_floor` command) |
 | `docs/railway-deployment.md` | Cloud preparation and authenticated operator terminal commands |
 | `docs/platform-roadmap.md` | Backend/platform milestones and implementation status |
 | `docs/research-credibility.md` | Statistical evidence, point-in-time evaluation, and public-claim standards |

@@ -85,6 +85,12 @@ is historical (the linked activity benchmark ends in June 2026), not current dat
 
 ## Remaining and cloud status
 
+**Follow-up, 2026-09-28:** the [prior-floor diagnostic](benchmarks/2026-09-28-prior-floor.md)
+confirms the population prior was fitted at its variance floor and shows that no prior can
+produce a qualifier on this snapshot. It also shows that the data-gates-suspended count of 2
+is sensitive to the floor (up to 14 under some prior). Its estimator refit is pending the
+frozen local inputs.
+
 Next, explain missing metadata for the two candidates blocked solely by that gate:
 unresolved/missing markets, lookup failures, unsupported records, and denominator
 semantics. Keep the other 831 wallets' model/economic failures visible. Do not lower
