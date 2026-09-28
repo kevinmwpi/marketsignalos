@@ -5,6 +5,8 @@ set -euo pipefail
 PORT="${PORT:-8080}"
 export PYTHONPATH="apps/api/src:services/polymarket-ingestor/src${PYTHONPATH:+:${PYTHONPATH}}"
 
+python -m marketsignalos_api.cloud_config
+
 echo "Starting MarketSignalOS API on 0.0.0.0:${PORT}"
 
-exec uvicorn marketsignalos_api.main:app --host 0.0.0.0 --port "${PORT}"
+exec uvicorn marketsignalos_api.main:app --host 0.0.0.0 --port "${PORT}" --workers 1

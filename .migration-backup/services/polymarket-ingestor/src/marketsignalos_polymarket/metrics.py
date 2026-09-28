@@ -16,6 +16,7 @@ Every collector here exists because something broke in production. See
 from __future__ import annotations
 
 import os
+import sys
 import threading
 import time
 from collections.abc import Iterator
@@ -204,12 +205,14 @@ def process_rss_bytes() -> int | None:
         return resident_pages * _PAGE_SIZE
     except (OSError, IndexError, ValueError):
         pass
+    if sys.platform == "win32":
+        return None
     try:
         import resource  # optional, Unix-only
 
         max_rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
         # Linux reports kibibytes, macOS reports bytes.
-        return int(max_rss) * 1024
+        return int(max_rss) if sys.platform == "darwin" else int(max_rss) * 1024
     except (ImportError, OSError, ValueError):
         return None
 

@@ -38,12 +38,15 @@ app = FastAPI(title="MarketSignalOS API", lifespan=lifespan)
 
 @app.middleware("http")
 async def protect_operators(request: Request, call_next: RequestResponseEndpoint) -> Response:
-    """The imported older main predates operator auth on the budget feature branch."""
+    """Protect the public edge as well as the mounted backend's route dependency."""
     private = request.method not in {"GET", "HEAD", "OPTIONS"} or request.url.path.rstrip("/") in {
         "/api/ingestor/status", "/api/ingestor/watchlist", "/api/metrics",
         "/api/signals/notifications/status", "/api/signals/fastlane/status",
     }
     if private:
+        if os.getenv("API_READ_ONLY") == "1":
+            return JSONResponse({"detail": "Operator actions are disabled on this service"},
+                                status_code=503)
         token = os.getenv("ADMIN_API_TOKEN", "").strip()
         if len(token) < 32:
             return JSONResponse({"detail": "Operator access is not configured"}, status_code=503)

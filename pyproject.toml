@@ -12,3 +12,30 @@ dependencies = [
     "sqlalchemy>=2.0.53",
     "uvicorn>=0.53.0",
 ]
+
+[dependency-groups]
+dev = [
+    "marketsignalos-api[dev]",
+    "marketsignalos-polymarket[dev,benchmark]",
+]
+
+[tool.uv.sources]
+marketsignalos-api = { path = ".migration-backup/apps/api", editable = true }
+marketsignalos-polymarket = { path = ".migration-backup/services/polymarket-ingestor", editable = true }
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+
+[tool.ruff.lint]
+ignore = ["TRY004"]
+
+[tool.mypy]
+python_version = "3.13"
+ignore_missing_imports = true
+strict = true
+mypy_path = [".migration-backup/apps/api/src", ".migration-backup/services/polymarket-ingestor/src"]
+
+[tool.pytest.ini_options]
+testpaths = [".migration-backup/apps/api/tests", ".migration-backup/services/polymarket-ingestor/tests", "artifacts/api-server/tests", "scripts/tests"]
+pythonpath = [".migration-backup/apps/api/src", ".migration-backup/services/polymarket-ingestor/src"]

@@ -288,11 +288,11 @@ function TradingStyleCard({ e }: { e: Enrichment }): ReactElement | null {
 }
 
 async function getWalletDetail(address: string): Promise<WalletDetail | null> {
-  const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8080";
+  const apiBase = process.env.API_BASE_URL ?? process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8080";
   try {
     const response = await fetch(
       `${apiBase.replace(/\/$/, "")}/signals/wallets/${encodeURIComponent(address)}`,
-      { cache: "no-store" },
+      { cache: "no-store", signal: AbortSignal.timeout(10_000) },
     );
     if (!response.ok) return null;
     return (await response.json()) as WalletDetail;

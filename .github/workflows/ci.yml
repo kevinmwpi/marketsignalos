@@ -1,0 +1,60 @@
+name: Integration checks
+
+on:
+  pull_request:
+  push:
+    # Validate this migration branch even while GitHub prepares its large PR merge.
+    branches: [main, codex/lean-pilot-replit-integration]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: integration-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  python:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff
+        with:
+          version: "0.12.3"
+          python-version: "3.13"
+          enable-cache: false
+      - run: uv sync --frozen
+      - name: Check backend style
+        run: uv run --no-sync ruff check .migration-backup/apps/api .migration-backup/services/polymarket-ingestor
+      - name: Check cross-package types including legacy tests
+        run: uv run --no-sync mypy .migration-backup --config-file pyproject.toml
+      - name: Test pilot, API, publication and isolated production startup
+        run: uv run --no-sync pytest -q
+
+  dashboard:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: "24"
+      - run: npm install --global pnpm@10.26.1
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @workspace/marketsignalos-dashboard run typecheck
+      - name: Test snapshot loading and fallback
+        run: pnpm --filter @workspace/scripts exec tsx --test ../artifacts/marketsignalos-dashboard/src/lib/research-snapshot-loader.test.ts
+      - run: pnpm --filter @workspace/marketsignalos-dashboard run build
+        env:
+          PORT: "23002"
+          BASE_PATH: "/"
+          NODE_ENV: production

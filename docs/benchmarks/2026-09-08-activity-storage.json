@@ -1,0 +1,513 @@
+{
+  "status": "passed",
+  "started_at": "2026-09-08T16:13:17.660423+00:00",
+  "environment": {
+    "python": "3.12.10",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "logical_cpus": 24,
+    "total_ram_bytes": 31845707776
+  },
+  "settings": {
+    "source": "polymarket_activity.jsonl",
+    "dataset": "benchmark-output/2026-09-08-full/dataset",
+    "memory_mb": 512,
+    "threads": 2,
+    "rss_limit_mb": 2048,
+    "timeout_seconds": 1800,
+    "repetitions": 3
+  },
+  "cache_policy": "fresh child processes; OS page cache not flushed; alternating engine order",
+  "scope": "local activity projection and aggregate workload; no API or full enrichment timing",
+  "code_sha256": {
+    "activity_parquet.py": "86075b17a0ceab9b834db811a41308104f1446fd348758f81b39080edba60816",
+    "storage_benchmark.py": "014780bd4ed0c6a1e875d9953ee46c0276d56d23643d7b594a1ec489b9e03fd6"
+  },
+  "dataset": {
+    "schema_version": 1,
+    "created_at": "2026-09-08T16:07:34.473893+00:00",
+    "source": "polymarket_activity.jsonl",
+    "source_fingerprint": {
+      "bytes": 8093504250,
+      "mtime_ns": 1781233407246531200,
+      "sha256": "0d88dca29b477f0fc55b5abf9d561fcfbe7e664688a01eedea95ff6bcd1386dc"
+    },
+    "duckdb_version": "1.5.5",
+    "wallet_buckets": 64,
+    "rows": 16889639,
+    "wallets": 833,
+    "min_event_ts": 1641442985,
+    "max_event_ts": 1781231142,
+    "unknown_observed_at_rows": 0,
+    "integrity_signature": [
+      16889639,
+      1641442985,
+      1781231142,
+      0,
+      3056233442290563771,
+      155778368373306705725477273
+    ],
+    "max_observed_at": "2026-06-12 03:01:46.792803+00",
+    "selected_wallets": [
+      {
+        "wallet": "0x492494973c94e901e3be9f75796dea83057cfac2",
+        "records": 1003120
+      },
+      {
+        "wallet": "0x499264b6d40c43bb32e7efde960ece5e46eca929",
+        "records": 349
+      },
+      {
+        "wallet": "0x5c2b5ae956e2e43578837537c0da7e2ee046273f",
+        "records": 1
+      }
+    ],
+    "parquet_bytes": 1095046057,
+    "files": [
+      {
+        "path": "activity/wallet_bucket=0/data_0.parquet",
+        "bytes": 25754842
+      },
+      {
+        "path": "activity/wallet_bucket=1/data_0.parquet",
+        "bytes": 2993916
+      },
+      {
+        "path": "activity/wallet_bucket=10/data_0.parquet",
+        "bytes": 4754067
+      },
+      {
+        "path": "activity/wallet_bucket=11/data_0.parquet",
+        "bytes": 68651721
+      },
+      {
+        "path": "activity/wallet_bucket=12/data_0.parquet",
+        "bytes": 63797505
+      },
+      {
+        "path": "activity/wallet_bucket=13/data_0.parquet",
+        "bytes": 496971
+      },
+      {
+        "path": "activity/wallet_bucket=14/data_0.parquet",
+        "bytes": 865989
+      },
+      {
+        "path": "activity/wallet_bucket=15/data_0.parquet",
+        "bytes": 39032811
+      },
+      {
+        "path": "activity/wallet_bucket=16/data_0.parquet",
+        "bytes": 1128833
+      },
+      {
+        "path": "activity/wallet_bucket=17/data_0.parquet",
+        "bytes": 2376592
+      },
+      {
+        "path": "activity/wallet_bucket=18/data_0.parquet",
+        "bytes": 751126
+      },
+      {
+        "path": "activity/wallet_bucket=19/data_0.parquet",
+        "bytes": 67554002
+      },
+      {
+        "path": "activity/wallet_bucket=2/data_0.parquet",
+        "bytes": 4578281
+      },
+      {
+        "path": "activity/wallet_bucket=20/data_0.parquet",
+        "bytes": 2597200
+      },
+      {
+        "path": "activity/wallet_bucket=21/data_0.parquet",
+        "bytes": 8752333
+      },
+      {
+        "path": "activity/wallet_bucket=22/data_0.parquet",
+        "bytes": 62442968
+      },
+      {
+        "path": "activity/wallet_bucket=23/data_0.parquet",
+        "bytes": 5712983
+      },
+      {
+        "path": "activity/wallet_bucket=24/data_0.parquet",
+        "bytes": 120225
+      },
+      {
+        "path": "activity/wallet_bucket=25/data_0.parquet",
+        "bytes": 8814686
+      },
+      {
+        "path": "activity/wallet_bucket=26/data_0.parquet",
+        "bytes": 22216921
+      },
+      {
+        "path": "activity/wallet_bucket=27/data_0.parquet",
+        "bytes": 5641582
+      },
+      {
+        "path": "activity/wallet_bucket=28/data_0.parquet",
+        "bytes": 8630602
+      },
+      {
+        "path": "activity/wallet_bucket=29/data_0.parquet",
+        "bytes": 3660428
+      },
+      {
+        "path": "activity/wallet_bucket=3/data_0.parquet",
+        "bytes": 14005686
+      },
+      {
+        "path": "activity/wallet_bucket=30/data_0.parquet",
+        "bytes": 19247311
+      },
+      {
+        "path": "activity/wallet_bucket=31/data_0.parquet",
+        "bytes": 1480477
+      },
+      {
+        "path": "activity/wallet_bucket=32/data_0.parquet",
+        "bytes": 2662911
+      },
+      {
+        "path": "activity/wallet_bucket=33/data_0.parquet",
+        "bytes": 1457468
+      },
+      {
+        "path": "activity/wallet_bucket=34/data_0.parquet",
+        "bytes": 1212571
+      },
+      {
+        "path": "activity/wallet_bucket=35/data_0.parquet",
+        "bytes": 3724011
+      },
+      {
+        "path": "activity/wallet_bucket=36/data_0.parquet",
+        "bytes": 13769790
+      },
+      {
+        "path": "activity/wallet_bucket=37/data_0.parquet",
+        "bytes": 5012371
+      },
+      {
+        "path": "activity/wallet_bucket=38/data_0.parquet",
+        "bytes": 253453
+      },
+      {
+        "path": "activity/wallet_bucket=39/data_0.parquet",
+        "bytes": 67084926
+      },
+      {
+        "path": "activity/wallet_bucket=4/data_0.parquet",
+        "bytes": 21072172
+      },
+      {
+        "path": "activity/wallet_bucket=40/data_0.parquet",
+        "bytes": 1450256
+      },
+      {
+        "path": "activity/wallet_bucket=41/data_0.parquet",
+        "bytes": 21307397
+      },
+      {
+        "path": "activity/wallet_bucket=42/data_0.parquet",
+        "bytes": 34075783
+      },
+      {
+        "path": "activity/wallet_bucket=43/data_0.parquet",
+        "bytes": 5633013
+      },
+      {
+        "path": "activity/wallet_bucket=44/data_0.parquet",
+        "bytes": 16647665
+      },
+      {
+        "path": "activity/wallet_bucket=45/data_0.parquet",
+        "bytes": 22357217
+      },
+      {
+        "path": "activity/wallet_bucket=46/data_0.parquet",
+        "bytes": 1628493
+      },
+      {
+        "path": "activity/wallet_bucket=47/data_0.parquet",
+        "bytes": 7317444
+      },
+      {
+        "path": "activity/wallet_bucket=48/data_0.parquet",
+        "bytes": 19674813
+      },
+      {
+        "path": "activity/wallet_bucket=49/data_0.parquet",
+        "bytes": 6402163
+      },
+      {
+        "path": "activity/wallet_bucket=5/data_0.parquet",
+        "bytes": 7549831
+      },
+      {
+        "path": "activity/wallet_bucket=50/data_0.parquet",
+        "bytes": 3690784
+      },
+      {
+        "path": "activity/wallet_bucket=51/data_0.parquet",
+        "bytes": 4024986
+      },
+      {
+        "path": "activity/wallet_bucket=52/data_0.parquet",
+        "bytes": 11197656
+      },
+      {
+        "path": "activity/wallet_bucket=53/data_0.parquet",
+        "bytes": 118806545
+      },
+      {
+        "path": "activity/wallet_bucket=54/data_0.parquet",
+        "bytes": 26341372
+      },
+      {
+        "path": "activity/wallet_bucket=55/data_0.parquet",
+        "bytes": 10207255
+      },
+      {
+        "path": "activity/wallet_bucket=56/data_0.parquet",
+        "bytes": 4077104
+      },
+      {
+        "path": "activity/wallet_bucket=57/data_0.parquet",
+        "bytes": 49607091
+      },
+      {
+        "path": "activity/wallet_bucket=58/data_0.parquet",
+        "bytes": 1790397
+      },
+      {
+        "path": "activity/wallet_bucket=59/data_0.parquet",
+        "bytes": 15225493
+      },
+      {
+        "path": "activity/wallet_bucket=6/data_0.parquet",
+        "bytes": 8511562
+      },
+      {
+        "path": "activity/wallet_bucket=60/data_0.parquet",
+        "bytes": 2257958
+      },
+      {
+        "path": "activity/wallet_bucket=61/data_0.parquet",
+        "bytes": 632253
+      },
+      {
+        "path": "activity/wallet_bucket=62/data_0.parquet",
+        "bytes": 3266686
+      },
+      {
+        "path": "activity/wallet_bucket=63/data_0.parquet",
+        "bytes": 2019870
+      },
+      {
+        "path": "activity/wallet_bucket=7/data_0.parquet",
+        "bytes": 2237107
+      },
+      {
+        "path": "activity/wallet_bucket=8/data_0.parquet",
+        "bytes": 123277824
+      },
+      {
+        "path": "activity/wallet_bucket=9/data_0.parquet",
+        "bytes": 1520308
+      }
+    ],
+    "deduplicated": false,
+    "point_in_time_policy": "event_ts and fetched_at <= cutoff"
+  },
+  "conversion": {
+    "elapsed_seconds": 194.04993980005383,
+    "os_peak_rss_bytes": 777814016,
+    "measurement_source": "Initial full export; query validation reused that immutable dataset",
+    "guard_note": "Initial conversion sampled the Windows launcher, not its interpreter. Peak RSS is the interpreter's OS-reported high-water mark. The process-tree guard was corrected and tested before the final query validation."
+  },
+  "queries": [
+    {
+      "wallet": "0x492494973c94e901e3be9f75796dea83057cfac2",
+      "since": 0
+    },
+    {
+      "wallet": "0x492494973c94e901e3be9f75796dea83057cfac2",
+      "since": 1778639142
+    },
+    {
+      "wallet": "0x492494973c94e901e3be9f75796dea83057cfac2",
+      "since": 0,
+      "as_of": "2026-06-05T03:01:46.792803+00:00"
+    },
+    {
+      "wallet": "0x499264b6d40c43bb32e7efde960ece5e46eca929",
+      "since": 0
+    },
+    {
+      "wallet": "0x499264b6d40c43bb32e7efde960ece5e46eca929",
+      "since": 1778639142
+    },
+    {
+      "wallet": "0x499264b6d40c43bb32e7efde960ece5e46eca929",
+      "since": 0,
+      "as_of": "2026-06-05T03:01:46.792803+00:00"
+    },
+    {
+      "wallet": "0x5c2b5ae956e2e43578837537c0da7e2ee046273f",
+      "since": 0
+    },
+    {
+      "wallet": "0x5c2b5ae956e2e43578837537c0da7e2ee046273f",
+      "since": 1778639142
+    },
+    {
+      "wallet": "0x5c2b5ae956e2e43578837537c0da7e2ee046273f",
+      "since": 0,
+      "as_of": "2026-06-05T03:01:46.792803+00:00"
+    }
+  ],
+  "measurements": [
+    {
+      "elapsed_seconds": 82.915221100091,
+      "os_peak_rss_bytes": 41275392,
+      "sampled_peak_rss_bytes": 46628864,
+      "peak_rss_bytes": 46628864,
+      "process_wall_seconds": 83.23949970002286,
+      "operation": "jsonl",
+      "repetition": 0
+    },
+    {
+      "elapsed_seconds": 0.28700319991912693,
+      "os_peak_rss_bytes": 54185984,
+      "sampled_peak_rss_bytes": 57212928,
+      "peak_rss_bytes": 57212928,
+      "process_wall_seconds": 0.6495185999665409,
+      "operation": "parquet",
+      "repetition": 0
+    },
+    {
+      "elapsed_seconds": 0.28162250004243106,
+      "os_peak_rss_bytes": 53891072,
+      "sampled_peak_rss_bytes": 57192448,
+      "peak_rss_bytes": 57192448,
+      "process_wall_seconds": 0.570830300101079,
+      "operation": "parquet",
+      "repetition": 1
+    },
+    {
+      "elapsed_seconds": 82.24377910001203,
+      "os_peak_rss_bytes": 41099264,
+      "sampled_peak_rss_bytes": 46452736,
+      "peak_rss_bytes": 46452736,
+      "process_wall_seconds": 82.54432770004496,
+      "operation": "jsonl",
+      "repetition": 1
+    },
+    {
+      "elapsed_seconds": 81.52695250010584,
+      "os_peak_rss_bytes": 41144320,
+      "sampled_peak_rss_bytes": 46497792,
+      "peak_rss_bytes": 46497792,
+      "process_wall_seconds": 81.84446219995152,
+      "operation": "jsonl",
+      "repetition": 2
+    },
+    {
+      "elapsed_seconds": 0.2942527000559494,
+      "os_peak_rss_bytes": 55091200,
+      "sampled_peak_rss_bytes": 57356288,
+      "peak_rss_bytes": 57356288,
+      "process_wall_seconds": 0.613927400088869,
+      "operation": "parquet",
+      "repetition": 2
+    }
+  ],
+  "results": [
+    [
+      1003120,
+      991061,
+      7638484.240859,
+      1763098388,
+      1780983211
+    ],
+    [
+      19893,
+      18789,
+      171976.755533,
+      1778639560,
+      1780983211
+    ],
+    [
+      0,
+      0,
+      0.0,
+      null,
+      null
+    ],
+    [
+      349,
+      217,
+      18882.430349,
+      1763002976,
+      1781201298
+    ],
+    [
+      158,
+      88,
+      14146.03746,
+      1778767581,
+      1781201298
+    ],
+    [
+      0,
+      0,
+      0.0,
+      null,
+      null
+    ],
+    [
+      1,
+      1,
+      10.0,
+      1781026872,
+      1781026872
+    ],
+    [
+      1,
+      1,
+      10.0,
+      1781026872,
+      1781026872
+    ],
+    [
+      0,
+      0,
+      0.0,
+      null,
+      null
+    ]
+  ],
+  "summary": {
+    "median_seconds": {
+      "jsonl": 82.24377910001203,
+      "parquet": 0.28700319991912693
+    },
+    "query_bundle_speedup": 286.5604952250953,
+    "jsonl_to_parquet_bytes_ratio": 7.391017207233321,
+    "correctness": "counts and timestamps exact; sums within rel=1e-10, abs=1e-7"
+  },
+  "finished_at": "2026-09-08T16:17:41.703980+00:00",
+  "repository_base": "a90d81b",
+  "limitations": [
+    "Activity snapshot ends June 12, 2026; not current production or complete chain coverage.",
+    "Three as-of workloads return zero rows because collection began after their cutoff.",
+    "Local shared Windows host; OS cache unflushed, no dedicated hardware isolation.",
+    "Queries produce small aggregates. They do not run full enrichment or test API latency.",
+    "Data compression does not eliminate all OOM risks or implement incremental deduplication.",
+    "Full tests ran concurrently during part of the first repetition. All repetitions shown."
+  ]
+}

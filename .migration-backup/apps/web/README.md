@@ -1,20 +1,25 @@
-This is a [Next.js](https://nextjs.org) dashboard for MarketSignalOS.
+# MarketSignalOS public website
 
-## Getting Started
+Next.js displays the wallet leaderboard, held positions, exit signals and
+wallet dossiers. The homepage refreshes once per minute while visible and
+shows data freshness separately from API connectivity.
 
-First, run the development server:
+## Development
 
-```bash
-npm run dev
-```
+Run `npm ci`, set `API_BASE_URL=http://localhost:8000`, then `npm run dev`.
+`NEXT_PUBLIC_API_BASE_URL` is a compatibility fallback; the final default is
+`http://localhost:8080`.
 
-Open [http://localhost:3000](http://localhost:3000) with your browser.
+For local ingestion buttons, set `SHOW_INGEST_CONTROLS=1` and explicitly enable
+`ALLOW_UNAUTHENTICATED_ADMIN=1` on the development API. Production builds hide
+these controls. Proxy routes forward only the caller's authorization header;
+never configure an operator token as a public frontend variable.
 
-## API dependency
+## Deployment and validation
 
-The homepage fetches probability-ranked signal data from:
-- `${NEXT_PUBLIC_API_BASE_URL}/signals/opportunities?fresh_days=30&min_resolved=20&limit=10`
-- `${NEXT_PUBLIC_API_BASE_URL}/signals/leaderboard?fresh_days=30&min_resolved=20&limit=8`
-- `${NEXT_PUBLIC_API_BASE_URL}/signals/orderflow?limit=8`
+Use [the Railway deployment guide](../../docs/railway-deployment.md), service root
+`/apps/web`, and config file `/apps/web/railway.toml`. Set the server-only
+`API_BASE_URL` to the cloud API origin. `/api/health` provides a lightweight
+liveness check independent of the data feeds.
 
-Set `NEXT_PUBLIC_API_BASE_URL` in your environment if your API is not running on `http://localhost:8000`.
+Run `npm run lint` and `npm run build` before deployment.

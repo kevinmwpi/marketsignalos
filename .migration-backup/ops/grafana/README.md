@@ -79,10 +79,15 @@ Set these variables on the **Alloy** service:
 
 ```
 MSOS_METRICS_TARGET      = <your-api>.up.railway.app:443
+MSOS_METRICS_BEARER_TOKEN = <the API ADMIN_API_TOKEN, stored as a secret>
 GRAFANA_CLOUD_PROM_URL   = <from step 2>
 GRAFANA_CLOUD_PROM_USER  = <from step 2>
 GRAFANA_CLOUD_API_KEY    = <from step 2>
 ```
+
+The API now protects `/metrics`. The scrape bearer token belongs only in Alloy's
+secret configuration; it is separate from the Grafana remote-write token. See
+[Alloy scrape authentication](https://grafana.com/docs/alloy/latest/reference/components/prometheus/prometheus.scrape/).
 
 Start command:
 
@@ -134,27 +139,30 @@ can route to notification policies), point mimirtool at
 
 ## Validating the config before you deploy
 
-`config.alloy` in this directory is checked against the real Alloy binary
-(v1.19.1): `alloy fmt` parses it and reports no formatting drift, and
-`alloy validate` resolves the component graph — including the `forward_to`
-reference from the scrape component to the remote_write receiver.
+The bearer-token config was formatted and checked with Alloy v1.19.2 on Windows
+on 2026-09-10: `alloy fmt -t` and `alloy validate` both exited 0 with placeholder
+credentials. The Dockerfile now pins that release. This validates configuration,
+including the `forward_to` receiver reference; a live authenticated scrape, remote
+write, and alert delivery still require deployment checks. See
+[validation evidence](../../docs/gate-attrition.md).
 
 To re-check after an edit:
 
 ```bash
-# any recent release; ~550 MB extracted, so this is a local check, not a CI step
+# pinned release; this is a local check, not a CI step
 curl -sSL -o alloy.zip \
-  https://github.com/grafana/alloy/releases/latest/download/alloy-linux-amd64.zip
+  https://github.com/grafana/alloy/releases/download/v1.19.2/alloy-linux-amd64.zip
 unzip -q alloy.zip && chmod +x alloy-linux-amd64
 
 ./alloy-linux-amd64 fmt ops/grafana/config.alloy      # parses + canonical formatting
 MSOS_METRICS_TARGET=example:443 \
+MSOS_METRICS_BEARER_TOKEN=validation-placeholder \
 GRAFANA_CLOUD_PROM_URL=https://example/api/prom/push \
 GRAFANA_CLOUD_PROM_USER=1 GRAFANA_CLOUD_API_KEY=x \
   ./alloy-linux-amd64 validate ops/grafana/config.alloy
 ```
 
-Both exit 0 on the committed config. They are not vacuous checks: swapping
+Both checks exited 0 on the bearer-token config. Earlier negative checks showed that swapping
 `sys.env()` for the deprecated `env()` exits 1 with a deprecation warning, and
 a typo in the `forward_to` target exits 1 with "component ... does not exist".
 

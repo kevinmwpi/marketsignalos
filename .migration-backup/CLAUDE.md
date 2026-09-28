@@ -1,6 +1,26 @@
 # CLAUDE.md — MarketSignalOS
 
+**2026-09 platform preparation:** [docs/railway-deployment.md](docs/railway-deployment.md)
+and [docs/platform-roadmap.md](docs/platform-roadmap.md) describe the current
+cloud pilot and next stages. Operator routes now require `ADMIN_API_TOKEN`;
+the public website hides ingest controls. Local development may explicitly use
+`ALLOW_UNAUTHENTICATED_ADMIN=1` plus `SHOW_INGEST_CONTROLS=1`. Production requires
+a persistent data directory and a 32+ character token. `/platform/status` is a
+public freshness/coverage endpoint; run receipts persist on the volume.
+
+> **Read [`docs/handoff-blueprint.md`](docs/handoff-blueprint.md) before starting any
+> build work.** It is the authoritative staged plan: what to build in what order,
+> the entry gate and acceptance evidence for each stage, the invariants that hold
+> everywhere, and the kill criteria. It supersedes any older architecture plan.
+
 ## What this project is
+
+Current delivery constraint: target $15/month on Railway Hobby. Prepare and
+review a concrete deployment before paid provisioning. After each development
+pass, summarize what was built, validation, remaining work, and cloud activation
+status. See `docs/lean-pilot.md` for implemented controls and known limitations.
+See `docs/metadata-backfill.md` for bounded Gamma request receipts and the isolated
+candidate-coverage probe; present-day observations must not enter frozen scores.
 
 MarketSignalOS identifies skilled Polymarket wallets, surfaces their currently-held positions, and classifies each bet by where it can actually be tailed (Polymarket first; approved Kalshi mirror as fallback).
 
@@ -56,7 +76,7 @@ cd apps/web
 npm ci
 ```
 
-**Environment variables (all optional):**
+**Environment variables (production requirements in the deployment guide):**
 
 | Variable | Where used | Notes |
 |---|---|---|
@@ -70,6 +90,14 @@ npm ci
 | `SIGNAL_WEBHOOK_URL` | API | When set, new skilled-bet signals and exit signals are POSTed here as JSON after each ingest (at-least-once; first pass after deploy never floods backlog) |
 | `INGEST_EVERY_MINUTES` | API | When >0, an in-process scheduler dispatches the same pipeline run as the "Run ingest" button on this interval (first run ~60s after boot; busy ticks skip) |
 | `INGEST_DEEP_EVERY_N_RUNS` | API | With the scheduler on, every Nth scheduled run is a **deep** discovery pass instead of a shallow refresh (0/unset = never deep) |
+| `INGEST_DEEP_WALLET_BATCH_SIZE` | API deep run | Positive wallet batch size; default 25 |
+| `INGEST_DEEP_LEADERBOARD_DEPTH` | API deep run | Positive leaderboard depth; default 100 |
+| `INGEST_RECENT_TRADER_LIMIT` | API deep run | Positive discovery wallet limit; default 1000 |
+| `INGEST_RECENT_TRADER_MAX_PAGES` | API deep run | Positive discovery page limit; default 20 |
+| `DATA_STALE_AFTER_MINUTES` | API | Freshness limit exposed by `/platform/status`; see deployment defaults |
+| `ADMIN_API_TOKEN` | API | Bearer credential required for operator routes, including metrics; never expose to public frontend |
+| `ALLOW_UNAUTHENTICATED_ADMIN` | API development | Explicit local-only operator bypass; forbidden in cloud mode |
+| `SHOW_INGEST_CONTROLS` | Web development | Local control visibility when `1`; production controls stay hidden. Use the authenticated terminal commands in `docs/railway-deployment.md` |
 | `FASTLANE_EVERY_SECONDS` | API | When >0, an in-process fast-lane poller fetches ONLY the activity feed for the top tailable wallets on this interval and webhook-delivers new BUY/SELL trades immediately (clamped to ≥30s; alert-only — never writes the JSONL stores) |
 | `FASTLANE_WALLETS` | API | Wallets the fast lane polls per tick, ranked by `rank_score` (default 25, capped at 100) |
 | `FASTLANE_MIN_ENTRY_USDC` | API | Fast-lane alerts ignore trades below this USDC size (default 0 = all) |
@@ -216,7 +244,7 @@ The pipeline runs JSONL-first. Postgres is opt-in via `DATABASE_URL` (`Dual*` st
 - **`run_pipeline()`** — single in-process orchestrator the web "Run ingest" button invokes. Seeds wallets across `day/week/month/all` windows (gracefully skipping any window the API rejects), pulls activity/positions/value, fetches Polymarket markets + Kalshi public markets, and runs the Polymarket→Kalshi market matcher. No env vars required.
 - **`/signals/skilled-bets`** — still-held BUY entries from wallets with `skill_likelihood ≥ 0.8`, each row carrying the Kalshi mirror (ticker, title, deep link, live YES price, match confidence) when a match exists
 - **SkilledBetsPanel + PolymarketLeaderboardPanel + IngestButton** mounted on `/` (the dashboard root)
-- **Ingest button** — pre-flight-free (no required env vars); log capture surfaces a `log_tail` and counts summary back to the UI
+- **Operator ingestion** — bearer-token protected HTTP controls; explicit local-only bypass and development buttons. Log capture surfaces a `log_tail` and counts summary to authorized operators.
 - **Polymarket Postgres write path** — Alembic schema (`services/polymarket-ingestor/alembic/`) covers 8 tables; `Dual*` store wrappers fan every write out to JSONL and Postgres when `DATABASE_URL` is set; API reads remain JSONL-only
 - **Kalshi parlay-ticker filter** — `_is_kalshi_parlay()` excludes `KXMVE*` multi-leg tickers from the matcher
 - **Recency-weighted edge (`forecast-v3`)** — a second Bayesian fit with each bet's likelihood weight decayed at a 180-day half-life; `recent_*` enrichment fields plus two new tailability gates (recent independent events ≥ 5; recent edge not negative)
@@ -252,11 +280,13 @@ The pipeline runs JSONL-first. Postgres is opt-in via `DATABASE_URL` (`Dual*` st
 
 ## Deployment
 
-Deployed on **Railway** via Railpack builder.
+Deployment configuration targets **Railway** via Railpack builder. Current service
+activation and billing have not been verified by the Stage 0 pass; no new resources
+were provisioned. Keep the $15/month target and prepare-before-provisioning constraint.
 
 - Single process defined in `Procfile`: `web: ./scripts/start-api.sh`
 - `scripts/start-api.sh` sets `PYTHONPATH=apps/api/src` and starts uvicorn on `$PORT`
-- Health check: `GET /health`, 60s initial delay, 10 restart retries
+- Health check: `GET /health`, 60s healthcheck timeout, 10 restart retries
 - `railway.toml` controls builder + health check config
 - The Next.js app is a separate deployment (Vercel or a second Railway service). Set `NEXT_PUBLIC_API_BASE_URL` on the frontend to the API URL; optionally set `FRONTEND_URL` on the API so its landing page links back.
 
@@ -276,6 +306,17 @@ Deployed on **Railway** via Railpack builder.
 
 | File | Contents |
 |---|---|
+| `docs/handoff-blueprint.md` | **Authoritative build reference.** Corrected architecture, staged plan with entry gates and acceptance evidence, invariants, data contracts, kill criteria |
+| `docs/gate-attrition.md` | Stage 0 command, reproducibility, verification scope, and next steps |
+| `docs/metadata-coverage.md` | Stage 1 stale-coverage repair, frozen audit, remaining coverage semantics, and reproduction |
+| `docs/benchmarks/2026-09-10-metadata-coverage.md` | 833-wallet coverage decomposition and same-input gate replay; JSON/notebook companions |
+| `docs/benchmarks/2026-09-10-gate-attrition.md` | Frozen 833-wallet waterfall, overlap, counterfactuals, and scoped conclusion; JSON/notebook companions |
+| `docs/railway-deployment.md` | Cloud preparation and authenticated operator terminal commands |
+| `docs/platform-roadmap.md` | Backend/platform milestones and implementation status |
+| `docs/research-credibility.md` | Statistical evidence, point-in-time evaluation, and public-claim standards |
+| `docs/lean-pilot.md` | $15-target worker limits, recovery, and publication constraints |
+| `docs/storage-benchmark.md` | Offline activity JSONL/Parquet benchmark and source integrity |
+| `docs/enrichment-shadow.md` | Full scorer parity and memory measurements |
 | `docs/prd.md` | Product requirements, MVP scope, success metrics |
 | `docs/architecture.md` | High-level data flow and key principles |
 | `docs/0001-tech-stack.md` | ADR explaining stack choices |

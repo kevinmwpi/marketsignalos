@@ -1,0 +1,723 @@
+{
+  "schema_version": 1,
+  "scope": "Current Gamma observations for frozen candidate missing IDs; no score replay",
+  "source_audit": {
+    "name": "2026-09-10-metadata-coverage.json",
+    "sha256": "bde745cde85869ba6243ad732e350f5ae2da8e5ef4f6f3ed98362eff587a0178"
+  },
+  "source_code_sha256": {
+    "metadata_probe.py": "40476aafec282084d2fd5f09571b938829ff0e3249dac63a31dfbfa2d93a6d78",
+    "metadata_backfill.py": "16dc9886e9d1e4cb8e4d6156b163b187a1293fc8827af7dddcc445fd4978c7f8",
+    "polymarket_client.py": "7256499f2c0f81e3b9a2991a3707abdef0b7cf2b3da5ff773ff72fff67c3c16c"
+  },
+  "candidate_wallets": [
+    "0x521070c99db06e54af5e8e4a91d6858decdfbd53",
+    "0x5a218c7ad04135830a45c41aaed7294df7809318"
+  ],
+  "condition_ids": [
+    "0x04dff3ae2e0bac77e699f9ff1519bf9e6c24ce63d3fba5b79917aefb84e990cd",
+    "0x05f0f2ca10e594cf18e18649e8bdb2557c87afc86db40a8d3ce8e8f2fff95f9b",
+    "0x0615cd2a01d3e2715dadd10de7d54595346b8c05497ff3b6ba176a9dec635b65",
+    "0x0ea5c0b33fc4f1cde61c702721e360846796a697f44ec64fae9f4da9b022ec14",
+    "0x11cf9bde342fdb1a5817af3c9ba30837bdc137823036959931b1a4a3266f56e9",
+    "0x17b30e5a39293e2a99d4ad26e592b20f888f8b1b43808c330ec17581f6367d97",
+    "0x1b24fc774211c0bab4178ff93e30aa350abc74173f179e6b924f3fcce648e09d",
+    "0x23d1fa4a8e69ddb4168ab4449c31548777bffc31078db04a4e011bf8e5f022ca",
+    "0x285e47a185431ab656c330cea6a21a09fda776693f083d9e5694ee116e3d96fe",
+    "0x28a686c6b027172cde29b92466aa40430761c963ff1f50e5061257e3a335b586",
+    "0x2b40d12609767e53f6fb4c86ebbc93b4d979b32a1d0074088efc521e0a182121",
+    "0x3023a27118c30440bbc2ea52fd58d57a24cb5da4b6e75fa23f465b51df44272e",
+    "0x315952d6a2abaa9babeb9907cc1da5aed90d63b2c718d91cffd5864d0755bfa1",
+    "0x33d93445f5cd6a9e4f29ff7c55b79e274954f150a0a8d883ef467fc2773c48e2",
+    "0x363823599b1782ece7776a227f61844a38bf14ba74559617f2cf1704900875c9",
+    "0x3774b2fda98142ab47e5f2765d1a59aba4bc346b3e83711322b3f14fa10fc1aa",
+    "0x3a3b0f4e5bbc305ed9a43a15e7021ff8fcaf50ca465cc957de0aa85900ceb409",
+    "0x3c4bc035b4de12a34d91f9278e50d0be34b56939c5f8b25a4cb082c976740429",
+    "0x3dc9904087f0a522d3bb24cd2168901baaa8c827729aca36c204c4cd17a054ac",
+    "0x41ab404649ec001990e0fcff8f5b24189f8428959437a2ff3b7f6d0105b37bc3",
+    "0x47709ba746f99cff9a13f929bc2e84ffbcd59c3208d81ca4d304175c3d5bb768",
+    "0x4b5801024498dde1a107616da5d6d3ed69ea07c1acfea7fdd9dff1c4f262a8f8",
+    "0x4b91c251f7acc3c89e00ef7a85cf9b6ebe7777c2052ba5b525a180700941f319",
+    "0x5d00d47c897ac60486de8b6d92eeb4adcc8d25db614b5667767e0c994953581e",
+    "0x5d7ea8120e8c96d821126e12989db1c46abad03fd9e254e63c1997fb019e0a68",
+    "0x610b7dee9a81beae6a8be39b607d3d63fd3677fc8b16f621305ceab3afd3b0a8",
+    "0x62a5e2b1df97c4eee5f8e9ce1d47759eb0fab0e7aa13bee6300345a24ccdaf8d",
+    "0x6dc067c5c6c0a54335c3488643537af960ba8e8dfabdd9ad2aa14a9acb948908",
+    "0x6f2212b5098239fefd0befdaf8f2803d9862b72afc4cb15ba1030371195240d8",
+    "0x72c4f10e418725dc55c656ef33141de881176e4ff3abd25a8d844eebc0a085de",
+    "0x72e8df77e09a6af4cea4fdf2421e79bc40b807927cdbd1ae28441db54d075c2b",
+    "0x731e67f2cdae7d6975b4d18e331e40ae37783c78693ee86ed879e8163ff07cc9",
+    "0x73bb57be455ccf8082307b0ba4fa2fa4f981977c774ba2312c9241d8035b2b00",
+    "0x7b7594d896bc7252731831ea29eb8516bc0b560d04abbfaeea57ec31f4d384e6",
+    "0x87a16ecff976fdac69c061c0ec52fb78a516b525da95ca25336545d52087301b",
+    "0x8a5e863719475c43ba846f813d5cef2b74e2f03583dda30df61892556e43bbc1",
+    "0xa288f3715419e5a279c7616af0b2b16a3ab89b6ec2902c474df2fce7488e9e08",
+    "0xb5dd5ee1becafe9e484971c1831dcdb2a53b594230b0f6bd03a631f92a75b455",
+    "0xc809406c9b7cb673d294a323f9b1d1d9ca0d2d2baa79704db9b74f8b00098c90",
+    "0xd2852d7d89088937a511b840fee0f3ce83418890f7bd7a8acceac97c5c33353c",
+    "0xe4a6d1659a2ac20380f4f49479a257f4b44e5f546959252b273a5373caf3dd43"
+  ],
+  "summary": {
+    "conditions": 41,
+    "returned_now": 36,
+    "not_returned_either_filter": 5,
+    "inconclusive": 0
+  },
+  "run": {
+    "schema_version": 1,
+    "started_at": "2026-09-12T08:32:01.433769+00:00",
+    "limits": {
+      "max_conditions": 100,
+      "max_requests": 8,
+      "batch_size": 25
+    },
+    "candidate_conditions": 41,
+    "eligible_lookups": 82,
+    "cooldown_lookups": 0,
+    "requests": 4,
+    "attempted_lookups": 82,
+    "deferred_lookups": 0,
+    "rows_written": 36,
+    "outcomes": {
+      "recorded": 4
+    },
+    "status": "completed",
+    "stored_lookups": 36,
+    "not_returned_lookups": 46,
+    "upstream_retry_at": null,
+    "finished_at": "2026-09-12T08:32:02.237008+00:00"
+  },
+  "attempts": [
+    {
+      "id": 1,
+      "started_at": 1789201921.4343247,
+      "finished_at": 1789201921.699911,
+      "closed": 1,
+      "condition_ids": "[\"0x04dff3ae2e0bac77e699f9ff1519bf9e6c24ce63d3fba5b79917aefb84e990cd\", \"0x05f0f2ca10e594cf18e18649e8bdb2557c87afc86db40a8d3ce8e8f2fff95f9b\", \"0x0615cd2a01d3e2715dadd10de7d54595346b8c05497ff3b6ba176a9dec635b65\", \"0x0ea5c0b33fc4f1cde61c702721e360846796a697f44ec64fae9f4da9b022ec14\", \"0x11cf9bde342fdb1a5817af3c9ba30837bdc137823036959931b1a4a3266f56e9\", \"0x17b30e5a39293e2a99d4ad26e592b20f888f8b1b43808c330ec17581f6367d97\", \"0x1b24fc774211c0bab4178ff93e30aa350abc74173f179e6b924f3fcce648e09d\", \"0x23d1fa4a8e69ddb4168ab4449c31548777bffc31078db04a4e011bf8e5f022ca\", \"0x285e47a185431ab656c330cea6a21a09fda776693f083d9e5694ee116e3d96fe\", \"0x28a686c6b027172cde29b92466aa40430761c963ff1f50e5061257e3a335b586\", \"0x2b40d12609767e53f6fb4c86ebbc93b4d979b32a1d0074088efc521e0a182121\", \"0x3023a27118c30440bbc2ea52fd58d57a24cb5da4b6e75fa23f465b51df44272e\", \"0x315952d6a2abaa9babeb9907cc1da5aed90d63b2c718d91cffd5864d0755bfa1\", \"0x33d93445f5cd6a9e4f29ff7c55b79e274954f150a0a8d883ef467fc2773c48e2\", \"0x363823599b1782ece7776a227f61844a38bf14ba74559617f2cf1704900875c9\", \"0x3774b2fda98142ab47e5f2765d1a59aba4bc346b3e83711322b3f14fa10fc1aa\", \"0x3a3b0f4e5bbc305ed9a43a15e7021ff8fcaf50ca465cc957de0aa85900ceb409\", \"0x3c4bc035b4de12a34d91f9278e50d0be34b56939c5f8b25a4cb082c976740429\", \"0x3dc9904087f0a522d3bb24cd2168901baaa8c827729aca36c204c4cd17a054ac\", \"0x41ab404649ec001990e0fcff8f5b24189f8428959437a2ff3b7f6d0105b37bc3\", \"0x47709ba746f99cff9a13f929bc2e84ffbcd59c3208d81ca4d304175c3d5bb768\", \"0x4b5801024498dde1a107616da5d6d3ed69ea07c1acfea7fdd9dff1c4f262a8f8\", \"0x4b91c251f7acc3c89e00ef7a85cf9b6ebe7777c2052ba5b525a180700941f319\", \"0x5d00d47c897ac60486de8b6d92eeb4adcc8d25db614b5667767e0c994953581e\", \"0x5d7ea8120e8c96d821126e12989db1c46abad03fd9e254e63c1997fb019e0a68\"]",
+      "outcome": "recorded",
+      "http_status": 200,
+      "response_sha256": "873a66b05cf3674b4b34c3776ef9801395bbab18ce03fe0e1484dd4f013c08f1",
+      "returned_ids": "[\"0x04dff3ae2e0bac77e699f9ff1519bf9e6c24ce63d3fba5b79917aefb84e990cd\", \"0x05f0f2ca10e594cf18e18649e8bdb2557c87afc86db40a8d3ce8e8f2fff95f9b\", \"0x0615cd2a01d3e2715dadd10de7d54595346b8c05497ff3b6ba176a9dec635b65\", \"0x0ea5c0b33fc4f1cde61c702721e360846796a697f44ec64fae9f4da9b022ec14\", \"0x11cf9bde342fdb1a5817af3c9ba30837bdc137823036959931b1a4a3266f56e9\", \"0x17b30e5a39293e2a99d4ad26e592b20f888f8b1b43808c330ec17581f6367d97\", \"0x23d1fa4a8e69ddb4168ab4449c31548777bffc31078db04a4e011bf8e5f022ca\", \"0x285e47a185431ab656c330cea6a21a09fda776693f083d9e5694ee116e3d96fe\", \"0x28a686c6b027172cde29b92466aa40430761c963ff1f50e5061257e3a335b586\", \"0x2b40d12609767e53f6fb4c86ebbc93b4d979b32a1d0074088efc521e0a182121\", \"0x3023a27118c30440bbc2ea52fd58d57a24cb5da4b6e75fa23f465b51df44272e\", \"0x315952d6a2abaa9babeb9907cc1da5aed90d63b2c718d91cffd5864d0755bfa1\", \"0x33d93445f5cd6a9e4f29ff7c55b79e274954f150a0a8d883ef467fc2773c48e2\", \"0x363823599b1782ece7776a227f61844a38bf14ba74559617f2cf1704900875c9\", \"0x3774b2fda98142ab47e5f2765d1a59aba4bc346b3e83711322b3f14fa10fc1aa\", \"0x3a3b0f4e5bbc305ed9a43a15e7021ff8fcaf50ca465cc957de0aa85900ceb409\", \"0x3c4bc035b4de12a34d91f9278e50d0be34b56939c5f8b25a4cb082c976740429\", \"0x3dc9904087f0a522d3bb24cd2168901baaa8c827729aca36c204c4cd17a054ac\", \"0x41ab404649ec001990e0fcff8f5b24189f8428959437a2ff3b7f6d0105b37bc3\", \"0x47709ba746f99cff9a13f929bc2e84ffbcd59c3208d81ca4d304175c3d5bb768\", \"0x4b5801024498dde1a107616da5d6d3ed69ea07c1acfea7fdd9dff1c4f262a8f8\", \"0x4b91c251f7acc3c89e00ef7a85cf9b6ebe7777c2052ba5b525a180700941f319\", \"0x5d00d47c897ac60486de8b6d92eeb4adcc8d25db614b5667767e0c994953581e\", \"0x5d7ea8120e8c96d821126e12989db1c46abad03fd9e254e63c1997fb019e0a68\"]",
+      "next_retry_at": 1789205521.4343247
+    },
+    {
+      "id": 2,
+      "started_at": 1789201921.7058342,
+      "finished_at": 1789201921.8745034,
+      "closed": 1,
+      "condition_ids": "[\"0x610b7dee9a81beae6a8be39b607d3d63fd3677fc8b16f621305ceab3afd3b0a8\", \"0x62a5e2b1df97c4eee5f8e9ce1d47759eb0fab0e7aa13bee6300345a24ccdaf8d\", \"0x6dc067c5c6c0a54335c3488643537af960ba8e8dfabdd9ad2aa14a9acb948908\", \"0x6f2212b5098239fefd0befdaf8f2803d9862b72afc4cb15ba1030371195240d8\", \"0x72c4f10e418725dc55c656ef33141de881176e4ff3abd25a8d844eebc0a085de\", \"0x72e8df77e09a6af4cea4fdf2421e79bc40b807927cdbd1ae28441db54d075c2b\", \"0x731e67f2cdae7d6975b4d18e331e40ae37783c78693ee86ed879e8163ff07cc9\", \"0x73bb57be455ccf8082307b0ba4fa2fa4f981977c774ba2312c9241d8035b2b00\", \"0x7b7594d896bc7252731831ea29eb8516bc0b560d04abbfaeea57ec31f4d384e6\", \"0x87a16ecff976fdac69c061c0ec52fb78a516b525da95ca25336545d52087301b\", \"0x8a5e863719475c43ba846f813d5cef2b74e2f03583dda30df61892556e43bbc1\", \"0xa288f3715419e5a279c7616af0b2b16a3ab89b6ec2902c474df2fce7488e9e08\", \"0xb5dd5ee1becafe9e484971c1831dcdb2a53b594230b0f6bd03a631f92a75b455\", \"0xc809406c9b7cb673d294a323f9b1d1d9ca0d2d2baa79704db9b74f8b00098c90\", \"0xd2852d7d89088937a511b840fee0f3ce83418890f7bd7a8acceac97c5c33353c\", \"0xe4a6d1659a2ac20380f4f49479a257f4b44e5f546959252b273a5373caf3dd43\"]",
+      "outcome": "recorded",
+      "http_status": 200,
+      "response_sha256": "5fa7446c6f8c34db15053e61fdc3d5149fb076d31bdd8985a484f0178352574b",
+      "returned_ids": "[\"0x610b7dee9a81beae6a8be39b607d3d63fd3677fc8b16f621305ceab3afd3b0a8\", \"0x62a5e2b1df97c4eee5f8e9ce1d47759eb0fab0e7aa13bee6300345a24ccdaf8d\", \"0x6f2212b5098239fefd0befdaf8f2803d9862b72afc4cb15ba1030371195240d8\", \"0x72c4f10e418725dc55c656ef33141de881176e4ff3abd25a8d844eebc0a085de\", \"0x731e67f2cdae7d6975b4d18e331e40ae37783c78693ee86ed879e8163ff07cc9\", \"0x73bb57be455ccf8082307b0ba4fa2fa4f981977c774ba2312c9241d8035b2b00\", \"0x7b7594d896bc7252731831ea29eb8516bc0b560d04abbfaeea57ec31f4d384e6\", \"0x87a16ecff976fdac69c061c0ec52fb78a516b525da95ca25336545d52087301b\", \"0xa288f3715419e5a279c7616af0b2b16a3ab89b6ec2902c474df2fce7488e9e08\", \"0xb5dd5ee1becafe9e484971c1831dcdb2a53b594230b0f6bd03a631f92a75b455\", \"0xc809406c9b7cb673d294a323f9b1d1d9ca0d2d2baa79704db9b74f8b00098c90\", \"0xe4a6d1659a2ac20380f4f49479a257f4b44e5f546959252b273a5373caf3dd43\"]",
+      "next_retry_at": 1789205521.7058342
+    },
+    {
+      "id": 3,
+      "started_at": 1789201921.8804462,
+      "finished_at": 1789201922.0520885,
+      "closed": 0,
+      "condition_ids": "[\"0x04dff3ae2e0bac77e699f9ff1519bf9e6c24ce63d3fba5b79917aefb84e990cd\", \"0x05f0f2ca10e594cf18e18649e8bdb2557c87afc86db40a8d3ce8e8f2fff95f9b\", \"0x0615cd2a01d3e2715dadd10de7d54595346b8c05497ff3b6ba176a9dec635b65\", \"0x0ea5c0b33fc4f1cde61c702721e360846796a697f44ec64fae9f4da9b022ec14\", \"0x11cf9bde342fdb1a5817af3c9ba30837bdc137823036959931b1a4a3266f56e9\", \"0x17b30e5a39293e2a99d4ad26e592b20f888f8b1b43808c330ec17581f6367d97\", \"0x1b24fc774211c0bab4178ff93e30aa350abc74173f179e6b924f3fcce648e09d\", \"0x23d1fa4a8e69ddb4168ab4449c31548777bffc31078db04a4e011bf8e5f022ca\", \"0x285e47a185431ab656c330cea6a21a09fda776693f083d9e5694ee116e3d96fe\", \"0x28a686c6b027172cde29b92466aa40430761c963ff1f50e5061257e3a335b586\", \"0x2b40d12609767e53f6fb4c86ebbc93b4d979b32a1d0074088efc521e0a182121\", \"0x3023a27118c30440bbc2ea52fd58d57a24cb5da4b6e75fa23f465b51df44272e\", \"0x315952d6a2abaa9babeb9907cc1da5aed90d63b2c718d91cffd5864d0755bfa1\", \"0x33d93445f5cd6a9e4f29ff7c55b79e274954f150a0a8d883ef467fc2773c48e2\", \"0x363823599b1782ece7776a227f61844a38bf14ba74559617f2cf1704900875c9\", \"0x3774b2fda98142ab47e5f2765d1a59aba4bc346b3e83711322b3f14fa10fc1aa\", \"0x3a3b0f4e5bbc305ed9a43a15e7021ff8fcaf50ca465cc957de0aa85900ceb409\", \"0x3c4bc035b4de12a34d91f9278e50d0be34b56939c5f8b25a4cb082c976740429\", \"0x3dc9904087f0a522d3bb24cd2168901baaa8c827729aca36c204c4cd17a054ac\", \"0x41ab404649ec001990e0fcff8f5b24189f8428959437a2ff3b7f6d0105b37bc3\", \"0x47709ba746f99cff9a13f929bc2e84ffbcd59c3208d81ca4d304175c3d5bb768\", \"0x4b5801024498dde1a107616da5d6d3ed69ea07c1acfea7fdd9dff1c4f262a8f8\", \"0x4b91c251f7acc3c89e00ef7a85cf9b6ebe7777c2052ba5b525a180700941f319\", \"0x5d00d47c897ac60486de8b6d92eeb4adcc8d25db614b5667767e0c994953581e\", \"0x5d7ea8120e8c96d821126e12989db1c46abad03fd9e254e63c1997fb019e0a68\"]",
+      "outcome": "recorded",
+      "http_status": 200,
+      "response_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "returned_ids": "[]",
+      "next_retry_at": 1789205521.8804462
+    },
+    {
+      "id": 4,
+      "started_at": 1789201922.057597,
+      "finished_at": 1789201922.2217298,
+      "closed": 0,
+      "condition_ids": "[\"0x610b7dee9a81beae6a8be39b607d3d63fd3677fc8b16f621305ceab3afd3b0a8\", \"0x62a5e2b1df97c4eee5f8e9ce1d47759eb0fab0e7aa13bee6300345a24ccdaf8d\", \"0x6dc067c5c6c0a54335c3488643537af960ba8e8dfabdd9ad2aa14a9acb948908\", \"0x6f2212b5098239fefd0befdaf8f2803d9862b72afc4cb15ba1030371195240d8\", \"0x72c4f10e418725dc55c656ef33141de881176e4ff3abd25a8d844eebc0a085de\", \"0x72e8df77e09a6af4cea4fdf2421e79bc40b807927cdbd1ae28441db54d075c2b\", \"0x731e67f2cdae7d6975b4d18e331e40ae37783c78693ee86ed879e8163ff07cc9\", \"0x73bb57be455ccf8082307b0ba4fa2fa4f981977c774ba2312c9241d8035b2b00\", \"0x7b7594d896bc7252731831ea29eb8516bc0b560d04abbfaeea57ec31f4d384e6\", \"0x87a16ecff976fdac69c061c0ec52fb78a516b525da95ca25336545d52087301b\", \"0x8a5e863719475c43ba846f813d5cef2b74e2f03583dda30df61892556e43bbc1\", \"0xa288f3715419e5a279c7616af0b2b16a3ab89b6ec2902c474df2fce7488e9e08\", \"0xb5dd5ee1becafe9e484971c1831dcdb2a53b594230b0f6bd03a631f92a75b455\", \"0xc809406c9b7cb673d294a323f9b1d1d9ca0d2d2baa79704db9b74f8b00098c90\", \"0xd2852d7d89088937a511b840fee0f3ce83418890f7bd7a8acceac97c5c33353c\", \"0xe4a6d1659a2ac20380f4f49479a257f4b44e5f546959252b273a5373caf3dd43\"]",
+      "outcome": "recorded",
+      "http_status": 200,
+      "response_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "returned_ids": "[]",
+      "next_retry_at": 1789205522.057597
+    }
+  ],
+  "condition_observations": [
+    {
+      "condition_id": "0x04dff3ae2e0bac77e699f9ff1519bf9e6c24ce63d3fba5b79917aefb84e990cd",
+      "closed": 1,
+      "attempted_at": 1789201921.4343247,
+      "next_retry_at": 1789205522.2310572,
+      "outcome": "stored"
+    },
+    {
+      "condition_id": "0x04dff3ae2e0bac77e699f9ff1519bf9e6c24ce63d3fba5b79917aefb84e990cd",
+      "closed": 0,
+      "attempted_at": 1789201921.8804462,
+      "next_retry_at": 1789288322.2310572,
+      "outcome": "not_returned"
+    },
+    {
+      "condition_id": "0x05f0f2ca10e594cf18e18649e8bdb2557c87afc86db40a8d3ce8e8f2fff95f9b",
+      "closed": 1,
+      "attempted_at": 1789201921.4343247,
+      "next_retry_at": 1789205522.2310572,
+      "outcome": "stored"
+    },
+    {
+      "condition_id": "0x05f0f2ca10e594cf18e18649e8bdb2557c87afc86db40a8d3ce8e8f2fff95f9b",
+      "closed": 0,
+      "attempted_at": 1789201921.8804462,
+      "next_retry_at": 1789288322.2310572,
+      "outcome": "not_returned"
+    },
+    {
+      "condition_id": "0x0615cd2a01d3e2715dadd10de7d54595346b8c05497ff3b6ba176a9dec635b65",
+      "closed": 1,
+      "attempted_at": 1789201921.4343247,
+      "next_retry_at": 1789205522.2310572,
+      "outcome": "stored"
+    },
+    {
+      "condition_id": "0x0615cd2a01d3e2715dadd10de7d54595346b8c05497ff3b6ba176a9dec635b65",
+      "closed": 0,
+      "attempted_at": 1789201921.8804462,
+      "next_retry_at": 1789288322.2310572,
+      "outcome": "not_returned"
+    },
+    {
+      "condition_id": "0x0ea5c0b33fc4f1cde61c702721e360846796a697f44ec64fae9f4da9b022ec14",
+      "closed": 1,
+      "attempted_at": 1789201921.4343247,
+      "next_retry_at": 1789205522.2310572,
+      "outcome": "stored"
+    },
+    {
+      "condition_id": "0x0ea5c0b33fc4f1cde61c702721e360846796a697f44ec64fae9f4da9b022ec14",
+      "closed": 0,
+      "attempted_at": 1789201921.8804462,
+      "next_retry_at": 1789288322.2310572,
+      "outcome": "not_returned"
+    },
+    {
+      "condition_id": "0x11cf9bde342fdb1a5817af3c9ba30837bdc137823036959931b1a4a3266f56e9",
+      "closed": 1,
+      "attempted_at": 1789201921.4343247,
+      "next_retry_at": 1789205522.2310572,
+      "outcome": "stored"
+    },
+    {
+      "condition_id": "0x11cf9bde342fdb1a5817af3c9ba30837bdc137823036959931b1a4a3266f56e9",
+      "closed": 0,
+      "attempted_at": 1789201921.8804462,
+      "next_retry_at": 1789288322.2310572,
+      "outcome": "not_returned"
+    },
+    {
+      "condition_id": "0x17b30e5a39293e2a99d4ad26e592b20f888f8b1b43808c330ec17581f6367d97",
+      "closed": 1,
+      "attempted_at": 1789201921.4343247,
+      "next_retry_at": 1789205522.2310572,
+      "outcome": "stored"
+    },
+    {
+      "condition_id": "0x17b30e5a39293e2a99d4ad26e592b20f888f8b1b43808c330ec17581f6367d97",
+      "closed": 0,
+      "attempted_at": 1789201921.8804462,
+      "next_retry_at": 1789288322.2310572,
+      "outcome": "not_returned"
+    },
+    {
+      "condition_id": "0x1b24fc774211c0bab4178ff93e30aa350abc74173f179e6b924f3fcce648e09d",
+      "closed": 1,
+      "attempted_at": 1789201921.4343247,
+      "next_retry_at": 1789288322.2310572,
+      "outcome": "not_returned"
+    },
+    {
+      "condition_id": "0x1b24fc774211c0bab4178ff93e30aa350abc74173f179e6b924f3fcce648e09d",
+      "closed": 0,
+      "attempted_at": 1789201921.8804462,
+      "next_retry_at": 1789288322.2310572,
+      "outcome": "not_returned"
+    },
+    {
+      "condition_id": "0x23d1fa4a8e69ddb4168ab4449c31548777bffc31078db04a4e011bf8e5f022ca",
+      "closed": 1,
+      "attempted_at": 1789201921.4343247,
+      "next_retry_at": 1789205522.2310572,
+      "outcome": "stored"
+    },
+    {
+      "condition_id": "0x23d1fa4a8e69ddb4168ab4449c31548777bffc31078db04a4e011bf8e5f022ca",
+      "closed": 0,
+      "attempted_at": 1789201921.8804462,
+      "next_retry_at": 1789288322.2310572,
+      "outcome": "not_returned"
+    },
+    {
+      "condition_id": "0x285e47a185431ab656c330cea6a21a09fda776693f083d9e5694ee116e3d96fe",
+      "closed": 1,
+      "attempted_at": 1789201921.4343247,
+      "next_retry_at": 1789205522.2310572,
+      "outcome": "stored"
+    },
+    {
+      "condition_id": "0x285e47a185431ab656c330cea6a21a09fda776693f083d9e5694ee116e3d96fe",
+      "closed": 0,
+      "attempted_at": 1789201921.8804462,
+      "next_retry_at": 1789288322.2310572,
+      "outcome": "not_returned"
+    },
+    {
+      "condition_id": "0x28a686c6b027172cde29b92466aa40430761c963ff1f50e5061257e3a335b586",
+      "closed": 1,
+      "attempted_at": 1789201921.4343247,
+      "next_retry_at": 1789205522.2310572,
+      "outcome": "stored"
+    },
+    {
+      "condition_id": "0x28a686c6b027172cde29b92466aa40430761c963ff1f50e5061257e3a335b586",
+      "closed": 0,
+      "attempted_at": 1789201921.8804462,
+      "next_retry_at": 1789288322.2310572,
+      "outcome": "not_returned"
+    },
+    {
+      "condition_id": "0x2b40d12609767e53f6fb4c86ebbc93b4d979b32a1d0074088efc521e0a182121",
+      "closed": 1,
+      "attempted_at": 1789201921.4343247,
+      "next_retry_at": 1789205522.2310572,
+      "outcome": "stored"
+    },
+    {
+      "condition_id": "0x2b40d12609767e53f6fb4c86ebbc93b4d979b32a1d0074088efc521e0a182121",
+      "closed": 0,
+      "attempted_at": 1789201921.8804462,
+      "next_retry_at": 1789288322.2310572,
+      "outcome": "not_returned"
+    },
+    {
+      "condition_id": "0x3023a27118c30440bbc2ea52fd58d57a24cb5da4b6e75fa23f465b51df44272e",
+      "closed": 1,
+      "attempted_at": 1789201921.4343247,
+      "next_retry_at": 1789205522.2310572,
+      "outcome": "stored"
+    },
+    {
+      "condition_id": "0x3023a27118c30440bbc2ea52fd58d57a24cb5da4b6e75fa23f465b51df44272e",
+      "closed": 0,
+      "attempted_at": 1789201921.8804462,
+      "next_retry_at": 1789288322.2310572,
+      "outcome": "not_returned"
+    },
+    {
+      "condition_id": "0x315952d6a2abaa9babeb9907cc1da5aed90d63b2c718d91cffd5864d0755bfa1",
+      "closed": 1,
+      "attempted_at": 1789201921.4343247,
+      "next_retry_at": 1789205522.2310572,
+      "outcome": "stored"
+    },
+    {
+      "condition_id": "0x315952d6a2abaa9babeb9907cc1da5aed90d63b2c718d91cffd5864d0755bfa1",
+      "closed": 0,
+      "attempted_at": 1789201921.8804462,
+      "next_retry_at": 1789288322.2310572,
+      "outcome": "not_returned"
+    },
+    {
+      "condition_id": "0x33d93445f5cd6a9e4f29ff7c55b79e274954f150a0a8d883ef467fc2773c48e2",
+      "closed": 1,
+      "attempted_at": 1789201921.4343247,
+      "next_retry_at": 1789205522.2310572,
+      "outcome": "stored"
+    },
+    {
+      "condition_id": "0x33d93445f5cd6a9e4f29ff7c55b79e274954f150a0a8d883ef467fc2773c48e2",
+      "closed": 0,
+      "attempted_at": 1789201921.8804462,
+      "next_retry_at": 1789288322.2310572,
+      "outcome": "not_returned"
+    },
+    {
+      "condition_id": "0x363823599b1782ece7776a227f61844a38bf14ba74559617f2cf1704900875c9",
+      "closed": 1,
+      "attempted_at": 1789201921.4343247,
+      "next_retry_at": 1789205522.2310572,
+      "outcome": "stored"
+    },
+    {
+      "condition_id": "0x363823599b1782ece7776a227f61844a38bf14ba74559617f2cf1704900875c9",
+      "closed": 0,
+      "attempted_at": 1789201921.8804462,
+      "next_retry_at": 1789288322.2310572,
+      "outcome": "not_returned"
+    },
+    {
+      "condition_id": "0x3774b2fda98142ab47e5f2765d1a59aba4bc346b3e83711322b3f14fa10fc1aa",
+      "closed": 1,
+      "attempted_at": 1789201921.4343247,
+      "next_retry_at": 1789205522.2310572,
+      "outcome": "stored"
+    },
+    {
+      "condition_id": "0x3774b2fda98142ab47e5f2765d1a59aba4bc346b3e83711322b3f14fa10fc1aa",
+      "closed": 0,
+      "attempted_at": 1789201921.8804462,
+      "next_retry_at": 1789288322.2310572,
+      "outcome": "not_returned"
+    },
+    {
+      "condition_id": "0x3a3b0f4e5bbc305ed9a43a15e7021ff8fcaf50ca465cc957de0aa85900ceb409",
+      "closed": 1,
+      "attempted_at": 1789201921.4343247,
+      "next_retry_at": 1789205522.2310572,
+      "outcome": "stored"
+    },
+    {
+      "condition_id": "0x3a3b0f4e5bbc305ed9a43a15e7021ff8fcaf50ca465cc957de0aa85900ceb409",
+      "closed": 0,
+      "attempted_at": 1789201921.8804462,
+      "next_retry_at": 1789288322.2310572,
+      "outcome": "not_returned"
+    },
+    {
+      "condition_id": "0x3c4bc035b4de12a34d91f9278e50d0be34b56939c5f8b25a4cb082c976740429",
+      "closed": 1,
+      "attempted_at": 1789201921.4343247,
+      "next_retry_at": 1789205522.2310572,
+      "outcome": "stored"
+    },
+    {
+      "condition_id": "0x3c4bc035b4de12a34d91f9278e50d0be34b56939c5f8b25a4cb082c976740429",
+      "closed": 0,
+      "attempted_at": 1789201921.8804462,
+      "next_retry_at": 1789288322.2310572,
+      "outcome": "not_returned"
+    },
+    {
+      "condition_id": "0x3dc9904087f0a522d3bb24cd2168901baaa8c827729aca36c204c4cd17a054ac",
+      "closed": 1,
+      "attempted_at": 1789201921.4343247,
+      "next_retry_at": 1789205522.2310572,
+      "outcome": "stored"
+    },
+    {
+      "condition_id": "0x3dc9904087f0a522d3bb24cd2168901baaa8c827729aca36c204c4cd17a054ac",
+      "closed": 0,
+      "attempted_at": 1789201921.8804462,
+      "next_retry_at": 1789288322.2310572,
+      "outcome": "not_returned"
+    },
+    {
+      "condition_id": "0x41ab404649ec001990e0fcff8f5b24189f8428959437a2ff3b7f6d0105b37bc3",
+      "closed": 1,
+      "attempted_at": 1789201921.4343247,
+      "next_retry_at": 1789205522.2310572,
+      "outcome": "stored"
+    },
+    {
+      "condition_id": "0x41ab404649ec001990e0fcff8f5b24189f8428959437a2ff3b7f6d0105b37bc3",
+      "closed": 0,
+      "attempted_at": 1789201921.8804462,
+      "next_retry_at": 1789288322.2310572,
+      "outcome": "not_returned"
+    },
+    {
+      "condition_id": "0x47709ba746f99cff9a13f929bc2e84ffbcd59c3208d81ca4d304175c3d5bb768",
+      "closed": 1,
+      "attempted_at": 1789201921.4343247,
+      "next_retry_at": 1789205522.2310572,
+      "outcome": "stored"
+    },
+    {
+      "condition_id": "0x47709ba746f99cff9a13f929bc2e84ffbcd59c3208d81ca4d304175c3d5bb768",
+      "closed": 0,
+      "attempted_at": 1789201921.8804462,
+      "next_retry_at": 1789288322.2310572,
+      "outcome": "not_returned"
+    },
+    {
+      "condition_id": "0x4b5801024498dde1a107616da5d6d3ed69ea07c1acfea7fdd9dff1c4f262a8f8",
+      "closed": 1,
+      "attempted_at": 1789201921.4343247,
+      "next_retry_at": 1789205522.2310572,
+      "outcome": "stored"
+    },
+    {
+      "condition_id": "0x4b5801024498dde1a107616da5d6d3ed69ea07c1acfea7fdd9dff1c4f262a8f8",
+      "closed": 0,
+      "attempted_at": 1789201921.8804462,
+      "next_retry_at": 1789288322.2310572,
+      "outcome": "not_returned"
+    },
+    {
+      "condition_id": "0x4b91c251f7acc3c89e00ef7a85cf9b6ebe7777c2052ba5b525a180700941f319",
+      "closed": 1,
+      "attempted_at": 1789201921.4343247,
+      "next_retry_at": 1789205522.2310572,
+      "outcome": "stored"
+    },
+    {
+      "condition_id": "0x4b91c251f7acc3c89e00ef7a85cf9b6ebe7777c2052ba5b525a180700941f319",
+      "closed": 0,
+      "attempted_at": 1789201921.8804462,
+      "next_retry_at": 1789288322.2310572,
+      "outcome": "not_returned"
+    },
+    {
+      "condition_id": "0x5d00d47c897ac60486de8b6d92eeb4adcc8d25db614b5667767e0c994953581e",
+      "closed": 1,
+      "attempted_at": 1789201921.4343247,
+      "next_retry_at": 1789205522.2310572,
+      "outcome": "stored"
+    },
+    {
+      "condition_id": "0x5d00d47c897ac60486de8b6d92eeb4adcc8d25db614b5667767e0c994953581e",
+      "closed": 0,
+      "attempted_at": 1789201921.8804462,
+      "next_retry_at": 1789288322.2310572,
+      "outcome": "not_returned"
+    },
+    {
+      "condition_id": "0x5d7ea8120e8c96d821126e12989db1c46abad03fd9e254e63c1997fb019e0a68",
+      "closed": 1,
+      "attempted_at": 1789201921.4343247,
+      "next_retry_at": 1789205522.2310572,
+      "outcome": "stored"
+    },
+    {
+      "condition_id": "0x5d7ea8120e8c96d821126e12989db1c46abad03fd9e254e63c1997fb019e0a68",
+      "closed": 0,
+      "attempted_at": 1789201921.8804462,
+      "next_retry_at": 1789288322.2310572,
+      "outcome": "not_returned"
+    },
+    {
+      "condition_id": "0x610b7dee9a81beae6a8be39b607d3d63fd3677fc8b16f621305ceab3afd3b0a8",
+      "closed": 1,
+      "attempted_at": 1789201921.7058342,
+      "next_retry_at": 1789205522.2310572,
+      "outcome": "stored"
+    },
+    {
+      "condition_id": "0x610b7dee9a81beae6a8be39b607d3d63fd3677fc8b16f621305ceab3afd3b0a8",
+      "closed": 0,
+      "attempted_at": 1789201922.057597,
+      "next_retry_at": 1789288322.2310572,
+      "outcome": "not_returned"
+    },
+    {
+      "condition_id": "0x62a5e2b1df97c4eee5f8e9ce1d47759eb0fab0e7aa13bee6300345a24ccdaf8d",
+      "closed": 1,
+      "attempted_at": 1789201921.7058342,
+      "next_retry_at": 1789205522.2310572,
+      "outcome": "stored"
+    },
+    {
+      "condition_id": "0x62a5e2b1df97c4eee5f8e9ce1d47759eb0fab0e7aa13bee6300345a24ccdaf8d",
+      "closed": 0,
+      "attempted_at": 1789201922.057597,
+      "next_retry_at": 1789288322.2310572,
+      "outcome": "not_returned"
+    },
+    {
+      "condition_id": "0x6dc067c5c6c0a54335c3488643537af960ba8e8dfabdd9ad2aa14a9acb948908",
+      "closed": 1,
+      "attempted_at": 1789201921.7058342,
+      "next_retry_at": 1789288322.2310572,
+      "outcome": "not_returned"
+    },
+    {
+      "condition_id": "0x6dc067c5c6c0a54335c3488643537af960ba8e8dfabdd9ad2aa14a9acb948908",
+      "closed": 0,
+      "attempted_at": 1789201922.057597,
+      "next_retry_at": 1789288322.2310572,
+      "outcome": "not_returned"
+    },
+    {
+      "condition_id": "0x6f2212b5098239fefd0befdaf8f2803d9862b72afc4cb15ba1030371195240d8",
+      "closed": 1,
+      "attempted_at": 1789201921.7058342,
+      "next_retry_at": 1789205522.2310572,
+      "outcome": "stored"
+    },
+    {
+      "condition_id": "0x6f2212b5098239fefd0befdaf8f2803d9862b72afc4cb15ba1030371195240d8",
+      "closed": 0,
+      "attempted_at": 1789201922.057597,
+      "next_retry_at": 1789288322.2310572,
+      "outcome": "not_returned"
+    },
+    {
+      "condition_id": "0x72c4f10e418725dc55c656ef33141de881176e4ff3abd25a8d844eebc0a085de",
+      "closed": 1,
+      "attempted_at": 1789201921.7058342,
+      "next_retry_at": 1789205522.2310572,
+      "outcome": "stored"
+    },
+    {
+      "condition_id": "0x72c4f10e418725dc55c656ef33141de881176e4ff3abd25a8d844eebc0a085de",
+      "closed": 0,
+      "attempted_at": 1789201922.057597,
+      "next_retry_at": 1789288322.2310572,
+      "outcome": "not_returned"
+    },
+    {
+      "condition_id": "0x72e8df77e09a6af4cea4fdf2421e79bc40b807927cdbd1ae28441db54d075c2b",
+      "closed": 1,
+      "attempted_at": 1789201921.7058342,
+      "next_retry_at": 1789288322.2310572,
+      "outcome": "not_returned"
+    },
+    {
+      "condition_id": "0x72e8df77e09a6af4cea4fdf2421e79bc40b807927cdbd1ae28441db54d075c2b",
+      "closed": 0,
+      "attempted_at": 1789201922.057597,
+      "next_retry_at": 1789288322.2310572,
+      "outcome": "not_returned"
+    },
+    {
+      "condition_id": "0x731e67f2cdae7d6975b4d18e331e40ae37783c78693ee86ed879e8163ff07cc9",
+      "closed": 1,
+      "attempted_at": 1789201921.7058342,
+      "next_retry_at": 1789205522.2310572,
+      "outcome": "stored"
+    },
+    {
+      "condition_id": "0x731e67f2cdae7d6975b4d18e331e40ae37783c78693ee86ed879e8163ff07cc9",
+      "closed": 0,
+      "attempted_at": 1789201922.057597,
+      "next_retry_at": 1789288322.2310572,
+      "outcome": "not_returned"
+    },
+    {
+      "condition_id": "0x73bb57be455ccf8082307b0ba4fa2fa4f981977c774ba2312c9241d8035b2b00",
+      "closed": 1,
+      "attempted_at": 1789201921.7058342,
+      "next_retry_at": 1789205522.2310572,
+      "outcome": "stored"
+    },
+    {
+      "condition_id": "0x73bb57be455ccf8082307b0ba4fa2fa4f981977c774ba2312c9241d8035b2b00",
+      "closed": 0,
+      "attempted_at": 1789201922.057597,
+      "next_retry_at": 1789288322.2310572,
+      "outcome": "not_returned"
+    },
+    {
+      "condition_id": "0x7b7594d896bc7252731831ea29eb8516bc0b560d04abbfaeea57ec31f4d384e6",
+      "closed": 1,
+      "attempted_at": 1789201921.7058342,
+      "next_retry_at": 1789205522.2310572,
+      "outcome": "stored"
+    },
+    {
+      "condition_id": "0x7b7594d896bc7252731831ea29eb8516bc0b560d04abbfaeea57ec31f4d384e6",
+      "closed": 0,
+      "attempted_at": 1789201922.057597,
+      "next_retry_at": 1789288322.2310572,
+      "outcome": "not_returned"
+    },
+    {
+      "condition_id": "0x87a16ecff976fdac69c061c0ec52fb78a516b525da95ca25336545d52087301b",
+      "closed": 1,
+      "attempted_at": 1789201921.7058342,
+      "next_retry_at": 1789205522.2310572,
+      "outcome": "stored"
+    },
+    {
+      "condition_id": "0x87a16ecff976fdac69c061c0ec52fb78a516b525da95ca25336545d52087301b",
+      "closed": 0,
+      "attempted_at": 1789201922.057597,
+      "next_retry_at": 1789288322.2310572,
+      "outcome": "not_returned"
+    },
+    {
+      "condition_id": "0x8a5e863719475c43ba846f813d5cef2b74e2f03583dda30df61892556e43bbc1",
+      "closed": 1,
+      "attempted_at": 1789201921.7058342,
+      "next_retry_at": 1789288322.2310572,
+      "outcome": "not_returned"
+    },
+    {
+      "condition_id": "0x8a5e863719475c43ba846f813d5cef2b74e2f03583dda30df61892556e43bbc1",
+      "closed": 0,
+      "attempted_at": 1789201922.057597,
+      "next_retry_at": 1789288322.2310572,
+      "outcome": "not_returned"
+    },
+    {
+      "condition_id": "0xa288f3715419e5a279c7616af0b2b16a3ab89b6ec2902c474df2fce7488e9e08",
+      "closed": 1,
+      "attempted_at": 1789201921.7058342,
+      "next_retry_at": 1789205522.2310572,
+      "outcome": "stored"
+    },
+    {
+      "condition_id": "0xa288f3715419e5a279c7616af0b2b16a3ab89b6ec2902c474df2fce7488e9e08",
+      "closed": 0,
+      "attempted_at": 1789201922.057597,
+      "next_retry_at": 1789288322.2310572,
+      "outcome": "not_returned"
+    },
+    {
+      "condition_id": "0xb5dd5ee1becafe9e484971c1831dcdb2a53b594230b0f6bd03a631f92a75b455",
+      "closed": 1,
+      "attempted_at": 1789201921.7058342,
+      "next_retry_at": 1789205522.2310572,
+      "outcome": "stored"
+    },
+    {
+      "condition_id": "0xb5dd5ee1becafe9e484971c1831dcdb2a53b594230b0f6bd03a631f92a75b455",
+      "closed": 0,
+      "attempted_at": 1789201922.057597,
+      "next_retry_at": 1789288322.2310572,
+      "outcome": "not_returned"
+    },
+    {
+      "condition_id": "0xc809406c9b7cb673d294a323f9b1d1d9ca0d2d2baa79704db9b74f8b00098c90",
+      "closed": 1,
+      "attempted_at": 1789201921.7058342,
+      "next_retry_at": 1789205522.2310572,
+      "outcome": "stored"
+    },
+    {
+      "condition_id": "0xc809406c9b7cb673d294a323f9b1d1d9ca0d2d2baa79704db9b74f8b00098c90",
+      "closed": 0,
+      "attempted_at": 1789201922.057597,
+      "next_retry_at": 1789288322.2310572,
+      "outcome": "not_returned"
+    },
+    {
+      "condition_id": "0xd2852d7d89088937a511b840fee0f3ce83418890f7bd7a8acceac97c5c33353c",
+      "closed": 1,
+      "attempted_at": 1789201921.7058342,
+      "next_retry_at": 1789288322.2310572,
+      "outcome": "not_returned"
+    },
+    {
+      "condition_id": "0xd2852d7d89088937a511b840fee0f3ce83418890f7bd7a8acceac97c5c33353c",
+      "closed": 0,
+      "attempted_at": 1789201922.057597,
+      "next_retry_at": 1789288322.2310572,
+      "outcome": "not_returned"
+    },
+    {
+      "condition_id": "0xe4a6d1659a2ac20380f4f49479a257f4b44e5f546959252b273a5373caf3dd43",
+      "closed": 1,
+      "attempted_at": 1789201921.7058342,
+      "next_retry_at": 1789205522.2310572,
+      "outcome": "stored"
+    },
+    {
+      "condition_id": "0xe4a6d1659a2ac20380f4f49479a257f4b44e5f546959252b273a5373caf3dd43",
+      "closed": 0,
+      "attempted_at": 1789201922.057597,
+      "next_retry_at": 1789288322.2310572,
+      "outcome": "not_returned"
+    }
+  ],
+  "observations_sha256": "a5d2a30638f89a2324d20bf1737403b33b586abfde159e36f10cf477cedd229d",
+  "limitations": [
+    "This does not establish why the historical store lacked a row.",
+    "An empty filtered list is not an individual-market HTTP 404 or proof of nonexistence.",
+    "No historical market, hydration, activity, score, or qualification file was changed.",
+    "Raw responses are kept only in the isolated local output; hashes cover canonical JSON."
+  ]
+}
