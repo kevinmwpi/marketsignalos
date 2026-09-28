@@ -229,3 +229,25 @@ def test_mounted_backend_protects_private_reads(monkeypatch: pytest.MonkeyPatch)
     assert client.get("/api/ingestor/status", headers={
         "Authorization": "Bearer " + "a" * 32,
     }).status_code == 200
+
+
+def test_public_startup_preserves_another_workers_receipt(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    from marketsignalos_api import main
+
+    monkeypatch.setenv("API_READ_ONLY", "1")
+    monkeypatch.setenv("APP_ENV", "production")
+    monkeypatch.setattr(ingestor, "_state", {"running": False})
+
+    def never() -> None:
+        pytest.fail("Public serving must not start a collector")
+
+    monkeypatch.setattr(main, "start_scheduler_from_env", never)
+    monkeypatch.setattr(main, "start_fastlane_from_env", never)
+    save_receipt({"running": True, "kind": "shallow"})
+    receipt = (tmp_path / "platform_run.json").read_bytes()
+    with TestClient(create_app()) as client:
+        assert client.get("/health").status_code == 200
+        assert client.get("/platform/status").json()["ingestion_running"] is True
+    assert (tmp_path / "platform_run.json").read_bytes() == receipt

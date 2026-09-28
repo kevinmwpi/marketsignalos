@@ -30,7 +30,7 @@ from marketsignalos_api.services.ingest_scheduler import (
     start_scheduler_from_env,
     stop_scheduler,
 )
-from marketsignalos_api.services.platform_status import restore_run
+from marketsignalos_api.services.platform_status import load_receipt, restore_run
 
 
 @asynccontextmanager
@@ -46,14 +46,17 @@ async def _lifespan(_app: FastAPI) -> AsyncIterator[None]:
 
     validate_cloud_config()
     register_pipeline_metrics()
-    receipt = restore_run()
+    # A public reader must not declare a separate writer's active run interrupted.
+    read_only = os.getenv("API_READ_ONLY") == "1"
+    receipt = load_receipt() if read_only else restore_run()
     with _lock:
         for key in ("running", "kind", "last_started_at", "last_finished_at",
                     "last_exit_code", "last_summary"):
             if key in receipt:
                 _state[key] = receipt[key]
-    start_scheduler_from_env()
-    start_fastlane_from_env()
+    if not read_only:
+        start_scheduler_from_env()
+        start_fastlane_from_env()
     try:
         yield
     finally:
