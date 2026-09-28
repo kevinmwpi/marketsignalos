@@ -3,7 +3,8 @@ name: Integration checks
 on:
   pull_request:
   push:
-    branches: [main]
+    # Validate this migration branch even while GitHub prepares its large PR merge.
+    branches: [main, codex/lean-pilot-replit-integration]
 
 permissions:
   contents: read

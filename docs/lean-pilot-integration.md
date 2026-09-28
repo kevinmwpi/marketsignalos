@@ -61,6 +61,12 @@ and both metadata probe tests then passed. Backend lint, strict cross-package
 types (107 files), dashboard types and four loader tests passed. The PR checks
 provide the complete final-tree rerun on both operating systems.
 
+The [initial integration CI run](https://github.com/kevinmwpi/marketsignalos/actions/runs/36484120591)
+passed all three jobs: 647 Python tests on Linux, 646 plus one platform skip on
+Windows, and the dashboard tests/build. A subsequent startup safeguard also leaves
+another writer's receipt untouched; its dedicated local tests pass. Always use
+the checks on the latest commit for the merge decision, not this earlier run.
+
 After merging, sync Replit and republish once, then check `/api/healthz`,
 `/api/platform/status`, the feed routes and the research capture date. GitHub
 snapshot updates continue independently and do not need recurring deployments.
