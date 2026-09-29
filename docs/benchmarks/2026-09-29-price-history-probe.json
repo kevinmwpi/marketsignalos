@@ -1,0 +1,4232 @@
+{
+ "schema_version": 1,
+ "started_at": "2026-09-29T02:28:51.294551+00:00",
+ "finished_at": "2026-09-29T02:31:35.061984+00:00",
+ "endpoint": "https://clob.polymarket.com/prices-history",
+ "fidelities_minutes": [
+  1,
+  60,
+  360,
+  720,
+  1440
+ ],
+ "sample_notes": {
+  "date_filter": {
+   "2021": {
+    "status": 200,
+    "rows": 50,
+    "rows_in_year": 47,
+    "error": null
+   },
+   "2022": {
+    "status": 200,
+    "rows": 50,
+    "rows_in_year": 46,
+    "error": null
+   },
+   "2023": {
+    "status": 200,
+    "rows": 50,
+    "rows_in_year": 39,
+    "error": null
+   },
+   "2024": {
+    "status": 200,
+    "rows": 50,
+    "rows_in_year": 46,
+    "error": null
+   },
+   "2025": {
+    "status": 200,
+    "rows": 50,
+    "rows_in_year": 41,
+    "error": null
+   },
+   "2026": {
+    "status": 200,
+    "rows": 50,
+    "rows_in_year": 50,
+    "error": null
+   }
+  }
+ },
+ "markets_probed": 57,
+ "summary": [
+  {
+   "group": "open",
+   "request": "max@1440m",
+   "markets": 5,
+   "with_data": 5,
+   "share_with_data": 1.0,
+   "median_hours_last_point_before_close": 18477.5,
+   "median_spacing_minutes": 1440.0
+  },
+  {
+   "group": "open",
+   "request": "max@1m",
+   "markets": 5,
+   "with_data": 5,
+   "share_with_data": 1.0,
+   "median_hours_last_point_before_close": 18477.48,
+   "median_spacing_minutes": 10.0
+  },
+  {
+   "group": "open",
+   "request": "max@360m",
+   "markets": 5,
+   "with_data": 5,
+   "share_with_data": 1.0,
+   "median_hours_last_point_before_close": 18477.48,
+   "median_spacing_minutes": 360.0
+  },
+  {
+   "group": "open",
+   "request": "max@60m",
+   "markets": 5,
+   "with_data": 5,
+   "share_with_data": 1.0,
+   "median_hours_last_point_before_close": 18477.55,
+   "median_spacing_minutes": 60.0
+  },
+  {
+   "group": "open",
+   "request": "max@720m",
+   "markets": 5,
+   "with_data": 5,
+   "share_with_data": 1.0,
+   "median_hours_last_point_before_close": 18477.51,
+   "median_spacing_minutes": 720.0
+  },
+  {
+   "group": "resolved-2021",
+   "request": "max@1440m",
+   "markets": 6,
+   "with_data": 0,
+   "share_with_data": 0.0,
+   "median_hours_last_point_before_close": null,
+   "median_spacing_minutes": null
+  },
+  {
+   "group": "resolved-2021",
+   "request": "max@1m",
+   "markets": 6,
+   "with_data": 0,
+   "share_with_data": 0.0,
+   "median_hours_last_point_before_close": null,
+   "median_spacing_minutes": null
+  },
+  {
+   "group": "resolved-2021",
+   "request": "max@360m",
+   "markets": 6,
+   "with_data": 0,
+   "share_with_data": 0.0,
+   "median_hours_last_point_before_close": null,
+   "median_spacing_minutes": null
+  },
+  {
+   "group": "resolved-2021",
+   "request": "max@60m",
+   "markets": 6,
+   "with_data": 0,
+   "share_with_data": 0.0,
+   "median_hours_last_point_before_close": null,
+   "median_spacing_minutes": null
+  },
+  {
+   "group": "resolved-2021",
+   "request": "max@720m",
+   "markets": 6,
+   "with_data": 0,
+   "share_with_data": 0.0,
+   "median_hours_last_point_before_close": null,
+   "median_spacing_minutes": null
+  },
+  {
+   "group": "resolved-2021",
+   "request": "window14d@60m",
+   "markets": 6,
+   "with_data": 0,
+   "share_with_data": 0.0,
+   "median_hours_last_point_before_close": null,
+   "median_spacing_minutes": null
+  },
+  {
+   "group": "resolved-2021",
+   "request": "window14d@720m",
+   "markets": 6,
+   "with_data": 0,
+   "share_with_data": 0.0,
+   "median_hours_last_point_before_close": null,
+   "median_spacing_minutes": null
+  },
+  {
+   "group": "resolved-2022",
+   "request": "max@1440m",
+   "markets": 6,
+   "with_data": 1,
+   "share_with_data": 0.167,
+   "median_hours_last_point_before_close": null,
+   "median_spacing_minutes": 1440.1
+  },
+  {
+   "group": "resolved-2022",
+   "request": "max@1m",
+   "markets": 6,
+   "with_data": 0,
+   "share_with_data": 0.0,
+   "median_hours_last_point_before_close": null,
+   "median_spacing_minutes": null
+  },
+  {
+   "group": "resolved-2022",
+   "request": "max@360m",
+   "markets": 6,
+   "with_data": 0,
+   "share_with_data": 0.0,
+   "median_hours_last_point_before_close": null,
+   "median_spacing_minutes": null
+  },
+  {
+   "group": "resolved-2022",
+   "request": "max@60m",
+   "markets": 6,
+   "with_data": 0,
+   "share_with_data": 0.0,
+   "median_hours_last_point_before_close": null,
+   "median_spacing_minutes": null
+  },
+  {
+   "group": "resolved-2022",
+   "request": "max@720m",
+   "markets": 6,
+   "with_data": 1,
+   "share_with_data": 0.167,
+   "median_hours_last_point_before_close": null,
+   "median_spacing_minutes": 720.0
+  },
+  {
+   "group": "resolved-2022",
+   "request": "window14d@60m",
+   "markets": 6,
+   "with_data": 0,
+   "share_with_data": 0.0,
+   "median_hours_last_point_before_close": null,
+   "median_spacing_minutes": null
+  },
+  {
+   "group": "resolved-2022",
+   "request": "window14d@720m",
+   "markets": 6,
+   "with_data": 0,
+   "share_with_data": 0.0,
+   "median_hours_last_point_before_close": null,
+   "median_spacing_minutes": null
+  },
+  {
+   "group": "resolved-2023",
+   "request": "max@1440m",
+   "markets": 6,
+   "with_data": 6,
+   "share_with_data": 1.0,
+   "median_hours_last_point_before_close": 11.57,
+   "median_spacing_minutes": 1440.0
+  },
+  {
+   "group": "resolved-2023",
+   "request": "max@1m",
+   "markets": 6,
+   "with_data": 0,
+   "share_with_data": 0.0,
+   "median_hours_last_point_before_close": null,
+   "median_spacing_minutes": null
+  },
+  {
+   "group": "resolved-2023",
+   "request": "max@360m",
+   "markets": 6,
+   "with_data": 0,
+   "share_with_data": 0.0,
+   "median_hours_last_point_before_close": null,
+   "median_spacing_minutes": null
+  },
+  {
+   "group": "resolved-2023",
+   "request": "max@60m",
+   "markets": 6,
+   "with_data": 0,
+   "share_with_data": 0.0,
+   "median_hours_last_point_before_close": null,
+   "median_spacing_minutes": null
+  },
+  {
+   "group": "resolved-2023",
+   "request": "max@720m",
+   "markets": 6,
+   "with_data": 6,
+   "share_with_data": 1.0,
+   "median_hours_last_point_before_close": 5.57,
+   "median_spacing_minutes": 720.0
+  },
+  {
+   "group": "resolved-2023",
+   "request": "window14d@60m",
+   "markets": 6,
+   "with_data": 6,
+   "share_with_data": 1.0,
+   "median_hours_last_point_before_close": 0.43,
+   "median_spacing_minutes": 60.0
+  },
+  {
+   "group": "resolved-2023",
+   "request": "window14d@720m",
+   "markets": 6,
+   "with_data": 6,
+   "share_with_data": 1.0,
+   "median_hours_last_point_before_close": 5.57,
+   "median_spacing_minutes": 720.0
+  },
+  {
+   "group": "resolved-2024",
+   "request": "max@1440m",
+   "markets": 6,
+   "with_data": 6,
+   "share_with_data": 1.0,
+   "median_hours_last_point_before_close": 18.1,
+   "median_spacing_minutes": 1440.0
+  },
+  {
+   "group": "resolved-2024",
+   "request": "max@1m",
+   "markets": 6,
+   "with_data": 0,
+   "share_with_data": 0.0,
+   "median_hours_last_point_before_close": null,
+   "median_spacing_minutes": null
+  },
+  {
+   "group": "resolved-2024",
+   "request": "max@360m",
+   "markets": 6,
+   "with_data": 0,
+   "share_with_data": 0.0,
+   "median_hours_last_point_before_close": null,
+   "median_spacing_minutes": null
+  },
+  {
+   "group": "resolved-2024",
+   "request": "max@60m",
+   "markets": 6,
+   "with_data": 0,
+   "share_with_data": 0.0,
+   "median_hours_last_point_before_close": null,
+   "median_spacing_minutes": null
+  },
+  {
+   "group": "resolved-2024",
+   "request": "max@720m",
+   "markets": 6,
+   "with_data": 6,
+   "share_with_data": 1.0,
+   "median_hours_last_point_before_close": 6.58,
+   "median_spacing_minutes": 720.0
+  },
+  {
+   "group": "resolved-2024",
+   "request": "window14d@60m",
+   "markets": 6,
+   "with_data": 6,
+   "share_with_data": 1.0,
+   "median_hours_last_point_before_close": 0.1,
+   "median_spacing_minutes": 60.0
+  },
+  {
+   "group": "resolved-2024",
+   "request": "window14d@720m",
+   "markets": 6,
+   "with_data": 6,
+   "share_with_data": 1.0,
+   "median_hours_last_point_before_close": 6.58,
+   "median_spacing_minutes": 720.0
+  },
+  {
+   "group": "resolved-2025",
+   "request": "max@1440m",
+   "markets": 6,
+   "with_data": 6,
+   "share_with_data": 1.0,
+   "median_hours_last_point_before_close": 7.54,
+   "median_spacing_minutes": 1440.0
+  },
+  {
+   "group": "resolved-2025",
+   "request": "max@1m",
+   "markets": 6,
+   "with_data": 0,
+   "share_with_data": 0.0,
+   "median_hours_last_point_before_close": null,
+   "median_spacing_minutes": null
+  },
+  {
+   "group": "resolved-2025",
+   "request": "max@360m",
+   "markets": 6,
+   "with_data": 0,
+   "share_with_data": 0.0,
+   "median_hours_last_point_before_close": null,
+   "median_spacing_minutes": null
+  },
+  {
+   "group": "resolved-2025",
+   "request": "max@60m",
+   "markets": 6,
+   "with_data": 0,
+   "share_with_data": 0.0,
+   "median_hours_last_point_before_close": null,
+   "median_spacing_minutes": null
+  },
+  {
+   "group": "resolved-2025",
+   "request": "max@720m",
+   "markets": 6,
+   "with_data": 6,
+   "share_with_data": 1.0,
+   "median_hours_last_point_before_close": 7.54,
+   "median_spacing_minutes": 720.0
+  },
+  {
+   "group": "resolved-2025",
+   "request": "window14d@60m",
+   "markets": 6,
+   "with_data": 6,
+   "share_with_data": 1.0,
+   "median_hours_last_point_before_close": 0.62,
+   "median_spacing_minutes": 60.0
+  },
+  {
+   "group": "resolved-2025",
+   "request": "window14d@720m",
+   "markets": 6,
+   "with_data": 6,
+   "share_with_data": 1.0,
+   "median_hours_last_point_before_close": 7.54,
+   "median_spacing_minutes": 720.0
+  },
+  {
+   "group": "resolved-2026",
+   "request": "max@1440m",
+   "markets": 22,
+   "with_data": 22,
+   "share_with_data": 1.0,
+   "median_hours_last_point_before_close": 4.13,
+   "median_spacing_minutes": 1440.0
+  },
+  {
+   "group": "resolved-2026",
+   "request": "max@1m",
+   "markets": 22,
+   "with_data": 0,
+   "share_with_data": 0.0,
+   "median_hours_last_point_before_close": null,
+   "median_spacing_minutes": null
+  },
+  {
+   "group": "resolved-2026",
+   "request": "max@360m",
+   "markets": 22,
+   "with_data": 0,
+   "share_with_data": 0.0,
+   "median_hours_last_point_before_close": null,
+   "median_spacing_minutes": null
+  },
+  {
+   "group": "resolved-2026",
+   "request": "max@60m",
+   "markets": 22,
+   "with_data": 0,
+   "share_with_data": 0.0,
+   "median_hours_last_point_before_close": null,
+   "median_spacing_minutes": null
+  },
+  {
+   "group": "resolved-2026",
+   "request": "max@720m",
+   "markets": 22,
+   "with_data": 22,
+   "share_with_data": 1.0,
+   "median_hours_last_point_before_close": 4.13,
+   "median_spacing_minutes": 720.0
+  },
+  {
+   "group": "resolved-2026",
+   "request": "window14d@60m",
+   "markets": 22,
+   "with_data": 22,
+   "share_with_data": 1.0,
+   "median_hours_last_point_before_close": 0.13,
+   "median_spacing_minutes": 60.0
+  },
+  {
+   "group": "resolved-2026",
+   "request": "window14d@720m",
+   "markets": 22,
+   "with_data": 22,
+   "share_with_data": 1.0,
+   "median_hours_last_point_before_close": 4.13,
+   "median_spacing_minutes": 720.0
+  }
+ ],
+ "markets": [
+  {
+   "group": "resolved-2026",
+   "condition_id": "0x3c4bc035b4de12a34d91f9278e50d0be34b56939c5f8b25a4cb082c976740429",
+   "question": "Korea Republic to score first vs. Czechia?",
+   "token_id": "45151596987651866473906626946991389727089938906084335155007416542203779609476",
+   "closed": true,
+   "close_ts": 1781237269,
+   "close_field": "closedTime",
+   "volume": 8733.892483000001,
+   "requests": {
+    "max@1m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@60m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@360m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@720m": {
+     "status": 200,
+     "error": null,
+     "points": 5,
+     "first_t": 1781049607,
+     "last_t": 1781222407,
+     "median_spacing_minutes": 720.0,
+     "last_before_close_t": 1781222407,
+     "last_before_close_price": 0.48,
+     "hours_last_point_before_close": 4.13
+    },
+    "max@1440m": {
+     "status": 200,
+     "error": null,
+     "points": 3,
+     "first_t": 1781049607,
+     "last_t": 1781222407,
+     "median_spacing_minutes": 1440.0,
+     "last_before_close_t": 1781222407,
+     "last_before_close_price": 0.48,
+     "hours_last_point_before_close": 4.13
+    },
+    "window14d@60m": {
+     "status": 200,
+     "error": null,
+     "points": 59,
+     "first_t": 1781028005,
+     "last_t": 1781236803,
+     "median_spacing_minutes": 60.0,
+     "last_before_close_t": 1781236803,
+     "last_before_close_price": 0.0005,
+     "hours_last_point_before_close": 0.13
+    },
+    "window14d@720m": {
+     "status": 200,
+     "error": null,
+     "points": 5,
+     "first_t": 1781049607,
+     "last_t": 1781222407,
+     "median_spacing_minutes": 720.0,
+     "last_before_close_t": 1781222407,
+     "last_before_close_price": 0.48,
+     "hours_last_point_before_close": 4.13
+    }
+   }
+  },
+  {
+   "group": "resolved-2026",
+   "condition_id": "0x0ea5c0b33fc4f1cde61c702721e360846796a697f44ec64fae9f4da9b022ec14",
+   "question": "Czechia to score first vs. Korea Republic?",
+   "token_id": "2556953086463136133324643644805352156030088888311023574578808315822532729804",
+   "closed": true,
+   "close_ts": 1781237581,
+   "close_field": "closedTime",
+   "volume": 7793.611139000002,
+   "requests": {
+    "max@1m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@60m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@360m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@720m": {
+     "status": 200,
+     "error": null,
+     "points": 5,
+     "first_t": 1781049604,
+     "last_t": 1781222404,
+     "median_spacing_minutes": 720.0,
+     "last_before_close_t": 1781222404,
+     "last_before_close_price": 0.415,
+     "hours_last_point_before_close": 4.22
+    },
+    "max@1440m": {
+     "status": 200,
+     "error": null,
+     "points": 3,
+     "first_t": 1781049604,
+     "last_t": 1781222404,
+     "median_spacing_minutes": 1440.0,
+     "last_before_close_t": 1781222404,
+     "last_before_close_price": 0.415,
+     "hours_last_point_before_close": 4.22
+    },
+    "window14d@60m": {
+     "status": 200,
+     "error": null,
+     "points": 59,
+     "first_t": 1781028003,
+     "last_t": 1781236803,
+     "median_spacing_minutes": 60.0,
+     "last_before_close_t": 1781236803,
+     "last_before_close_price": 0.9995,
+     "hours_last_point_before_close": 0.22
+    },
+    "window14d@720m": {
+     "status": 200,
+     "error": null,
+     "points": 5,
+     "first_t": 1781049604,
+     "last_t": 1781222404,
+     "median_spacing_minutes": 720.0,
+     "last_before_close_t": 1781222404,
+     "last_before_close_price": 0.415,
+     "hours_last_point_before_close": 4.22
+    }
+   }
+  },
+  {
+   "group": "resolved-2026",
+   "condition_id": "0x04dff3ae2e0bac77e699f9ff1519bf9e6c24ce63d3fba5b79917aefb84e990cd",
+   "question": "Korea Republic vs. Czechia: Neither team to score first?",
+   "token_id": "97017175254958095693834952838150464564884398291198263074753835085597738051061",
+   "closed": true,
+   "close_ts": 1781237269,
+   "close_field": "closedTime",
+   "volume": 14528.044657999993,
+   "requests": {
+    "max@1m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@60m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@360m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@720m": {
+     "status": 200,
+     "error": null,
+     "points": 5,
+     "first_t": 1781049604,
+     "last_t": 1781222404,
+     "median_spacing_minutes": 720.0,
+     "last_before_close_t": 1781222404,
+     "last_before_close_price": 0.105,
+     "hours_last_point_before_close": 4.13
+    },
+    "max@1440m": {
+     "status": 200,
+     "error": null,
+     "points": 3,
+     "first_t": 1781049604,
+     "last_t": 1781222404,
+     "median_spacing_minutes": 1440.0,
+     "last_before_close_t": 1781222404,
+     "last_before_close_price": 0.105,
+     "hours_last_point_before_close": 4.13
+    },
+    "window14d@60m": {
+     "status": 200,
+     "error": null,
+     "points": 59,
+     "first_t": 1781028003,
+     "last_t": 1781236803,
+     "median_spacing_minutes": 60.0,
+     "last_before_close_t": 1781236803,
+     "last_before_close_price": 0.0005,
+     "hours_last_point_before_close": 0.13
+    },
+    "window14d@720m": {
+     "status": 200,
+     "error": null,
+     "points": 5,
+     "first_t": 1781049604,
+     "last_t": 1781222404,
+     "median_spacing_minutes": 720.0,
+     "last_before_close_t": 1781222404,
+     "last_before_close_price": 0.105,
+     "hours_last_point_before_close": 4.13
+    }
+   }
+  },
+  {
+   "group": "resolved-2026",
+   "condition_id": "0x62a5e2b1df97c4eee5f8e9ce1d47759eb0fab0e7aa13bee6300345a24ccdaf8d",
+   "question": "Korea Republic vs. Czechia: O/U 9.5 Total Corners",
+   "token_id": "85113100746335481929215108394780065355414299526889813729509514675958368037290",
+   "closed": true,
+   "close_ts": 1781237257,
+   "close_field": "closedTime",
+   "volume": 53338.80363200002,
+   "requests": {
+    "max@1m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@60m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@360m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@720m": {
+     "status": 200,
+     "error": null,
+     "points": 5,
+     "first_t": 1781049607,
+     "last_t": 1781222408,
+     "median_spacing_minutes": 720.0,
+     "last_before_close_t": 1781222408,
+     "last_before_close_price": 0.425,
+     "hours_last_point_before_close": 4.12
+    },
+    "max@1440m": {
+     "status": 200,
+     "error": null,
+     "points": 3,
+     "first_t": 1781049607,
+     "last_t": 1781222408,
+     "median_spacing_minutes": 1440.0,
+     "last_before_close_t": 1781222408,
+     "last_before_close_price": 0.425,
+     "hours_last_point_before_close": 4.12
+    },
+    "window14d@60m": {
+     "status": 200,
+     "error": null,
+     "points": 58,
+     "first_t": 1781031604,
+     "last_t": 1781236804,
+     "median_spacing_minutes": 60.0,
+     "last_before_close_t": 1781236804,
+     "last_before_close_price": 0.005,
+     "hours_last_point_before_close": 0.13
+    },
+    "window14d@720m": {
+     "status": 200,
+     "error": null,
+     "points": 5,
+     "first_t": 1781049607,
+     "last_t": 1781222408,
+     "median_spacing_minutes": 720.0,
+     "last_before_close_t": 1781222408,
+     "last_before_close_price": 0.425,
+     "hours_last_point_before_close": 4.12
+    }
+   }
+  },
+  {
+   "group": "resolved-2026",
+   "condition_id": "0x363823599b1782ece7776a227f61844a38bf14ba74559617f2cf1704900875c9",
+   "question": "Korea Republic vs. Czechia: O/U 11.5 Total Corners",
+   "token_id": "34448776140014997581553580938825283727346895056942036467003230159356775252865",
+   "closed": true,
+   "close_ts": 1781237256,
+   "close_field": "closedTime",
+   "volume": 8588.867722000005,
+   "requests": {
+    "max@1m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@60m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@360m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@720m": {
+     "status": 200,
+     "error": null,
+     "points": 5,
+     "first_t": 1781049604,
+     "last_t": 1781222404,
+     "median_spacing_minutes": 720.0,
+     "last_before_close_t": 1781222404,
+     "last_before_close_price": 0.235,
+     "hours_last_point_before_close": 4.13
+    },
+    "max@1440m": {
+     "status": 200,
+     "error": null,
+     "points": 3,
+     "first_t": 1781049604,
+     "last_t": 1781222404,
+     "median_spacing_minutes": 1440.0,
+     "last_before_close_t": 1781222404,
+     "last_before_close_price": 0.235,
+     "hours_last_point_before_close": 4.13
+    },
+    "window14d@60m": {
+     "status": 200,
+     "error": null,
+     "points": 58,
+     "first_t": 1781031603,
+     "last_t": 1781236803,
+     "median_spacing_minutes": 60.0,
+     "last_before_close_t": 1781236803,
+     "last_before_close_price": 0.0005,
+     "hours_last_point_before_close": 0.13
+    },
+    "window14d@720m": {
+     "status": 200,
+     "error": null,
+     "points": 5,
+     "first_t": 1781049604,
+     "last_t": 1781222404,
+     "median_spacing_minutes": 720.0,
+     "last_before_close_t": 1781222404,
+     "last_before_close_price": 0.235,
+     "hours_last_point_before_close": 4.13
+    }
+   }
+  },
+  {
+   "group": "resolved-2026",
+   "condition_id": "0x17b30e5a39293e2a99d4ad26e592b20f888f8b1b43808c330ec17581f6367d97",
+   "question": "Korea Republic vs. Czechia: O/U 10.5 Total Corners",
+   "token_id": "36559969136047175357115812833994164381261782587804840261630384831728053971700",
+   "closed": true,
+   "close_ts": 1781237257,
+   "close_field": "closedTime",
+   "volume": 29055.995505,
+   "requests": {
+    "max@1m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@60m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@360m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@720m": {
+     "status": 200,
+     "error": null,
+     "points": 5,
+     "first_t": 1781049607,
+     "last_t": 1781222407,
+     "median_spacing_minutes": 720.0,
+     "last_before_close_t": 1781222407,
+     "last_before_close_price": 0.3,
+     "hours_last_point_before_close": 4.12
+    },
+    "max@1440m": {
+     "status": 200,
+     "error": null,
+     "points": 3,
+     "first_t": 1781049607,
+     "last_t": 1781222407,
+     "median_spacing_minutes": 1440.0,
+     "last_before_close_t": 1781222407,
+     "last_before_close_price": 0.3,
+     "hours_last_point_before_close": 4.12
+    },
+    "window14d@60m": {
+     "status": 200,
+     "error": null,
+     "points": 58,
+     "first_t": 1781031604,
+     "last_t": 1781236803,
+     "median_spacing_minutes": 60.0,
+     "last_before_close_t": 1781236803,
+     "last_before_close_price": 0.005,
+     "hours_last_point_before_close": 0.13
+    },
+    "window14d@720m": {
+     "status": 200,
+     "error": null,
+     "points": 5,
+     "first_t": 1781049607,
+     "last_t": 1781222407,
+     "median_spacing_minutes": 720.0,
+     "last_before_close_t": 1781222407,
+     "last_before_close_price": 0.3,
+     "hours_last_point_before_close": 4.12
+    }
+   }
+  },
+  {
+   "group": "resolved-2026",
+   "condition_id": "0x3774b2fda98142ab47e5f2765d1a59aba4bc346b3e83711322b3f14fa10fc1aa",
+   "question": "Korea Republic vs. Czechia: 1st Half O/U 1.5",
+   "token_id": "35710983385423567521817984200860666736424458987759145592371831538535236610543",
+   "closed": true,
+   "close_ts": 1781237256,
+   "close_field": "closedTime",
+   "volume": 26896.83823300001,
+   "requests": {
+    "max@1m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@60m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@360m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@720m": {
+     "status": 200,
+     "error": null,
+     "points": 5,
+     "first_t": 1781049604,
+     "last_t": 1781222404,
+     "median_spacing_minutes": 720.0,
+     "last_before_close_t": 1781222404,
+     "last_before_close_price": 0.27,
+     "hours_last_point_before_close": 4.13
+    },
+    "max@1440m": {
+     "status": 200,
+     "error": null,
+     "points": 3,
+     "first_t": 1781049604,
+     "last_t": 1781222404,
+     "median_spacing_minutes": 1440.0,
+     "last_before_close_t": 1781222404,
+     "last_before_close_price": 0.27,
+     "hours_last_point_before_close": 4.13
+    },
+    "window14d@60m": {
+     "status": 200,
+     "error": null,
+     "points": 57,
+     "first_t": 1781035204,
+     "last_t": 1781236803,
+     "median_spacing_minutes": 60.0,
+     "last_before_close_t": 1781236803,
+     "last_before_close_price": 0.0005,
+     "hours_last_point_before_close": 0.13
+    },
+    "window14d@720m": {
+     "status": 200,
+     "error": null,
+     "points": 5,
+     "first_t": 1781049604,
+     "last_t": 1781222404,
+     "median_spacing_minutes": 720.0,
+     "last_before_close_t": 1781222404,
+     "last_before_close_price": 0.27,
+     "hours_last_point_before_close": 4.13
+    }
+   }
+  },
+  {
+   "group": "resolved-2026",
+   "condition_id": "0x47709ba746f99cff9a13f929bc2e84ffbcd59c3208d81ca4d304175c3d5bb768",
+   "question": "Korea Republic vs. Czechia: 1st Half O/U 2.5",
+   "token_id": "11849278893740348852903038410045409306267536943415552227000087242550731083028",
+   "closed": true,
+   "close_ts": 1781237257,
+   "close_field": "closedTime",
+   "volume": 16919.816892000003,
+   "requests": {
+    "max@1m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@60m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@360m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@720m": {
+     "status": 200,
+     "error": null,
+     "points": 5,
+     "first_t": 1781049604,
+     "last_t": 1781222404,
+     "median_spacing_minutes": 720.0,
+     "last_before_close_t": 1781222404,
+     "last_before_close_price": 0.075,
+     "hours_last_point_before_close": 4.13
+    },
+    "max@1440m": {
+     "status": 200,
+     "error": null,
+     "points": 3,
+     "first_t": 1781049604,
+     "last_t": 1781222404,
+     "median_spacing_minutes": 1440.0,
+     "last_before_close_t": 1781222404,
+     "last_before_close_price": 0.075,
+     "hours_last_point_before_close": 4.13
+    },
+    "window14d@60m": {
+     "status": 200,
+     "error": null,
+     "points": 57,
+     "first_t": 1781035204,
+     "last_t": 1781236803,
+     "median_spacing_minutes": 60.0,
+     "last_before_close_t": 1781236803,
+     "last_before_close_price": 0.0005,
+     "hours_last_point_before_close": 0.13
+    },
+    "window14d@720m": {
+     "status": 200,
+     "error": null,
+     "points": 5,
+     "first_t": 1781049604,
+     "last_t": 1781222404,
+     "median_spacing_minutes": 720.0,
+     "last_before_close_t": 1781222404,
+     "last_before_close_price": 0.075,
+     "hours_last_point_before_close": 4.13
+    }
+   }
+  },
+  {
+   "group": "resolved-2026",
+   "condition_id": "0x41ab404649ec001990e0fcff8f5b24189f8428959437a2ff3b7f6d0105b37bc3",
+   "question": "Korea Republic vs. Czechia: Korea Republic O/U 0.5",
+   "token_id": "26819660871706195186261928558509821668716847617194492023029332496036455378721",
+   "closed": true,
+   "close_ts": 1781237269,
+   "close_field": "closedTime",
+   "volume": 76512.10104100002,
+   "requests": {
+    "max@1m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@60m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@360m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@720m": {
+     "status": 200,
+     "error": null,
+     "points": 5,
+     "first_t": 1781049604,
+     "last_t": 1781222404,
+     "median_spacing_minutes": 720.0,
+     "last_before_close_t": 1781222404,
+     "last_before_close_price": 0.72,
+     "hours_last_point_before_close": 4.13
+    },
+    "max@1440m": {
+     "status": 200,
+     "error": null,
+     "points": 3,
+     "first_t": 1781049604,
+     "last_t": 1781222404,
+     "median_spacing_minutes": 1440.0,
+     "last_before_close_t": 1781222404,
+     "last_before_close_price": 0.72,
+     "hours_last_point_before_close": 4.13
+    },
+    "window14d@60m": {
+     "status": 200,
+     "error": null,
+     "points": 55,
+     "first_t": 1781042403,
+     "last_t": 1781236803,
+     "median_spacing_minutes": 60.0,
+     "last_before_close_t": 1781236803,
+     "last_before_close_price": 0.9995,
+     "hours_last_point_before_close": 0.13
+    },
+    "window14d@720m": {
+     "status": 200,
+     "error": null,
+     "points": 5,
+     "first_t": 1781049604,
+     "last_t": 1781222404,
+     "median_spacing_minutes": 720.0,
+     "last_before_close_t": 1781222404,
+     "last_before_close_price": 0.72,
+     "hours_last_point_before_close": 4.13
+    }
+   }
+  },
+  {
+   "group": "resolved-2026",
+   "condition_id": "0x610b7dee9a81beae6a8be39b607d3d63fd3677fc8b16f621305ceab3afd3b0a8",
+   "question": "Korea Republic vs. Czechia: Korea Republic O/U 2.5",
+   "token_id": "88098918918170181864428487811356412532768649171323730511978215853431242286117",
+   "closed": true,
+   "close_ts": 1781237269,
+   "close_field": "closedTime",
+   "volume": 7861.162981,
+   "requests": {
+    "max@1m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@60m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@360m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@720m": {
+     "status": 200,
+     "error": null,
+     "points": 5,
+     "first_t": 1781049607,
+     "last_t": 1781222407,
+     "median_spacing_minutes": 720.0,
+     "last_before_close_t": 1781222407,
+     "last_before_close_price": 0.12,
+     "hours_last_point_before_close": 4.13
+    },
+    "max@1440m": {
+     "status": 200,
+     "error": null,
+     "points": 3,
+     "first_t": 1781049607,
+     "last_t": 1781222407,
+     "median_spacing_minutes": 1440.0,
+     "last_before_close_t": 1781222407,
+     "last_before_close_price": 0.12,
+     "hours_last_point_before_close": 4.13
+    },
+    "window14d@60m": {
+     "status": 200,
+     "error": null,
+     "points": 55,
+     "first_t": 1781042404,
+     "last_t": 1781236803,
+     "median_spacing_minutes": 60.0,
+     "last_before_close_t": 1781236803,
+     "last_before_close_price": 0.0005,
+     "hours_last_point_before_close": 0.13
+    },
+    "window14d@720m": {
+     "status": 200,
+     "error": null,
+     "points": 5,
+     "first_t": 1781049607,
+     "last_t": 1781222407,
+     "median_spacing_minutes": 720.0,
+     "last_before_close_t": 1781222407,
+     "last_before_close_price": 0.12,
+     "hours_last_point_before_close": 4.13
+    }
+   }
+  },
+  {
+   "group": "resolved-2026",
+   "condition_id": "0x315952d6a2abaa9babeb9907cc1da5aed90d63b2c718d91cffd5864d0755bfa1",
+   "question": "Korea Republic vs. Czechia: Czechia O/U 0.5",
+   "token_id": "67742449700966150828370103244774504904508100834423861357562892142533317542299",
+   "closed": true,
+   "close_ts": 1781237269,
+   "close_field": "closedTime",
+   "volume": 26303.396098999987,
+   "requests": {
+    "max@1m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@60m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@360m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@720m": {
+     "status": 200,
+     "error": null,
+     "points": 5,
+     "first_t": 1781049608,
+     "last_t": 1781222408,
+     "median_spacing_minutes": 720.0,
+     "last_before_close_t": 1781222408,
+     "last_before_close_price": 0.695,
+     "hours_last_point_before_close": 4.13
+    },
+    "max@1440m": {
+     "status": 200,
+     "error": null,
+     "points": 3,
+     "first_t": 1781049608,
+     "last_t": 1781222408,
+     "median_spacing_minutes": 1440.0,
+     "last_before_close_t": 1781222408,
+     "last_before_close_price": 0.695,
+     "hours_last_point_before_close": 4.13
+    },
+    "window14d@60m": {
+     "status": 200,
+     "error": null,
+     "points": 55,
+     "first_t": 1781042405,
+     "last_t": 1781236804,
+     "median_spacing_minutes": 60.0,
+     "last_before_close_t": 1781236804,
+     "last_before_close_price": 0.9995,
+     "hours_last_point_before_close": 0.13
+    },
+    "window14d@720m": {
+     "status": 200,
+     "error": null,
+     "points": 5,
+     "first_t": 1781049608,
+     "last_t": 1781222408,
+     "median_spacing_minutes": 720.0,
+     "last_before_close_t": 1781222408,
+     "last_before_close_price": 0.695,
+     "hours_last_point_before_close": 4.13
+    }
+   }
+  },
+  {
+   "group": "resolved-2026",
+   "condition_id": "0x72c4f10e418725dc55c656ef33141de881176e4ff3abd25a8d844eebc0a085de",
+   "question": "Korea Republic vs. Czechia: Czechia O/U 2.5",
+   "token_id": "59907307781370641927267589378524939739407395757788280440594239764613972532144",
+   "closed": true,
+   "close_ts": 1781237269,
+   "close_field": "closedTime",
+   "volume": 14854.252633,
+   "requests": {
+    "max@1m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@60m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@360m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@720m": {
+     "status": 200,
+     "error": null,
+     "points": 5,
+     "first_t": 1781049608,
+     "last_t": 1781222408,
+     "median_spacing_minutes": 720.0,
+     "last_before_close_t": 1781222408,
+     "last_before_close_price": 0.095,
+     "hours_last_point_before_close": 4.13
+    },
+    "max@1440m": {
+     "status": 200,
+     "error": null,
+     "points": 3,
+     "first_t": 1781049608,
+     "last_t": 1781222408,
+     "median_spacing_minutes": 1440.0,
+     "last_before_close_t": 1781222408,
+     "last_before_close_price": 0.095,
+     "hours_last_point_before_close": 4.13
+    },
+    "window14d@60m": {
+     "status": 200,
+     "error": null,
+     "points": 55,
+     "first_t": 1781042405,
+     "last_t": 1781236804,
+     "median_spacing_minutes": 60.0,
+     "last_before_close_t": 1781236804,
+     "last_before_close_price": 0.0005,
+     "hours_last_point_before_close": 0.13
+    },
+    "window14d@720m": {
+     "status": 200,
+     "error": null,
+     "points": 5,
+     "first_t": 1781049608,
+     "last_t": 1781222408,
+     "median_spacing_minutes": 720.0,
+     "last_before_close_t": 1781222408,
+     "last_before_close_price": 0.095,
+     "hours_last_point_before_close": 4.13
+    }
+   }
+  },
+  {
+   "group": "resolved-2026",
+   "condition_id": "0x28a686c6b027172cde29b92466aa40430761c963ff1f50e5061257e3a335b586",
+   "question": "Korea Republic vs. Czechia: Czechia 1st Half O/U 0.5",
+   "token_id": "70848988806798563540309958790958095510075609574300674931033579943431771954231",
+   "closed": true,
+   "close_ts": 1781237256,
+   "close_field": "closedTime",
+   "volume": 456.1710580000001,
+   "requests": {
+    "max@1m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@60m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@360m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@720m": {
+     "status": 200,
+     "error": null,
+     "points": 5,
+     "first_t": 1781049604,
+     "last_t": 1781222406,
+     "median_spacing_minutes": 720.0,
+     "last_before_close_t": 1781222406,
+     "last_before_close_price": 0.39,
+     "hours_last_point_before_close": 4.12
+    },
+    "max@1440m": {
+     "status": 200,
+     "error": null,
+     "points": 3,
+     "first_t": 1781049604,
+     "last_t": 1781222406,
+     "median_spacing_minutes": 1440.0,
+     "last_before_close_t": 1781222406,
+     "last_before_close_price": 0.39,
+     "hours_last_point_before_close": 4.12
+    },
+    "window14d@60m": {
+     "status": 200,
+     "error": null,
+     "points": 55,
+     "first_t": 1781042403,
+     "last_t": 1781236803,
+     "median_spacing_minutes": 60.0,
+     "last_before_close_t": 1781236803,
+     "last_before_close_price": 0.0005,
+     "hours_last_point_before_close": 0.13
+    },
+    "window14d@720m": {
+     "status": 200,
+     "error": null,
+     "points": 5,
+     "first_t": 1781049604,
+     "last_t": 1781222406,
+     "median_spacing_minutes": 720.0,
+     "last_before_close_t": 1781222406,
+     "last_before_close_price": 0.39,
+     "hours_last_point_before_close": 4.12
+    }
+   }
+  },
+  {
+   "group": "resolved-2026",
+   "condition_id": "0x3dc9904087f0a522d3bb24cd2168901baaa8c827729aca36c204c4cd17a054ac",
+   "question": "Korea Republic vs. Czechia: Czechia 1st Half O/U 1.5",
+   "token_id": "22178393055777302721106567533736272870331425301211151114785668659640200344952",
+   "closed": true,
+   "close_ts": 1781237257,
+   "close_field": "closedTime",
+   "volume": 2252.839366,
+   "requests": {
+    "max@1m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@60m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@360m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@720m": {
+     "status": 200,
+     "error": null,
+     "points": 5,
+     "first_t": 1781049607,
+     "last_t": 1781222406,
+     "median_spacing_minutes": 720.0,
+     "last_before_close_t": 1781222406,
+     "last_before_close_price": 0.08,
+     "hours_last_point_before_close": 4.13
+    },
+    "max@1440m": {
+     "status": 200,
+     "error": null,
+     "points": 3,
+     "first_t": 1781049607,
+     "last_t": 1781222406,
+     "median_spacing_minutes": 1440.0,
+     "last_before_close_t": 1781222406,
+     "last_before_close_price": 0.08,
+     "hours_last_point_before_close": 4.13
+    },
+    "window14d@60m": {
+     "status": 200,
+     "error": null,
+     "points": 55,
+     "first_t": 1781042403,
+     "last_t": 1781236803,
+     "median_spacing_minutes": 60.0,
+     "last_before_close_t": 1781236803,
+     "last_before_close_price": 0.0005,
+     "hours_last_point_before_close": 0.13
+    },
+    "window14d@720m": {
+     "status": 200,
+     "error": null,
+     "points": 5,
+     "first_t": 1781049607,
+     "last_t": 1781222406,
+     "median_spacing_minutes": 720.0,
+     "last_before_close_t": 1781222406,
+     "last_before_close_price": 0.08,
+     "hours_last_point_before_close": 4.13
+    }
+   }
+  },
+  {
+   "group": "resolved-2026",
+   "condition_id": "0x3a3b0f4e5bbc305ed9a43a15e7021ff8fcaf50ca465cc957de0aa85900ceb409",
+   "question": "Cho Guesung: 2+ Goals",
+   "token_id": "110826871821224998696991745902415486196205241159896087203255220112813442082091",
+   "closed": true,
+   "close_ts": 1781237599,
+   "close_field": "closedTime",
+   "volume": 52.3981,
+   "requests": {
+    "max@1m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@60m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@360m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@720m": {
+     "status": 200,
+     "error": null,
+     "points": 4,
+     "first_t": 1781092806,
+     "last_t": 1781222408,
+     "median_spacing_minutes": 720.0,
+     "last_before_close_t": 1781222408,
+     "last_before_close_price": 0.195,
+     "hours_last_point_before_close": 4.22
+    },
+    "max@1440m": {
+     "status": 200,
+     "error": null,
+     "points": 2,
+     "first_t": 1781136011,
+     "last_t": 1781222408,
+     "median_spacing_minutes": 1440.0,
+     "last_before_close_t": 1781222408,
+     "last_before_close_price": 0.195,
+     "hours_last_point_before_close": 4.22
+    },
+    "window14d@60m": {
+     "status": 200,
+     "error": null,
+     "points": 52,
+     "first_t": 1781053204,
+     "last_t": 1781236804,
+     "median_spacing_minutes": 60.0,
+     "last_before_close_t": 1781236804,
+     "last_before_close_price": 0.5,
+     "hours_last_point_before_close": 0.22
+    },
+    "window14d@720m": {
+     "status": 200,
+     "error": null,
+     "points": 4,
+     "first_t": 1781092806,
+     "last_t": 1781222408,
+     "median_spacing_minutes": 720.0,
+     "last_before_close_t": 1781222408,
+     "last_before_close_price": 0.195,
+     "hours_last_point_before_close": 4.22
+    }
+   }
+  },
+  {
+   "group": "resolved-2026",
+   "condition_id": "0x0615cd2a01d3e2715dadd10de7d54595346b8c05497ff3b6ba176a9dec635b65",
+   "question": "Hwang Heechan: 2+ Goals",
+   "token_id": "90562693078780279910331849243162568598611879821141822871140806886314585737353",
+   "closed": true,
+   "close_ts": 1781237599,
+   "close_field": "closedTime",
+   "volume": 389.734,
+   "requests": {
+    "max@1m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@60m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@360m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@720m": {
+     "status": 200,
+     "error": null,
+     "points": 4,
+     "first_t": 1781092803,
+     "last_t": 1781222404,
+     "median_spacing_minutes": 720.0,
+     "last_before_close_t": 1781222404,
+     "last_before_close_price": 0.03,
+     "hours_last_point_before_close": 4.22
+    },
+    "max@1440m": {
+     "status": 200,
+     "error": null,
+     "points": 2,
+     "first_t": 1781136005,
+     "last_t": 1781222404,
+     "median_spacing_minutes": 1440.0,
+     "last_before_close_t": 1781222404,
+     "last_before_close_price": 0.03,
+     "hours_last_point_before_close": 4.22
+    },
+    "window14d@60m": {
+     "status": 200,
+     "error": null,
+     "points": 52,
+     "first_t": 1781053204,
+     "last_t": 1781236803,
+     "median_spacing_minutes": 60.0,
+     "last_before_close_t": 1781236803,
+     "last_before_close_price": 0.2085,
+     "hours_last_point_before_close": 0.22
+    },
+    "window14d@720m": {
+     "status": 200,
+     "error": null,
+     "points": 4,
+     "first_t": 1781092803,
+     "last_t": 1781222404,
+     "median_spacing_minutes": 720.0,
+     "last_before_close_t": 1781222404,
+     "last_before_close_price": 0.03,
+     "hours_last_point_before_close": 4.22
+    }
+   }
+  },
+  {
+   "group": "resolved-2021",
+   "condition_id": "0x4afe273cde9f431f55621c666b7552f11cb8acbc36e06c39ea7e87564a02b34a",
+   "question": "Will Donald Trump be inaugurated for his second term as President of the USA on Inauguration Day, January 20th, 2021?",
+   "token_id": "103418234926404024254858900863964281148590595298761113398435707275424060969494",
+   "closed": true,
+   "close_ts": 1611166266,
+   "close_field": "closedTime",
+   "volume": 30207577.41,
+   "requests": {
+    "max@1m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@60m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@360m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@720m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@1440m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "window14d@60m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "window14d@720m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    }
+   }
+  },
+  {
+   "group": "resolved-2021",
+   "condition_id": "0xf86032dc2a893df839b93c7868e6cb206db8d5f083c2861554e7fd1deab7dd52",
+   "question": "Will Joe Biden be inaugurated as President of the USA on January 20th, 2021?",
+   "token_id": "99447534956100618771876621778187442361055577351273860449814110734531753618312",
+   "closed": true,
+   "close_ts": 1611165896,
+   "close_field": "closedTime",
+   "volume": 8582604.04,
+   "requests": {
+    "max@1m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@60m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@360m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@720m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@1440m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "window14d@60m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "window14d@720m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    }
+   }
+  },
+  {
+   "group": "resolved-2021",
+   "condition_id": "0x27d2c539ab4f349b603d4a47f071f581c06fd13f668d58ed35ae96eada116961",
+   "question": "Will 100 million people have received a dose of an approved COVID-19 vaccine in the US by April 1, 2021?",
+   "token_id": "30662458023486434354082870760803193817054791859321978282581102065190868837242",
+   "closed": true,
+   "close_ts": 1617297980,
+   "close_field": "closedTime",
+   "volume": 7116763.86,
+   "requests": {
+    "max@1m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@60m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@360m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@720m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@1440m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "window14d@60m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "window14d@720m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    }
+   }
+  },
+  {
+   "group": "resolved-2021",
+   "condition_id": "0x46f4890c7c37a14453d8381426d70596213a4e25dd76d6b7b927a8940b49bf66",
+   "question": "Will Donald Trump be President of the USA on March 31, 2021?",
+   "token_id": "1693208276153185733994714546837407582940984754120015995912534952677734211138",
+   "closed": true,
+   "close_ts": 1617212266,
+   "close_field": "closedTime",
+   "volume": 6253674.44,
+   "requests": {
+    "max@1m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@60m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@360m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@720m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@1440m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "window14d@60m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "window14d@720m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    }
+   }
+  },
+  {
+   "group": "resolved-2021",
+   "condition_id": "0x510eac74d6a9b9c2eb2958677d145851e1648a9e020d9b03a1466e500d9c2e5b",
+   "question": "Will Joe Biden be President of the USA on March 1, 2021?",
+   "token_id": "10112916464501717531903053825366193691364421872951654192807731317758610783460",
+   "closed": true,
+   "close_ts": 1614624296,
+   "close_field": "closedTime",
+   "volume": 5603735.59,
+   "requests": {
+    "max@1m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@60m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@360m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@720m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@1440m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "window14d@60m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "window14d@720m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    }
+   }
+  },
+  {
+   "group": "resolved-2021",
+   "condition_id": "0x364504fdac0b5c56bc7ce08355d3cb3666d6acc1c2ff5d137681d58f99401b47",
+   "question": "Will 150 million people have received a dose of an approved COVID-19 vaccine in the US by May 1, 2021?",
+   "token_id": "34956587071139995282059241883397421661790578501990012132262284462751216775178",
+   "closed": true,
+   "close_ts": 1619972744,
+   "close_field": "closedTime",
+   "volume": 2075247.2,
+   "requests": {
+    "max@1m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@60m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@360m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@720m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@1440m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "window14d@60m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "window14d@720m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    }
+   }
+  },
+  {
+   "group": "resolved-2022",
+   "condition_id": "0xe0658c4beed2102c181b3987edff5edd578ad2952a6eb5fa8018925e5d7a48fd",
+   "question": "Which party will control the U.S. Senate after the 2022 election?",
+   "token_id": "69984203794322070924779554468751071533998686576952069110752844084141678897886",
+   "closed": true,
+   "close_ts": 1668353605,
+   "close_field": "closedTime",
+   "volume": 1774475.43,
+   "requests": {
+    "max@1m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@60m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@360m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@720m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@1440m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "window14d@60m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "window14d@720m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    }
+   }
+  },
+  {
+   "group": "resolved-2022",
+   "condition_id": "0x230f7f02c22f52ee47118bcc9b727ff3a5f25ae63e13b3e8f942957596853084",
+   "question": "Will $ETH be above $3,000 on April 20, 2022?",
+   "token_id": "8327178800727704153348543618773452867753789529788200741171138968426629497179",
+   "closed": true,
+   "close_ts": 1650789039,
+   "close_field": "closedTime",
+   "volume": 974114.26,
+   "requests": {
+    "max@1m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@60m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@360m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@720m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@1440m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "window14d@60m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "window14d@720m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    }
+   }
+  },
+  {
+   "group": "resolved-2022",
+   "condition_id": "0xf660ae648bac4b7fbeb64046c83aa2f0c952f2706b97e7f1060e87949c37f959",
+   "question": "Superbowl LVI: Who will win Rams v. Bengals?",
+   "token_id": "44721976497758865940482041768340436157850719463020373457103215078405968779654",
+   "closed": true,
+   "close_ts": 1644837415,
+   "close_field": "closedTime",
+   "volume": 901034.06,
+   "requests": {
+    "max@1m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@60m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@360m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@720m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@1440m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "window14d@60m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "window14d@720m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    }
+   }
+  },
+  {
+   "group": "resolved-2022",
+   "condition_id": "0x4aeb08df75e1fc83da8163bfa90e54ad9c164f416614000450300fabe1e9d532",
+   "question": "Which party will win the U.S. House in the 2022 elections?",
+   "token_id": "36757650271491065583204696624455608169442231816819361413709650614400025758708",
+   "closed": true,
+   "close_ts": 1668705003,
+   "close_field": "closedTime",
+   "volume": 821212.78,
+   "requests": {
+    "max@1m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@60m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@360m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@720m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@1440m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "window14d@60m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "window14d@720m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    }
+   }
+  },
+  {
+   "group": "resolved-2022",
+   "condition_id": "0xef68fd4a837eeb183cb69a59c7d4a45bec3ff5be0170f5d489fe017e3300a81f",
+   "question": "Will $ETH be above $2,000 on May 27?",
+   "token_id": "3064034140888058142650876580982997576166449578875732109693170992884929693162",
+   "closed": true,
+   "close_ts": 1653678944,
+   "close_field": "closedTime",
+   "volume": 801754.44,
+   "requests": {
+    "max@1m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@60m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@360m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@720m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@1440m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "window14d@60m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "window14d@720m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    }
+   }
+  },
+  {
+   "group": "resolved-2022",
+   "condition_id": "0x98c01e1f5053e57fcb59add64b9c0f74ac784609b80ab1a8754e934878468310",
+   "question": "Will the Ethereum Merge (EIP-3675) occur by September 1, 2022?",
+   "token_id": "58410023360445133337002742789209293559332988923893081558084399803488340569229",
+   "closed": true,
+   "close_ts": 1662402654,
+   "close_field": "closedTime",
+   "volume": 764809.66,
+   "requests": {
+    "max@1m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@60m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@360m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@720m": {
+     "status": 200,
+     "error": null,
+     "points": 158,
+     "first_t": 1677024019,
+     "last_t": 1684324833,
+     "median_spacing_minutes": 720.0,
+     "last_before_close_t": null,
+     "last_before_close_price": null,
+     "hours_last_point_before_close": null
+    },
+    "max@1440m": {
+     "status": 200,
+     "error": null,
+     "points": 78,
+     "first_t": 1677024019,
+     "last_t": 1684281623,
+     "median_spacing_minutes": 1440.1,
+     "last_before_close_t": null,
+     "last_before_close_price": null,
+     "hours_last_point_before_close": null
+    },
+    "window14d@60m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "window14d@720m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    }
+   }
+  },
+  {
+   "group": "resolved-2023",
+   "condition_id": "0x8e93a6d09bd936035b48e503d5227bc71b088e47027fffc8a122d82b0132004b",
+   "question": "Arbitrum airdrop by March 31st?",
+   "token_id": "21464812218506609969842830778099561879894555499880561500200821543822228248084",
+   "closed": true,
+   "close_ts": 1679613614,
+   "close_field": "closedTime",
+   "volume": 5477607.91,
+   "requests": {
+    "max@1m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@60m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@360m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@720m": {
+     "status": 200,
+     "error": null,
+     "points": 152,
+     "first_t": 1677283205,
+     "last_t": 1684324833,
+     "median_spacing_minutes": 720.0,
+     "last_before_close_t": 1679572825,
+     "last_before_close_price": 1.0,
+     "hours_last_point_before_close": 11.33
+    },
+    "max@1440m": {
+     "status": 200,
+     "error": null,
+     "points": 75,
+     "first_t": 1677283205,
+     "last_t": 1684281623,
+     "median_spacing_minutes": 1440.1,
+     "last_before_close_t": 1679529639,
+     "last_before_close_price": 0.98,
+     "hours_last_point_before_close": 23.33
+    },
+    "window14d@60m": {
+     "status": 200,
+     "error": null,
+     "points": 335,
+     "first_t": 1678406435,
+     "last_t": 1679698822,
+     "median_spacing_minutes": 60.0,
+     "last_before_close_t": 1679612426,
+     "last_before_close_price": 1.0,
+     "hours_last_point_before_close": 0.33
+    },
+    "window14d@720m": {
+     "status": 200,
+     "error": null,
+     "points": 25,
+     "first_t": 1678406435,
+     "last_t": 1679659240,
+     "median_spacing_minutes": 720.0,
+     "last_before_close_t": 1679572825,
+     "last_before_close_price": 1.0,
+     "hours_last_point_before_close": 11.33
+    }
+   }
+  },
+  {
+   "group": "resolved-2023",
+   "condition_id": "0xddac406b76b46d7998a797fa984c7c7b04812db75b89ecfc49e2fd0d6b9b8a93",
+   "question": "Will Erdo\u011fan win the 2023 Turkish presidential election?",
+   "token_id": "45684115051063786369424575671570278148366024330058665274769842376099284186094",
+   "closed": true,
+   "close_ts": 1685335719,
+   "close_field": "closedTime",
+   "volume": 4820090.91,
+   "requests": {
+    "max@1m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@60m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@360m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@720m": {
+     "status": 200,
+     "error": null,
+     "points": 202,
+     "first_t": 1675857654,
+     "last_t": 1685318402,
+     "median_spacing_minutes": 720.0,
+     "last_before_close_t": 1685318402,
+     "last_before_close_price": 0.9985,
+     "hours_last_point_before_close": 4.81
+    },
+    "max@1440m": {
+     "status": 200,
+     "error": null,
+     "points": 100,
+     "first_t": 1675900809,
+     "last_t": 1685318402,
+     "median_spacing_minutes": 1440.0,
+     "last_before_close_t": 1685318402,
+     "last_before_close_price": 0.9985,
+     "hours_last_point_before_close": 4.81
+    },
+    "window14d@60m": {
+     "status": 200,
+     "error": null,
+     "points": 333,
+     "first_t": 1684130455,
+     "last_t": 1685332802,
+     "median_spacing_minutes": 60.0,
+     "last_before_close_t": 1685332802,
+     "last_before_close_price": 0.9985,
+     "hours_last_point_before_close": 0.81
+    },
+    "window14d@720m": {
+     "status": 200,
+     "error": null,
+     "points": 28,
+     "first_t": 1684152012,
+     "last_t": 1685318402,
+     "median_spacing_minutes": 720.0,
+     "last_before_close_t": 1685318402,
+     "last_before_close_price": 0.9985,
+     "hours_last_point_before_close": 4.81
+    }
+   }
+  },
+  {
+   "group": "resolved-2023",
+   "condition_id": "0xc4ed8fb513b2a6516a131a5880ce85daf9712b040b1dc941a4ee143798c2755f",
+   "question": "Will the missing submarine be found by June 23?",
+   "token_id": "86290672444412636749960094354033457835252179906204820338152129261879285824195",
+   "closed": true,
+   "close_ts": 1687739444,
+   "close_field": "closedTime",
+   "volume": 2253929.42,
+   "requests": {
+    "max@1m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@60m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@360m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@720m": {
+     "status": 200,
+     "error": null,
+     "points": 10,
+     "first_t": 1687348802,
+     "last_t": 1687737602,
+     "median_spacing_minutes": 720.0,
+     "last_before_close_t": 1687737602,
+     "last_before_close_price": 0.995,
+     "hours_last_point_before_close": 0.51
+    },
+    "max@1440m": {
+     "status": 200,
+     "error": null,
+     "points": 5,
+     "first_t": 1687392002,
+     "last_t": 1687737602,
+     "median_spacing_minutes": 1440.0,
+     "last_before_close_t": 1687737602,
+     "last_before_close_price": 0.995,
+     "hours_last_point_before_close": 0.51
+    },
+    "window14d@60m": {
+     "status": 200,
+     "error": null,
+     "points": 118,
+     "first_t": 1687316402,
+     "last_t": 1687737602,
+     "median_spacing_minutes": 60.0,
+     "last_before_close_t": 1687737602,
+     "last_before_close_price": 0.995,
+     "hours_last_point_before_close": 0.51
+    },
+    "window14d@720m": {
+     "status": 200,
+     "error": null,
+     "points": 10,
+     "first_t": 1687348802,
+     "last_t": 1687737602,
+     "median_spacing_minutes": 720.0,
+     "last_before_close_t": 1687737602,
+     "last_before_close_price": 0.995,
+     "hours_last_point_before_close": 0.51
+    }
+   }
+  },
+  {
+   "group": "resolved-2023",
+   "condition_id": "0x0f8087a333699c182f5cfb20fe7e59d08fd8405cf98b436cdc99c2dbdd3d412f",
+   "question": "Will Donald Trump be President of the USA on September 30, 2023?",
+   "token_id": "65416918070405015002633646816577600025554245806300562353181404197455037005614",
+   "closed": true,
+   "close_ts": 1696105239,
+   "close_field": "closedTime",
+   "volume": 1164870.51,
+   "requests": {
+    "max@1m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@60m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@360m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@720m": {
+     "status": 200,
+     "error": null,
+     "points": 390,
+     "first_t": 1678752049,
+     "last_t": 1696075202,
+     "median_spacing_minutes": 720.0,
+     "last_before_close_t": 1696075202,
+     "last_before_close_price": 0.0015,
+     "hours_last_point_before_close": 8.34
+    },
+    "max@1440m": {
+     "status": 200,
+     "error": null,
+     "points": 195,
+     "first_t": 1678752049,
+     "last_t": 1696032002,
+     "median_spacing_minutes": 1440.0,
+     "last_before_close_t": 1696032002,
+     "last_before_close_price": 0.0015,
+     "hours_last_point_before_close": 20.34
+    },
+    "window14d@60m": {
+     "status": 200,
+     "error": null,
+     "points": 336,
+     "first_t": 1694898002,
+     "last_t": 1696104002,
+     "median_spacing_minutes": 60.0,
+     "last_before_close_t": 1696104002,
+     "last_before_close_price": 0.002,
+     "hours_last_point_before_close": 0.34
+    },
+    "window14d@720m": {
+     "status": 200,
+     "error": null,
+     "points": 28,
+     "first_t": 1694908802,
+     "last_t": 1696075202,
+     "median_spacing_minutes": 720.0,
+     "last_before_close_t": 1696075202,
+     "last_before_close_price": 0.0015,
+     "hours_last_point_before_close": 8.34
+    }
+   }
+  },
+  {
+   "group": "resolved-2023",
+   "condition_id": "0x762a5dfe31d2644699bf845eaefc79fc740570c9be5eeb22381e2c2c9e887c21",
+   "question": "$ARB above $1 one week after launch?",
+   "token_id": "109833342136341764867458751069666746850896034162774834340858077071138727569105",
+   "closed": true,
+   "close_ts": 1680200434,
+   "close_field": "closedTime",
+   "volume": 892786.54,
+   "requests": {
+    "max@1m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@60m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@360m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@720m": {
+     "status": 200,
+     "error": null,
+     "points": 115,
+     "first_t": 1679011203,
+     "last_t": 1684324833,
+     "median_spacing_minutes": 720.0,
+     "last_before_close_t": 1680177608,
+     "last_before_close_price": 1.0,
+     "hours_last_point_before_close": 6.34
+    },
+    "max@1440m": {
+     "status": 200,
+     "error": null,
+     "points": 56,
+     "first_t": 1679011203,
+     "last_t": 1684281623,
+     "median_spacing_minutes": 1440.1,
+     "last_before_close_t": 1680134416,
+     "last_before_close_price": 1.0,
+     "hours_last_point_before_close": 18.34
+    },
+    "window14d@60m": {
+     "status": 200,
+     "error": null,
+     "points": 332,
+     "first_t": 1678993213,
+     "last_t": 1680285642,
+     "median_spacing_minutes": 60.0,
+     "last_before_close_t": 1680199216,
+     "last_before_close_price": 1.0,
+     "hours_last_point_before_close": 0.34
+    },
+    "window14d@720m": {
+     "status": 200,
+     "error": null,
+     "points": 28,
+     "first_t": 1679011203,
+     "last_t": 1680264030,
+     "median_spacing_minutes": 720.0,
+     "last_before_close_t": 1680177608,
+     "last_before_close_price": 1.0,
+     "hours_last_point_before_close": 6.34
+    }
+   }
+  },
+  {
+   "group": "resolved-2023",
+   "condition_id": "0xb5858726a0b48b44465ee6c6d0d8fc913bde224ebb1045a537a687cfe1171222",
+   "question": "Will Donald J. Trump be indicted by March 31, 2023?",
+   "token_id": "3854028961966046605980069255334402052447887445769771059116269182001114272326",
+   "closed": true,
+   "close_ts": 1680485411,
+   "close_field": "closedTime",
+   "volume": 874177.15,
+   "requests": {
+    "max@1m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@60m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@360m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@720m": {
+     "status": 200,
+     "error": null,
+     "points": 230,
+     "first_t": 1673308825,
+     "last_t": 1684324833,
+     "median_spacing_minutes": 720.1,
+     "last_before_close_t": 1680480000,
+     "last_before_close_price": 1.0,
+     "hours_last_point_before_close": 1.5
+    },
+    "max@1440m": {
+     "status": 200,
+     "error": null,
+     "points": 115,
+     "first_t": 1673308825,
+     "last_t": 1684281623,
+     "median_spacing_minutes": 1440.1,
+     "last_before_close_t": 1680480000,
+     "last_before_close_price": 1.0,
+     "hours_last_point_before_close": 1.5
+    },
+    "window14d@60m": {
+     "status": 200,
+     "error": null,
+     "points": 325,
+     "first_t": 1679277611,
+     "last_t": 1680570024,
+     "median_spacing_minutes": 60.0,
+     "last_before_close_t": 1680480000,
+     "last_before_close_price": 1.0,
+     "hours_last_point_before_close": 1.5
+    },
+    "window14d@720m": {
+     "status": 200,
+     "error": null,
+     "points": 28,
+     "first_t": 1679313613,
+     "last_t": 1680566435,
+     "median_spacing_minutes": 720.0,
+     "last_before_close_t": 1680480000,
+     "last_before_close_price": 1.0,
+     "hours_last_point_before_close": 1.5
+    }
+   }
+  },
+  {
+   "group": "resolved-2024",
+   "condition_id": "0xdd22472e552920b8438158ea7238bfadfa4f736aa4cee91a6b86c39ead110917",
+   "question": "Will Donald Trump win the 2024 US Presidential Election?",
+   "token_id": "21742633143463906290569050155826241533067272736897614950488156847949938836455",
+   "closed": true,
+   "close_ts": 1730906261,
+   "close_field": "closedTime",
+   "volume": 1531479284.504353,
+   "requests": {
+    "max@1m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@60m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@360m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@720m": {
+     "status": 200,
+     "error": null,
+     "points": 614,
+     "first_t": 1704412803,
+     "last_t": 1730894403,
+     "median_spacing_minutes": 720.0,
+     "last_before_close_t": 1730894403,
+     "last_before_close_price": 0.9985,
+     "hours_last_point_before_close": 3.29
+    },
+    "max@1440m": {
+     "status": 200,
+     "error": null,
+     "points": 307,
+     "first_t": 1704412803,
+     "last_t": 1730851202,
+     "median_spacing_minutes": 1440.0,
+     "last_before_close_t": 1730851202,
+     "last_before_close_price": 0.58,
+     "hours_last_point_before_close": 15.29
+    },
+    "window14d@60m": {
+     "status": 200,
+     "error": null,
+     "points": 335,
+     "first_t": 1729699203,
+     "last_t": 1730905202,
+     "median_spacing_minutes": 60.0,
+     "last_before_close_t": 1730905202,
+     "last_before_close_price": 0.9975,
+     "hours_last_point_before_close": 0.29
+    },
+    "window14d@720m": {
+     "status": 200,
+     "error": null,
+     "points": 28,
+     "first_t": 1729728003,
+     "last_t": 1730894403,
+     "median_spacing_minutes": 720.0,
+     "last_before_close_t": 1730894403,
+     "last_before_close_price": 0.9985,
+     "hours_last_point_before_close": 3.29
+    }
+   }
+  },
+  {
+   "group": "resolved-2024",
+   "condition_id": "0xc6485bb7ea46d7bb89beb9c91e7572ecfc72a6273789496f78bc5e989e4d1638",
+   "question": "Will Kamala Harris win the 2024 US Presidential Election?",
+   "token_id": "69236923620077691027083946871148646972011131466059644796654161903044970987404",
+   "closed": true,
+   "close_ts": 1730916234,
+   "close_field": "closedTime",
+   "volume": 1037039118.18879,
+   "requests": {
+    "max@1m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@60m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@360m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@720m": {
+     "status": 200,
+     "error": null,
+     "points": 613,
+     "first_t": 1704456003,
+     "last_t": 1730894403,
+     "median_spacing_minutes": 720.0,
+     "last_before_close_t": 1730894403,
+     "last_before_close_price": 0.0005,
+     "hours_last_point_before_close": 6.06
+    },
+    "max@1440m": {
+     "status": 200,
+     "error": null,
+     "points": 306,
+     "first_t": 1704499202,
+     "last_t": 1730851202,
+     "median_spacing_minutes": 1440.0,
+     "last_before_close_t": 1730851202,
+     "last_before_close_price": 0.4215,
+     "hours_last_point_before_close": 18.06
+    },
+    "window14d@60m": {
+     "status": 200,
+     "error": null,
+     "points": 335,
+     "first_t": 1729710002,
+     "last_t": 1730916002,
+     "median_spacing_minutes": 60.0,
+     "last_before_close_t": 1730916002,
+     "last_before_close_price": 0.0005,
+     "hours_last_point_before_close": 0.06
+    },
+    "window14d@720m": {
+     "status": 200,
+     "error": null,
+     "points": 28,
+     "first_t": 1729728003,
+     "last_t": 1730894403,
+     "median_spacing_minutes": 720.0,
+     "last_before_close_t": 1730894403,
+     "last_before_close_price": 0.0005,
+     "hours_last_point_before_close": 6.06
+    }
+   }
+  },
+  {
+   "group": "resolved-2024",
+   "condition_id": "0x55c551896c10a74861f2fd88b4f928694310114704cc74b29b9760d1156cade6",
+   "question": "Will any other Republican Politician win the 2024 US Presidential Election?",
+   "token_id": "87935798830831555521299232238121934560977823768906296045917813721531790174443",
+   "closed": true,
+   "close_ts": 1730922336,
+   "close_field": "closedTime",
+   "volume": 241655099.850067,
+   "requests": {
+    "max@1m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@60m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@360m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@720m": {
+     "status": 200,
+     "error": null,
+     "points": 610,
+     "first_t": 1704585602,
+     "last_t": 1730894403,
+     "median_spacing_minutes": 720.0,
+     "last_before_close_t": 1730894403,
+     "last_before_close_price": 0.0005,
+     "hours_last_point_before_close": 7.76
+    },
+    "max@1440m": {
+     "status": 200,
+     "error": null,
+     "points": 305,
+     "first_t": 1704585602,
+     "last_t": 1730851202,
+     "median_spacing_minutes": 1440.0,
+     "last_before_close_t": 1730851202,
+     "last_before_close_price": 0.0005,
+     "hours_last_point_before_close": 19.76
+    },
+    "window14d@60m": {
+     "status": 200,
+     "error": null,
+     "points": 335,
+     "first_t": 1729713602,
+     "last_t": 1730919602,
+     "median_spacing_minutes": 60.0,
+     "last_before_close_t": 1730919602,
+     "last_before_close_price": 0.0005,
+     "hours_last_point_before_close": 0.76
+    },
+    "window14d@720m": {
+     "status": 200,
+     "error": null,
+     "points": 28,
+     "first_t": 1729728003,
+     "last_t": 1730894403,
+     "median_spacing_minutes": 720.0,
+     "last_before_close_t": 1730894403,
+     "last_before_close_price": 0.0005,
+     "hours_last_point_before_close": 7.76
+    }
+   }
+  },
+  {
+   "group": "resolved-2024",
+   "condition_id": "0x265366ede72d73e137b2b9095a6cdc9be6149290caa295738a95e3d881ad0865",
+   "question": "Kamala Harris wins the popular vote?",
+   "token_id": "21271000291843361249209065706097167029083067325856089903026951915683588703117",
+   "closed": true,
+   "close_ts": 1731405799,
+   "close_field": "closedTime",
+   "volume": 163779786.645492,
+   "requests": {
+    "max@1m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@60m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@360m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@720m": {
+     "status": 200,
+     "error": null,
+     "points": 615,
+     "first_t": 1704844803,
+     "last_t": 1731369602,
+     "median_spacing_minutes": 720.0,
+     "last_before_close_t": 1731369602,
+     "last_before_close_price": 0.0005,
+     "hours_last_point_before_close": 10.05
+    },
+    "max@1440m": {
+     "status": 200,
+     "error": null,
+     "points": 308,
+     "first_t": 1704844803,
+     "last_t": 1731369602,
+     "median_spacing_minutes": 1440.0,
+     "last_before_close_t": 1731369602,
+     "last_before_close_price": 0.0005,
+     "hours_last_point_before_close": 10.05
+    },
+    "window14d@60m": {
+     "status": 200,
+     "error": null,
+     "points": 335,
+     "first_t": 1730199603,
+     "last_t": 1731405603,
+     "median_spacing_minutes": 60.0,
+     "last_before_close_t": 1731405603,
+     "last_before_close_price": 0.0005,
+     "hours_last_point_before_close": 0.05
+    },
+    "window14d@720m": {
+     "status": 200,
+     "error": null,
+     "points": 28,
+     "first_t": 1730203203,
+     "last_t": 1731369602,
+     "median_spacing_minutes": 720.0,
+     "last_before_close_t": 1731369602,
+     "last_before_close_price": 0.0005,
+     "hours_last_point_before_close": 10.05
+    }
+   }
+  },
+  {
+   "group": "resolved-2024",
+   "condition_id": "0x230144e34a84dfd0ebdc6de7fde37780e28154f6f84dd8880c7f0e58d302d448",
+   "question": "Will Michelle Obama win the 2024 US Presidential Election?",
+   "token_id": "97508453625137094121006941885029334584603955750917059456402541591996493525667",
+   "closed": true,
+   "close_ts": 1730919615,
+   "close_field": "closedTime",
+   "volume": 153382275.618594,
+   "requests": {
+    "max@1m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@60m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@360m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@720m": {
+     "status": 200,
+     "error": null,
+     "points": 612,
+     "first_t": 1704499202,
+     "last_t": 1730894403,
+     "median_spacing_minutes": 720.0,
+     "last_before_close_t": 1730894403,
+     "last_before_close_price": 0.0005,
+     "hours_last_point_before_close": 7.0
+    },
+    "max@1440m": {
+     "status": 200,
+     "error": null,
+     "points": 306,
+     "first_t": 1704499202,
+     "last_t": 1730851202,
+     "median_spacing_minutes": 1440.0,
+     "last_before_close_t": 1730851202,
+     "last_before_close_price": 0.0005,
+     "hours_last_point_before_close": 19.0
+    },
+    "window14d@60m": {
+     "status": 200,
+     "error": null,
+     "points": 335,
+     "first_t": 1729713602,
+     "last_t": 1730919602,
+     "median_spacing_minutes": 60.0,
+     "last_before_close_t": 1730919602,
+     "last_before_close_price": 0.0005,
+     "hours_last_point_before_close": 0.0
+    },
+    "window14d@720m": {
+     "status": 200,
+     "error": null,
+     "points": 28,
+     "first_t": 1729728003,
+     "last_t": 1730894403,
+     "median_spacing_minutes": 720.0,
+     "last_before_close_t": 1730894403,
+     "last_before_close_price": 0.0005,
+     "hours_last_point_before_close": 7.0
+    }
+   }
+  },
+  {
+   "group": "resolved-2024",
+   "condition_id": "0x7da35195ac3c7bf167f88ab0c27067a99020e36de67d39968b71d9debcdd925e",
+   "question": "Will Robert F. Kennedy Jr. win the 2024 US Presidential Election?",
+   "token_id": "75551890681049796405776295654438099776333571510662809052054780589218524237663",
+   "closed": true,
+   "close_ts": 1730916540,
+   "close_field": "closedTime",
+   "volume": 141605110.748029,
+   "requests": {
+    "max@1m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@60m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@360m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@720m": {
+     "status": 200,
+     "error": null,
+     "points": 614,
+     "first_t": 1704412803,
+     "last_t": 1730894403,
+     "median_spacing_minutes": 720.0,
+     "last_before_close_t": 1730894403,
+     "last_before_close_price": 0.0005,
+     "hours_last_point_before_close": 6.15
+    },
+    "max@1440m": {
+     "status": 200,
+     "error": null,
+     "points": 307,
+     "first_t": 1704412803,
+     "last_t": 1730851202,
+     "median_spacing_minutes": 1440.0,
+     "last_before_close_t": 1730851202,
+     "last_before_close_price": 0.0005,
+     "hours_last_point_before_close": 18.15
+    },
+    "window14d@60m": {
+     "status": 200,
+     "error": null,
+     "points": 335,
+     "first_t": 1729710002,
+     "last_t": 1730916002,
+     "median_spacing_minutes": 60.0,
+     "last_before_close_t": 1730916002,
+     "last_before_close_price": 0.0005,
+     "hours_last_point_before_close": 0.15
+    },
+    "window14d@720m": {
+     "status": 200,
+     "error": null,
+     "points": 28,
+     "first_t": 1729728003,
+     "last_t": 1730894403,
+     "median_spacing_minutes": 720.0,
+     "last_before_close_t": 1730894403,
+     "last_before_close_price": 0.0005,
+     "hours_last_point_before_close": 6.15
+    }
+   }
+  },
+  {
+   "group": "resolved-2025",
+   "condition_id": "0xc3d4155148681756bfe67bb41d8d0882a8a122e7d3762b3591bf6598c9bd198b",
+   "question": "Will Donald Trump be inaugurated?",
+   "token_id": "45714870634090908403813747458214625542376052548606303175331201110938821302832",
+   "closed": true,
+   "close_ts": 1737413496,
+   "close_field": "closedTime",
+   "volume": 400409526.886835,
+   "requests": {
+    "max@1m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@60m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@360m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@720m": {
+     "status": 200,
+     "error": null,
+     "points": 160,
+     "first_t": 1730505603,
+     "last_t": 1737374404,
+     "median_spacing_minutes": 720.0,
+     "last_before_close_t": 1737374404,
+     "last_before_close_price": 0.993,
+     "hours_last_point_before_close": 10.86
+    },
+    "max@1440m": {
+     "status": 200,
+     "error": null,
+     "points": 80,
+     "first_t": 1730505603,
+     "last_t": 1737331204,
+     "median_spacing_minutes": 1440.0,
+     "last_before_close_t": 1737331204,
+     "last_before_close_price": 0.9925,
+     "hours_last_point_before_close": 22.86
+    },
+    "window14d@60m": {
+     "status": 200,
+     "error": null,
+     "points": 336,
+     "first_t": 1736204403,
+     "last_t": 1737410403,
+     "median_spacing_minutes": 60.0,
+     "last_before_close_t": 1737410403,
+     "last_before_close_price": 0.9995,
+     "hours_last_point_before_close": 0.86
+    },
+    "window14d@720m": {
+     "status": 200,
+     "error": null,
+     "points": 28,
+     "first_t": 1736208004,
+     "last_t": 1737374404,
+     "median_spacing_minutes": 720.0,
+     "last_before_close_t": 1737374404,
+     "last_before_close_price": 0.993,
+     "hours_last_point_before_close": 10.86
+    }
+   }
+  },
+  {
+   "group": "resolved-2025",
+   "condition_id": "0x763cc84a3cde36b9ce12a8afe6d3e1e3e46e50692e8ec47636c7803c1033cfab",
+   "question": "Will the Sacramento Kings win the 2025 NBA Finals?",
+   "token_id": "41257670817876317355997233596113195194194608207987371129645019730826567930842",
+   "closed": true,
+   "close_ts": 1744879879,
+   "close_field": "closedTime",
+   "volume": 378011506.511399,
+   "requests": {
+    "max@1m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@60m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@360m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@720m": {
+     "status": 200,
+     "error": null,
+     "points": 409,
+     "first_t": 1727222402,
+     "last_t": 1744848006,
+     "median_spacing_minutes": 720.0,
+     "last_before_close_t": 1744848006,
+     "last_before_close_price": 0.0005,
+     "hours_last_point_before_close": 8.85
+    },
+    "max@1440m": {
+     "status": 200,
+     "error": null,
+     "points": 205,
+     "first_t": 1727222402,
+     "last_t": 1744848006,
+     "median_spacing_minutes": 1440.0,
+     "last_before_close_t": 1744848006,
+     "last_before_close_price": 0.0005,
+     "hours_last_point_before_close": 8.85
+    },
+    "window14d@60m": {
+     "status": 200,
+     "error": null,
+     "points": 336,
+     "first_t": 1743670806,
+     "last_t": 1744876806,
+     "median_spacing_minutes": 60.0,
+     "last_before_close_t": 1744876806,
+     "last_before_close_price": 0.0005,
+     "hours_last_point_before_close": 0.85
+    },
+    "window14d@720m": {
+     "status": 200,
+     "error": null,
+     "points": 28,
+     "first_t": 1743681606,
+     "last_t": 1744848006,
+     "median_spacing_minutes": 720.0,
+     "last_before_close_t": 1744848006,
+     "last_before_close_price": 0.0005,
+     "hours_last_point_before_close": 8.85
+    }
+   }
+  },
+  {
+   "group": "resolved-2025",
+   "condition_id": "0x655e5ca101c466b6293aa15e06173b78b293221803d56e35551f708cd82eb352",
+   "question": "Will Zelenskyy wear a suit before July?",
+   "token_id": "103864131794756285503734468197278890131080300305704085735435172616220564121629",
+   "closed": true,
+   "close_ts": 1752021039,
+   "close_field": "closedTime",
+   "volume": 242231180.272023,
+   "requests": {
+    "max@1m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@60m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@360m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@720m": {
+     "status": 200,
+     "error": null,
+     "points": 95,
+     "first_t": 1747958407,
+     "last_t": 1752019207,
+     "median_spacing_minutes": 720.0,
+     "last_before_close_t": 1752019207,
+     "last_before_close_price": 0.0055,
+     "hours_last_point_before_close": 0.51
+    },
+    "max@1440m": {
+     "status": 200,
+     "error": null,
+     "points": 48,
+     "first_t": 1747958407,
+     "last_t": 1752019207,
+     "median_spacing_minutes": 1440.0,
+     "last_before_close_t": 1752019207,
+     "last_before_close_price": 0.0055,
+     "hours_last_point_before_close": 0.51
+    },
+    "window14d@60m": {
+     "status": 200,
+     "error": null,
+     "points": 336,
+     "first_t": 1750813208,
+     "last_t": 1752019207,
+     "median_spacing_minutes": 60.0,
+     "last_before_close_t": 1752019207,
+     "last_before_close_price": 0.0055,
+     "hours_last_point_before_close": 0.51
+    },
+    "window14d@720m": {
+     "status": 200,
+     "error": null,
+     "points": 28,
+     "first_t": 1750852808,
+     "last_t": 1752019207,
+     "median_spacing_minutes": 720.0,
+     "last_before_close_t": 1752019207,
+     "last_before_close_price": 0.0055,
+     "hours_last_point_before_close": 0.51
+    }
+   }
+  },
+  {
+   "group": "resolved-2025",
+   "condition_id": "0x6903b766f5fda3d5b02f4472a6b4154419e78b7fd126c0b29ce17bb8e20b20cc",
+   "question": "Fed decreases interest rates by 50+ bps after December 2025 meeting?",
+   "token_id": "74018646712472971445258547247048869505144598783748525202442089895996249694683",
+   "closed": true,
+   "close_ts": 1765405072,
+   "close_field": "closedTime",
+   "volume": 161574382.129451,
+   "requests": {
+    "max@1m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@60m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@360m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@720m": {
+     "status": 200,
+     "error": null,
+     "points": 263,
+     "first_t": 1754006409,
+     "last_t": 1765368025,
+     "median_spacing_minutes": 720.0,
+     "last_before_close_t": 1765368025,
+     "last_before_close_price": 0.0045,
+     "hours_last_point_before_close": 10.29
+    },
+    "max@1440m": {
+     "status": 200,
+     "error": null,
+     "points": 132,
+     "first_t": 1754006409,
+     "last_t": 1765324814,
+     "median_spacing_minutes": 1440.0,
+     "last_before_close_t": 1765324814,
+     "last_before_close_price": 0.0045,
+     "hours_last_point_before_close": 22.29
+    },
+    "window14d@60m": {
+     "status": 200,
+     "error": null,
+     "points": 336,
+     "first_t": 1764198022,
+     "last_t": 1765404009,
+     "median_spacing_minutes": 60.0,
+     "last_before_close_t": 1765404009,
+     "last_before_close_price": 0.0005,
+     "hours_last_point_before_close": 0.3
+    },
+    "window14d@720m": {
+     "status": 200,
+     "error": null,
+     "points": 28,
+     "first_t": 1764201618,
+     "last_t": 1765368025,
+     "median_spacing_minutes": 720.0,
+     "last_before_close_t": 1765368025,
+     "last_before_close_price": 0.0045,
+     "hours_last_point_before_close": 10.29
+    }
+   }
+  },
+  {
+   "group": "resolved-2025",
+   "condition_id": "0x37963e2b3194455fe768cd470571640c758c049b7cda6967449a43a8bd5c835f",
+   "question": "Will the Toronto Raptors win the 2025 NBA Finals?",
+   "token_id": "8615283304849028269259042680787343769500144068672958710059180099366119214927",
+   "closed": true,
+   "close_ts": 1743574383,
+   "close_field": "closedTime",
+   "volume": 154220299.964432,
+   "requests": {
+    "max@1m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@60m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@360m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@720m": {
+     "status": 200,
+     "error": null,
+     "points": 379,
+     "first_t": 1727222402,
+     "last_t": 1743552006,
+     "median_spacing_minutes": 720.0,
+     "last_before_close_t": 1743552006,
+     "last_before_close_price": 0.0005,
+     "hours_last_point_before_close": 6.22
+    },
+    "max@1440m": {
+     "status": 200,
+     "error": null,
+     "points": 190,
+     "first_t": 1727222402,
+     "last_t": 1743552006,
+     "median_spacing_minutes": 1440.0,
+     "last_before_close_t": 1743552006,
+     "last_before_close_price": 0.0005,
+     "hours_last_point_before_close": 6.22
+    },
+    "window14d@60m": {
+     "status": 200,
+     "error": null,
+     "points": 336,
+     "first_t": 1742367605,
+     "last_t": 1743573605,
+     "median_spacing_minutes": 60.0,
+     "last_before_close_t": 1743573605,
+     "last_before_close_price": 0.0005,
+     "hours_last_point_before_close": 0.22
+    },
+    "window14d@720m": {
+     "status": 200,
+     "error": null,
+     "points": 28,
+     "first_t": 1742385605,
+     "last_t": 1743552006,
+     "median_spacing_minutes": 720.0,
+     "last_before_close_t": 1743552006,
+     "last_before_close_price": 0.0005,
+     "hours_last_point_before_close": 6.22
+    }
+   }
+  },
+  {
+   "group": "resolved-2025",
+   "condition_id": "0xebddfcf7b4401dade8b4031770a1ab942b01854f3bed453d5df9425cd9f211a9",
+   "question": "Will Zohran Mamdani win the 2025 NYC mayoral election?",
+   "token_id": "33945469250963963541781051637999677727672635213493648594066577298999471399137",
+   "closed": true,
+   "close_ts": 1762321487,
+   "close_field": "closedTime",
+   "volume": 143254859.334333,
+   "requests": {
+    "max@1m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@60m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@360m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@720m": {
+     "status": 200,
+     "error": null,
+     "points": 392,
+     "first_t": 1745366407,
+     "last_t": 1762300818,
+     "median_spacing_minutes": 720.0,
+     "last_before_close_t": 1762300818,
+     "last_before_close_price": 0.9575,
+     "hours_last_point_before_close": 5.74
+    },
+    "max@1440m": {
+     "status": 200,
+     "error": null,
+     "points": 197,
+     "first_t": 1745366407,
+     "last_t": 1762300818,
+     "median_spacing_minutes": 1440.0,
+     "last_before_close_t": 1762300818,
+     "last_before_close_price": 0.9575,
+     "hours_last_point_before_close": 5.74
+    },
+    "window14d@60m": {
+     "status": 200,
+     "error": null,
+     "points": 332,
+     "first_t": 1761112819,
+     "last_t": 1762318819,
+     "median_spacing_minutes": 60.0,
+     "last_before_close_t": 1762318819,
+     "last_before_close_price": 0.9995,
+     "hours_last_point_before_close": 0.74
+    },
+    "window14d@720m": {
+     "status": 200,
+     "error": null,
+     "points": 27,
+     "first_t": 1761134426,
+     "last_t": 1762300818,
+     "median_spacing_minutes": 720.0,
+     "last_before_close_t": 1762300818,
+     "last_before_close_price": 0.9575,
+     "hours_last_point_before_close": 5.74
+    }
+   }
+  },
+  {
+   "group": "resolved-2026",
+   "condition_id": "0x3733a1b647e7364095736ab0966465d896a84cf3b6bc1695ca1f26c3239b3868",
+   "question": "MicroStrategy sells any Bitcoin by May 31, 2026?",
+   "token_id": "25714007960293389110960044475283546872601238755063051359394740854408462452120",
+   "closed": true,
+   "close_ts": 1780533259,
+   "close_field": "closedTime",
+   "volume": 375813104.55575246,
+   "requests": {
+    "max@1m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@60m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@360m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@720m": {
+     "status": 200,
+     "error": null,
+     "points": 57,
+     "first_t": 1778068810,
+     "last_t": 1780531206,
+     "median_spacing_minutes": 720.0,
+     "last_before_close_t": 1780531206,
+     "last_before_close_price": 0.0015,
+     "hours_last_point_before_close": 0.57
+    },
+    "max@1440m": {
+     "status": 200,
+     "error": null,
+     "points": 29,
+     "first_t": 1778112010,
+     "last_t": 1780531206,
+     "median_spacing_minutes": 1440.0,
+     "last_before_close_t": 1780531206,
+     "last_before_close_price": 0.0015,
+     "hours_last_point_before_close": 0.57
+    },
+    "window14d@60m": {
+     "status": 200,
+     "error": null,
+     "points": 335,
+     "first_t": 1779325209,
+     "last_t": 1780531206,
+     "median_spacing_minutes": 60.0,
+     "last_before_close_t": 1780531206,
+     "last_before_close_price": 0.0015,
+     "hours_last_point_before_close": 0.57
+    },
+    "window14d@720m": {
+     "status": 200,
+     "error": null,
+     "points": 27,
+     "first_t": 1779364812,
+     "last_t": 1780531206,
+     "median_spacing_minutes": 720.0,
+     "last_before_close_t": 1780531206,
+     "last_before_close_price": 0.0015,
+     "hours_last_point_before_close": 0.57
+    }
+   }
+  },
+  {
+   "group": "resolved-2026",
+   "condition_id": "0x6d0e09d0f04572d9b1adad84703458b0297bc5603b69dccbde93147ee4443246",
+   "question": "US forces enter Iran by April 30?",
+   "token_id": "2916184120206223749839849644877707470354946028257066951797428049170871002238",
+   "closed": true,
+   "close_ts": 1775694501,
+   "close_field": "closedTime",
+   "volume": 269049107.0837461,
+   "requests": {
+    "max@1m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@60m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@360m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@720m": {
+     "status": 200,
+     "error": null,
+     "points": 21,
+     "first_t": 1773921658,
+     "last_t": 1775692834,
+     "median_spacing_minutes": 720.0,
+     "last_before_close_t": 1775692834,
+     "last_before_close_price": 0.9995,
+     "hours_last_point_before_close": 0.46
+    },
+    "max@1440m": {
+     "status": 200,
+     "error": null,
+     "points": 11,
+     "first_t": 1773964856,
+     "last_t": 1775692834,
+     "median_spacing_minutes": 1440.0,
+     "last_before_close_t": 1775692834,
+     "last_before_close_price": 0.9995,
+     "hours_last_point_before_close": 0.46
+    },
+    "window14d@60m": {
+     "status": 200,
+     "error": null,
+     "points": 161,
+     "first_t": 1774486834,
+     "last_t": 1775692834,
+     "median_spacing_minutes": 60.1,
+     "last_before_close_t": 1775692834,
+     "last_before_close_price": 0.9995,
+     "hours_last_point_before_close": 0.46
+    },
+    "window14d@720m": {
+     "status": 200,
+     "error": null,
+     "points": 8,
+     "first_t": 1774526452,
+     "last_t": 1775692834,
+     "median_spacing_minutes": 720.0,
+     "last_before_close_t": 1775692834,
+     "last_before_close_price": 0.9995,
+     "hours_last_point_before_close": 0.46
+    }
+   }
+  },
+  {
+   "group": "resolved-2026",
+   "condition_id": "0x17815081230e3b9c78b098162c33b1ffa68c4ec29c123d3d14989599e0c2e113",
+   "question": "Fed decreases interest rates by 50+ bps after January 2026 meeting?",
+   "token_id": "11862165566757345985240476164489718219056735011698825377388402888080786399275",
+   "closed": true,
+   "close_ts": 1769640784,
+   "close_field": "closedTime",
+   "volume": 235065166.637259,
+   "requests": {
+    "max@1m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@60m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@360m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@720m": {
+     "status": 200,
+     "error": null,
+     "points": 266,
+     "first_t": 1758153610,
+     "last_t": 1769601622,
+     "median_spacing_minutes": 720.0,
+     "last_before_close_t": 1769601622,
+     "last_before_close_price": 0.0005,
+     "hours_last_point_before_close": 10.88
+    },
+    "max@1440m": {
+     "status": 200,
+     "error": null,
+     "points": 134,
+     "first_t": 1758153610,
+     "last_t": 1769558422,
+     "median_spacing_minutes": 1440.0,
+     "last_before_close_t": 1769558422,
+     "last_before_close_price": 0.0005,
+     "hours_last_point_before_close": 22.88
+    },
+    "window14d@60m": {
+     "status": 200,
+     "error": null,
+     "points": 335,
+     "first_t": 1768431616,
+     "last_t": 1769637617,
+     "median_spacing_minutes": 60.0,
+     "last_before_close_t": 1769637617,
+     "last_before_close_price": 0.0005,
+     "hours_last_point_before_close": 0.88
+    },
+    "window14d@720m": {
+     "status": 200,
+     "error": null,
+     "points": 28,
+     "first_t": 1768435219,
+     "last_t": 1769601622,
+     "median_spacing_minutes": 720.0,
+     "last_before_close_t": 1769601622,
+     "last_before_close_price": 0.0005,
+     "hours_last_point_before_close": 10.88
+    }
+   }
+  },
+  {
+   "group": "resolved-2026",
+   "condition_id": "0x7c6c69d91b21cbbea08a13d0ad51c0e96a956045aaadc77bce507c6b0475b66e",
+   "question": "Fed increases interest rates by 25+ bps after January 2026 meeting?",
+   "token_id": "16419649354067298412736919830777830730026677464626899811394461690794060330642",
+   "closed": true,
+   "close_ts": 1769641444,
+   "close_field": "closedTime",
+   "volume": 216455743.153891,
+   "requests": {
+    "max@1m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@60m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@360m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@720m": {
+     "status": 200,
+     "error": null,
+     "points": 266,
+     "first_t": 1758153602,
+     "last_t": 1769601615,
+     "median_spacing_minutes": 720.0,
+     "last_before_close_t": 1769601615,
+     "last_before_close_price": 0.0015,
+     "hours_last_point_before_close": 11.06
+    },
+    "max@1440m": {
+     "status": 200,
+     "error": null,
+     "points": 134,
+     "first_t": 1758153602,
+     "last_t": 1769558415,
+     "median_spacing_minutes": 1440.0,
+     "last_before_close_t": 1769558415,
+     "last_before_close_price": 0.0015,
+     "hours_last_point_before_close": 23.06
+    },
+    "window14d@60m": {
+     "status": 200,
+     "error": null,
+     "points": 335,
+     "first_t": 1768435213,
+     "last_t": 1769641213,
+     "median_spacing_minutes": 60.0,
+     "last_before_close_t": 1769641213,
+     "last_before_close_price": 0.0005,
+     "hours_last_point_before_close": 0.06
+    },
+    "window14d@720m": {
+     "status": 200,
+     "error": null,
+     "points": 28,
+     "first_t": 1768435213,
+     "last_t": 1769601615,
+     "median_spacing_minutes": 720.0,
+     "last_before_close_t": 1769601615,
+     "last_before_close_price": 0.0015,
+     "hours_last_point_before_close": 11.06
+    }
+   }
+  },
+  {
+   "group": "resolved-2026",
+   "condition_id": "0x1d2787cb8aed975d092b2799ed6f4083e9445f7420cdc09e9d47e7d54356c6cd",
+   "question": "US x Iran ceasefire extended by April 22, 2026?",
+   "token_id": "50049642142024617231697970377792489304039200104142714216386619263735691638204",
+   "closed": true,
+   "close_ts": 1777595562,
+   "close_field": "closedTime",
+   "volume": 203621392.1401,
+   "requests": {
+    "max@1m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@60m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@360m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@720m": {
+     "status": 200,
+     "error": null,
+     "points": 19,
+     "first_t": 1776816017,
+     "last_t": 1777593620,
+     "median_spacing_minutes": 720.0,
+     "last_before_close_t": 1777593620,
+     "last_before_close_price": 0.0015,
+     "hours_last_point_before_close": 0.54
+    },
+    "max@1440m": {
+     "status": 200,
+     "error": null,
+     "points": 10,
+     "first_t": 1776816017,
+     "last_t": 1777593620,
+     "median_spacing_minutes": 1440.0,
+     "last_before_close_t": 1777593620,
+     "last_before_close_price": 0.0015,
+     "hours_last_point_before_close": 0.54
+    },
+    "window14d@60m": {
+     "status": 200,
+     "error": null,
+     "points": 228,
+     "first_t": 1776718840,
+     "last_t": 1777593620,
+     "median_spacing_minutes": 60.0,
+     "last_before_close_t": 1777593620,
+     "last_before_close_price": 0.0015,
+     "hours_last_point_before_close": 0.54
+    },
+    "window14d@720m": {
+     "status": 200,
+     "error": null,
+     "points": 19,
+     "first_t": 1776816017,
+     "last_t": 1777593620,
+     "median_spacing_minutes": 720.0,
+     "last_before_close_t": 1777593620,
+     "last_before_close_price": 0.0015,
+     "hours_last_point_before_close": 0.54
+    }
+   }
+  },
+  {
+   "group": "resolved-2026",
+   "condition_id": "0xd86a816093fcd0a0e1ca440bc5ce199bd3c5a8d6139e044b076958164f8c5423",
+   "question": "US x Iran permanent peace deal by June 15, 2026?",
+   "token_id": "5904694069529905826680225678119990013628860098514322777023141327768111791078",
+   "closed": true,
+   "close_ts": 1781742739,
+   "close_field": "closedTime",
+   "volume": 177370818.43892464,
+   "requests": {
+    "max@1m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@60m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@360m": {
+     "status": 200,
+     "error": null,
+     "points": 0
+    },
+    "max@720m": {
+     "status": 200,
+     "error": null,
+     "points": 66,
+     "first_t": 1778889619,
+     "last_t": 1781740828,
+     "median_spacing_minutes": 720.0,
+     "last_before_close_t": 1781740828,
+     "last_before_close_price": 0.9995,
+     "hours_last_point_before_close": 0.53
+    },
+    "max@1440m": {
+     "status": 200,
+     "error": null,
+     "points": 34,
+     "first_t": 1778889619,
+     "last_t": 1781740828,
+     "median_spacing_minutes": 1440.0,
+     "last_before_close_t": 1781740828,
+     "last_before_close_price": 0.9995,
+     "hours_last_point_before_close": 0.53
+    },
+    "window14d@60m": {
+     "status": 200,
+     "error": null,
+     "points": 336,
+     "first_t": 1780534807,
+     "last_t": 1781740828,
+     "median_spacing_minutes": 60.0,
+     "last_before_close_t": 1781740828,
+     "last_before_close_price": 0.9995,
+     "hours_last_point_before_close": 0.53
+    },
+    "window14d@720m": {
+     "status": 200,
+     "error": null,
+     "points": 28,
+     "first_t": 1780574407,
+     "last_t": 1781740828,
+     "median_spacing_minutes": 720.0,
+     "last_before_close_t": 1781740828,
+     "last_before_close_price": 0.9995,
+     "hours_last_point_before_close": 0.53
+    }
+   }
+  },
+  {
+   "group": "open",
+   "condition_id": "0x7d0aaf81bbd3fd73b6a1651cce08a452c0cbf9c0cbb4520ce0f981065b639d88",
+   "question": "Will Adanech Abiebie be the next Prime Minister of Ethiopia?",
+   "token_id": "27146956652877944551877724690365745048289675287536243265951843487691050802191",
+   "closed": false,
+   "close_ts": 1861937940,
+   "close_field": "endDate",
+   "volume": 83460030.295002,
+   "requests": {
+    "max@1m": {
+     "status": 200,
+     "error": null,
+     "points": 4453,
+     "first_t": 1787971228,
+     "last_t": 1790649079,
+     "median_spacing_minutes": 10.0,
+     "last_before_close_t": 1790649079,
+     "last_before_close_price": 0.0025,
+     "hours_last_point_before_close": 19802.46
+    },
+    "max@60m": {
+     "status": 200,
+     "error": null,
+     "points": 740,
+     "first_t": 1787972420,
+     "last_t": 1790647222,
+     "median_spacing_minutes": 60.0,
+     "last_before_close_t": 1790647222,
+     "last_before_close_price": 0.0025,
+     "hours_last_point_before_close": 19802.98
+    },
+    "max@360m": {
+     "status": 200,
+     "error": null,
+     "points": 125,
+     "first_t": 1787983221,
+     "last_t": 1790649079,
+     "median_spacing_minutes": 360.0,
+     "last_before_close_t": 1790649079,
+     "last_before_close_price": 0.0025,
+     "hours_last_point_before_close": 19802.46
+    },
+    "max@720m": {
+     "status": 200,
+     "error": null,
+     "points": 306,
+     "first_t": 1777334414,
+     "last_t": 1790640024,
+     "median_spacing_minutes": 720.0,
+     "last_before_close_t": 1790640024,
+     "last_before_close_price": 0.0025,
+     "hours_last_point_before_close": 19804.98
+    },
+    "max@1440m": {
+     "status": 200,
+     "error": null,
+     "points": 154,
+     "first_t": 1777334414,
+     "last_t": 1790649079,
+     "median_spacing_minutes": 1440.0,
+     "last_before_close_t": 1790649079,
+     "last_before_close_price": 0.0025,
+     "hours_last_point_before_close": 19802.46
+    }
+   }
+  },
+  {
+   "group": "open",
+   "condition_id": "0x5db999fad322cea2914535aae5517060c3f80ad6d8c0231cde2124a434d16846",
+   "question": "Will the U.S. invade Iran before 2027?",
+   "token_id": "55115078421062885512539156303747803058407616201213034911037320915726138659123",
+   "closed": false,
+   "close_ts": 1798779540,
+   "close_field": "endDate",
+   "volume": 69951363.06809501,
+   "requests": {
+    "max@1m": {
+     "status": 200,
+     "error": null,
+     "points": 4458,
+     "first_t": 1787970612,
+     "last_t": 1790648953,
+     "median_spacing_minutes": 10.0,
+     "last_before_close_t": 1790648953,
+     "last_before_close_price": 0.145,
+     "hours_last_point_before_close": 2258.5
+    },
+    "max@60m": {
+     "status": 200,
+     "error": null,
+     "points": 744,
+     "first_t": 1787972413,
+     "last_t": 1790648835,
+     "median_spacing_minutes": 60.0,
+     "last_before_close_t": 1790648835,
+     "last_before_close_price": 0.145,
+     "hours_last_point_before_close": 2258.53
+    },
+    "max@360m": {
+     "status": 200,
+     "error": null,
+     "points": 125,
+     "first_t": 1787983212,
+     "last_t": 1790649075,
+     "median_spacing_minutes": 360.0,
+     "last_before_close_t": 1790649075,
+     "last_before_close_price": 0.145,
+     "hours_last_point_before_close": 2258.46
+    },
+    "max@720m": {
+     "status": 200,
+     "error": null,
+     "points": 651,
+     "first_t": 1762387203,
+     "last_t": 1790649016,
+     "median_spacing_minutes": 720.0,
+     "last_before_close_t": 1790649016,
+     "last_before_close_price": 0.145,
+     "hours_last_point_before_close": 2258.48
+    },
+    "max@1440m": {
+     "status": 200,
+     "error": null,
+     "points": 327,
+     "first_t": 1762387203,
+     "last_t": 1790648774,
+     "median_spacing_minutes": 1440.0,
+     "last_before_close_t": 1790648774,
+     "last_before_close_price": 0.145,
+     "hours_last_point_before_close": 2258.55
+    }
+   }
+  },
+  {
+   "group": "open",
+   "condition_id": "0x0b4cc3b739e1dfe5d73274740e7308b6fb389c5af040c3a174923d928d134bee",
+   "question": "Will Jesus Christ return before 2027?",
+   "token_id": "69324317355037271422943965141382095011871956039434394956830818206664869608517",
+   "closed": false,
+   "close_ts": 1798779540,
+   "close_field": "endDate",
+   "volume": 66095082.751184955,
+   "requests": {
+    "max@1m": {
+     "status": 200,
+     "error": null,
+     "points": 4455,
+     "first_t": 1787971221,
+     "last_t": 1790649077,
+     "median_spacing_minutes": 10.0,
+     "last_before_close_t": 1790649077,
+     "last_before_close_price": 0.0165,
+     "hours_last_point_before_close": 2258.46
+    },
+    "max@60m": {
+     "status": 200,
+     "error": null,
+     "points": 743,
+     "first_t": 1787972417,
+     "last_t": 1790648837,
+     "median_spacing_minutes": 60.0,
+     "last_before_close_t": 1790648837,
+     "last_before_close_price": 0.0165,
+     "hours_last_point_before_close": 2258.53
+    },
+    "max@360m": {
+     "status": 200,
+     "error": null,
+     "points": 125,
+     "first_t": 1787983218,
+     "last_t": 1790648956,
+     "median_spacing_minutes": 360.0,
+     "last_before_close_t": 1790648956,
+     "last_before_close_price": 0.0165,
+     "hours_last_point_before_close": 2258.5
+    },
+    "max@720m": {
+     "status": 200,
+     "error": null,
+     "points": 595,
+     "first_t": 1764115216,
+     "last_t": 1790649019,
+     "median_spacing_minutes": 720.0,
+     "last_before_close_t": 1790649019,
+     "last_before_close_price": 0.0165,
+     "hours_last_point_before_close": 2258.48
+    },
+    "max@1440m": {
+     "status": 200,
+     "error": null,
+     "points": 300,
+     "first_t": 1764115216,
+     "last_t": 1790649077,
+     "median_spacing_minutes": 1440.0,
+     "last_before_close_t": 1790649077,
+     "last_before_close_price": 0.0165,
+     "hours_last_point_before_close": 2258.46
+    }
+   }
+  },
+  {
+   "group": "open",
+   "condition_id": "0xb6d6f15a1b5d08753653f1867ccd6126badfbe182a75159a330dc7b15336b309",
+   "question": "Will Gedion Timothewos be the next Prime Minister of Ethiopia?",
+   "token_id": "26485245961222313575373928818655498088613748810606082451526412785977121014592",
+   "closed": false,
+   "close_ts": 1861937940,
+   "close_field": "endDate",
+   "volume": 55938233.411122985,
+   "requests": {
+    "max@1m": {
+     "status": 200,
+     "error": null,
+     "points": 4458,
+     "first_t": 1787971216,
+     "last_t": 1790649076,
+     "median_spacing_minutes": 10.0,
+     "last_before_close_t": 1790649076,
+     "last_before_close_price": 0.004,
+     "hours_last_point_before_close": 19802.46
+    },
+    "max@60m": {
+     "status": 200,
+     "error": null,
+     "points": 744,
+     "first_t": 1787972415,
+     "last_t": 1790648836,
+     "median_spacing_minutes": 60.0,
+     "last_before_close_t": 1790648836,
+     "last_before_close_price": 0.004,
+     "hours_last_point_before_close": 19802.53
+    },
+    "max@360m": {
+     "status": 200,
+     "error": null,
+     "points": 125,
+     "first_t": 1787983215,
+     "last_t": 1790649076,
+     "median_spacing_minutes": 360.0,
+     "last_before_close_t": 1790649076,
+     "last_before_close_price": 0.004,
+     "hours_last_point_before_close": 19802.46
+    },
+    "max@720m": {
+     "status": 200,
+     "error": null,
+     "points": 309,
+     "first_t": 1777334404,
+     "last_t": 1790649017,
+     "median_spacing_minutes": 720.0,
+     "last_before_close_t": 1790649017,
+     "last_before_close_price": 0.004,
+     "hours_last_point_before_close": 19802.48
+    },
+    "max@1440m": {
+     "status": 200,
+     "error": null,
+     "points": 156,
+     "first_t": 1777334404,
+     "last_t": 1790649076,
+     "median_spacing_minutes": 1440.0,
+     "last_before_close_t": 1790649076,
+     "last_before_close_price": 0.004,
+     "hours_last_point_before_close": 19802.46
+    }
+   }
+  },
+  {
+   "group": "open",
+   "condition_id": "0x836b850fc838195374862551a36f1c8691d96ff01e58b0a071f0fc1a0e357fb1",
+   "question": "Will LeBron James win the 2028 US Presidential Election?",
+   "token_id": "39223330966352513418907732239455948906399882924787587183466504819170775983376",
+   "closed": false,
+   "close_ts": 1857168000,
+   "close_field": "endDate",
+   "volume": 54782190.514108,
+   "requests": {
+    "max@1m": {
+     "status": 200,
+     "error": null,
+     "points": 4459,
+     "first_t": 1787971217,
+     "last_t": 1790649076,
+     "median_spacing_minutes": 10.0,
+     "last_before_close_t": 1790649076,
+     "last_before_close_price": 0.0005,
+     "hours_last_point_before_close": 18477.48
+    },
+    "max@60m": {
+     "status": 200,
+     "error": null,
+     "points": 745,
+     "first_t": 1787972415,
+     "last_t": 1790648836,
+     "median_spacing_minutes": 60.0,
+     "last_before_close_t": 1790648836,
+     "last_before_close_price": 0.0005,
+     "hours_last_point_before_close": 18477.55
+    },
+    "max@360m": {
+     "status": 200,
+     "error": null,
+     "points": 125,
+     "first_t": 1787983215,
+     "last_t": 1790649076,
+     "median_spacing_minutes": 360.0,
+     "last_before_close_t": 1790649076,
+     "last_before_close_price": 0.0005,
+     "hours_last_point_before_close": 18477.48
+    },
+    "max@720m": {
+     "status": 200,
+     "error": null,
+     "points": 823,
+     "first_t": 1753228809,
+     "last_t": 1790648955,
+     "median_spacing_minutes": 720.0,
+     "last_before_close_t": 1790648955,
+     "last_before_close_price": 0.0005,
+     "hours_last_point_before_close": 18477.51
+    },
+    "max@1440m": {
+     "status": 200,
+     "error": null,
+     "points": 414,
+     "first_t": 1753228809,
+     "last_t": 1790649017,
+     "median_spacing_minutes": 1440.0,
+     "last_before_close_t": 1790649017,
+     "last_before_close_price": 0.0005,
+     "hours_last_point_before_close": 18477.5
+    }
+   }
+  }
+ ]
+}
