@@ -1,0 +1,69 @@
+name: Worker image
+
+# Builds the lean pilot worker image (deploy/worker.Dockerfile) and checks it with
+# the network disabled: plan mode runs, the entry point refuses to run without a
+# data directory, and the process supervisor works with the image's dependencies.
+# Pushes nothing and provisions nothing.
+on:
+  pull_request:
+    paths:
+      - deploy/**
+      - .dockerignore
+      - pyproject.toml
+      - uv.lock
+      - .migration-backup/services/polymarket-ingestor/src/**
+      - .github/workflows/worker-image.yml
+  push:
+    branches: [main]
+    paths:
+      - deploy/**
+      - .dockerignore
+      - pyproject.toml
+      - uv.lock
+      - .migration-backup/services/polymarket-ingestor/src/**
+      - .github/workflows/worker-image.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: worker-image-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Build the worker image
+        run: docker build -f deploy/worker.Dockerfile -t marketsignalos-worker:ci .
+      - name: Plan mode runs without network access
+        run: >
+          docker run --rm --network none -e POLYMARKET_PILOT_DATA_DIR=/tmp/pilot
+          marketsignalos-worker:ci --plan
+      - name: Refuses to start without a data directory
+        run: |
+          set +e
+          docker run --rm --network none marketsignalos-worker:ci --plan
+          status=$?
+          set -e
+          if [ "$status" -ne 2 ]; then
+            echo "expected exit status 2 without a data directory, got $status" >&2
+            exit 1
+          fi
+      - name: Supervisor and every stage module load inside the image
+        run: |
+          docker run --rm --network none --entrypoint python marketsignalos-worker:ci -c '
+          import sys
+          from pathlib import Path
+          import marketsignalos_polymarket.runner
+          import marketsignalos_polymarket.score_snapshot
+          from marketsignalos_polymarket.lean_pilot import PilotConfig, supervise
+          report = supervise([sys.executable, "-c", "print(1)"], Path("/tmp/child.log"), PilotConfig())
+          assert report["status"] == "succeeded", report
+          print("supervisor", report["status"], "peak rss bytes", report["sampled_peak_rss_bytes"])
+          '
