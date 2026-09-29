@@ -1,0 +1,344 @@
+{
+ "schema_version": 1,
+ "note": "Transcribed from the job logs of two runs of scripts/probe_polygon_logs.py. Raw sample logs and full per-trade rows are in those logs; this file keeps the measurements. Addresses of traced wallets are public on-chain data.",
+ "source": {
+  "script": "scripts/probe_polygon_logs.py",
+  "workflow": ".github/workflows/probe-polygon-logs.yml",
+  "event_layouts": {
+   "v1": "Polymarket/ctf-exchange src/exchange/interfaces/ITrading.sol",
+   "v2": "Polymarket/ctf-exchange-v2 @ ccc0596 src/exchange/mixins/Events.sol"
+  },
+  "contracts": {
+   "v1_ctf": "0x4bfb41d5b3570defd03c39a9a4d8de6bd8b8982e",
+   "v1_negrisk": "0xc5d563a36ae78145c45a50134d48a1215220f80a",
+   "v2_ctf": "0xe111180000d2663c0091e4f400237545b87b996b",
+   "v2_negrisk": "0xe2222d279d744050d28e00520010520000310f59"
+  },
+  "topics": {
+   "v1_order_filled": "0xd0a08e8c493f9c94f29311604c9de1b4e8c8d4c06bd0c789af57f2d65bfec0f6",
+   "v2_order_filled": "0xd543adfd945773f1a62f74f0ee55a5e3b9b1a28262980ba90b1a89f2ea84d8ee",
+   "computed_by": "node web3_sha3 after reproducing the ERC-20 Transfer topic"
+  }
+ },
+ "runs": [
+  {
+   "run_id": 36520936026,
+   "job_id": 109253399629,
+   "commit": "22b321e",
+   "started_at": "2026-09-29T04:17:08Z",
+   "finished_at": "2026-09-29T04:19:00Z",
+   "rpc_candidates": [
+    {
+     "url": "https://polygon-bor-rpc.publicnode.com",
+     "head": 94633526,
+     "web3_sha3_verified": true,
+     "error": null
+    },
+    {
+     "url": "https://polygon-rpc.com",
+     "head": null,
+     "web3_sha3_verified": false,
+     "error": "API key disabled, reason: tenant disabled, json-rpc code: -32051, rest code: 403"
+    },
+    {
+     "url": "https://polygon.drpc.org",
+     "head": 94633526,
+     "web3_sha3_verified": false,
+     "error": null
+    },
+    {
+     "url": "https://1rpc.io/matic",
+     "head": null,
+     "web3_sha3_verified": false,
+     "error": "usage limit for current plan reached (-32001)"
+    }
+   ],
+   "rpc_used": "https://polygon-bor-rpc.publicnode.com",
+   "head_block": 94633527,
+   "seconds_per_block": 1.5,
+   "range_limits_v2_unfiltered": [
+    {
+     "blocks": 100,
+     "ok": true,
+     "logs": 3582,
+     "bytes": 3900496,
+     "seconds": 14.174,
+     "error": null
+    },
+    {
+     "blocks": 500,
+     "ok": true,
+     "logs": 23141,
+     "bytes": 25198300,
+     "seconds": 3.079,
+     "error": null
+    },
+    {
+     "blocks": 1000,
+     "ok": true,
+     "logs": 50863,
+     "bytes": 55385374,
+     "seconds": 5.67,
+     "error": null
+    },
+    {
+     "blocks": 2000,
+     "ok": true,
+     "logs": 100272,
+     "bytes": 109187577,
+     "seconds": 13.148,
+     "error": null
+    },
+    {
+     "blocks": 5000,
+     "ok": true,
+     "logs": 248188,
+     "bytes": 270257101,
+     "seconds": 28.63,
+     "error": null
+    },
+    {
+     "blocks": 10000,
+     "ok": false,
+     "logs": null,
+     "bytes": 79,
+     "seconds": 29.942,
+     "error": "{\"code\": -32002, \"message\": \"request timed out\"}"
+    }
+   ],
+   "density_v2_recent": {
+    "start_block": 94633007,
+    "blocks": 500,
+    "logs": 23141,
+    "logs_per_block": 46.282
+   },
+   "density_v1_2025_06_02": {
+    "start_block": 72251473,
+    "blocks": 500,
+    "logs": null,
+    "error": "{\"code\": -32701, \"message\": \"History has been pruned for this block. To remove restrictions, order a dedicated full node here: https://www.allnodes.com/pol/host\"}"
+   },
+   "v1_recent_500_blocks": {
+    "start_block": 94633007,
+    "logs": 0,
+    "error": null
+   },
+   "cross_check": {
+    "trades": 15,
+    "wallet_in_fill": 15,
+    "wallet_as_maker": 15,
+    "size_price_match": 15,
+    "versions": [
+     "v2"
+    ],
+    "sides": {
+     "BUY": 14,
+     "SELL": 1
+    }
+   },
+   "subgraph": {
+    "status": 429,
+    "code": "ENDPOINT_DEPRECATED",
+    "message": "This Polymarket subgraph endpoint is paused and deprecated following Polymarket’s migration to V2 — the data is stale and incorrect. Stop using it. For activity, positions, and balances use the Goldsky Edge Data API: https://edge.goldsky.com/data/docs/ . Other datasets: Goldsky Turbo. Questions? support@goldsky.com"
+   },
+   "rpc_calls": 58,
+   "rpc_errors": 2
+  },
+  {
+   "run_id": 36521364258,
+   "job_id": 109254738365,
+   "commit": "a5d9e22",
+   "started_at": "2026-09-29T04:22:59Z",
+   "finished_at": "2026-09-29T04:24:44Z",
+   "rpc_candidates": [
+    {
+     "url": "https://polygon-bor-rpc.publicnode.com",
+     "head": 94633760,
+     "web3_sha3_verified": true,
+     "error": null
+    },
+    {
+     "url": "https://polygon-rpc.com",
+     "head": null,
+     "web3_sha3_verified": false,
+     "error": "API key disabled, reason: tenant disabled, json-rpc code: -32051, rest code: 403"
+    },
+    {
+     "url": "https://polygon.drpc.org",
+     "head": 94633761,
+     "web3_sha3_verified": false,
+     "error": null
+    },
+    {
+     "url": "https://1rpc.io/matic",
+     "head": 94633760,
+     "web3_sha3_verified": false,
+     "error": null
+    }
+   ],
+   "rpc_used": "https://polygon-bor-rpc.publicnode.com",
+   "head_block": 94633761,
+   "seconds_per_block": 1.5,
+   "range_limits_v2_unfiltered": [
+    {
+     "blocks": 100,
+     "ok": true,
+     "logs": 4697,
+     "bytes": 5114757,
+     "seconds": 0.431,
+     "error": null
+    },
+    {
+     "blocks": 500,
+     "ok": true,
+     "logs": 22365,
+     "bytes": 24353434,
+     "seconds": 2.219,
+     "error": null
+    },
+    {
+     "blocks": 1000,
+     "ok": true,
+     "logs": 48652,
+     "bytes": 52977969,
+     "seconds": 5.274,
+     "error": null
+    },
+    {
+     "blocks": 2000,
+     "ok": true,
+     "logs": 102175,
+     "bytes": 111259874,
+     "seconds": 14.475,
+     "error": null
+    },
+    {
+     "blocks": 5000,
+     "ok": true,
+     "logs": 246997,
+     "bytes": 268960155,
+     "seconds": 28.91,
+     "error": null
+    },
+    {
+     "blocks": 10000,
+     "ok": false,
+     "logs": null,
+     "bytes": 79,
+     "seconds": 29.949,
+     "error": "{\"code\": -32002, \"message\": \"request timed out\"}"
+    }
+   ],
+   "density_v2_recent": {
+    "start_block": 94633241,
+    "blocks": 500,
+    "logs": 22365,
+    "logs_per_block": 44.73
+   },
+   "density_v1_2025_06_02": {
+    "start_block": 72251473,
+    "blocks": 500,
+    "logs": null,
+    "error": "{\"code\": -32701, \"message\": \"History has been pruned for this block. To remove restrictions, order a dedicated full node here: https://www.allnodes.com/pol/host\"}"
+   },
+   "v1_recent_500_blocks": {
+    "start_block": 94633241,
+    "logs": 0,
+    "error": null
+   },
+   "block_at_2026_04_01": 84940782,
+   "wallet_filtered_ranges_v2": {
+    "0xdc1250feabbdc1a0c6717c5a0000f2ad8e581846": [
+     {
+      "blocks": 5000,
+      "ok": true,
+      "logs": 4,
+      "bytes": 4392,
+      "seconds": 0.054,
+      "error": null
+     },
+     {
+      "blocks": 20000,
+      "ok": false,
+      "logs": null,
+      "bytes": 96,
+      "seconds": 0.043,
+      "error": "{\"code\": -32701, \"message\": \"exceed maximum block range: 10000\"}"
+     }
+    ],
+    "0x076551e9aa13492a81c60ea1d359afbd16cdad9e": [
+     {
+      "blocks": 5000,
+      "ok": true,
+      "logs": 3,
+      "bytes": 3304,
+      "seconds": 0.054,
+      "error": null
+     },
+     {
+      "blocks": 20000,
+      "ok": false,
+      "logs": null,
+      "bytes": 96,
+      "seconds": 0.045,
+      "error": "{\"code\": -32701, \"message\": \"exceed maximum block range: 10000\"}"
+     }
+    ],
+    "0x1b03f926975193cec01a4c8cd950c11a4cde3d8e": [
+     {
+      "blocks": 5000,
+      "ok": true,
+      "logs": 7,
+      "bytes": 7660,
+      "seconds": 0.067,
+      "error": null
+     },
+     {
+      "blocks": 20000,
+      "ok": false,
+      "logs": null,
+      "bytes": 96,
+      "seconds": 0.044,
+      "error": "{\"code\": -32701, \"message\": \"exceed maximum block range: 10000\"}"
+     }
+    ]
+   },
+   "cross_check": {
+    "trades": 15,
+    "wallet_in_fill": 15,
+    "wallet_as_maker": 15,
+    "size_price_match": 15,
+    "versions": [
+     "v2"
+    ],
+    "sides": {
+     "BUY": 14,
+     "SELL": 1
+    }
+   },
+   "subgraph": {
+    "status": 429,
+    "code": "ENDPOINT_DEPRECATED",
+    "message": "This Polymarket subgraph endpoint is paused and deprecated following Polymarket’s migration to V2 — the data is stale and incorrect. Stop using it. For activity, positions, and balances use the Goldsky Edge Data API: https://edge.goldsky.com/data/docs/ . Other datasets: Goldsky Turbo. Questions? support@goldsky.com"
+   },
+   "rpc_calls": 91,
+   "rpc_errors": 5
+  }
+ ],
+ "derived": {
+  "blocks_per_day": 57600,
+  "fill_logs_per_day": [
+   2576448,
+   2665843
+  ],
+  "bytes_per_fill_log": 1089,
+  "raw_rpc_json_gb_per_day": [
+   2.81,
+   2.9
+  ],
+  "v2_era_blocks_since_2026_04_01": 9692979,
+  "wallet_filtered_calls_for_v2_era_at_10000_blocks": 970,
+  "unfiltered_calls_for_v2_era_at_5000_blocks": 1939,
+  "unfiltered_raw_gb_for_v2_era": 523
+ }
+}
