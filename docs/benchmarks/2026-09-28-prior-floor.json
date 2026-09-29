@@ -1,0 +1,105 @@
+{
+  "schema_version": 1,
+  "status": "passed",
+  "score_version": "forecast-v4",
+  "generated_at": "2026-09-28T22:44:49.828394+00:00",
+  "scope": "Stage 0 frozen cohort; population-prior estimator diagnostic only. No production code, threshold, or default changed.",
+  "refit_status": "pending_local_inputs",
+  "provenance": {
+    "attrition_receipt": {
+      "name": "2026-09-10-gate-attrition.json",
+      "sha256": "bbef4470a1f4673bf383df012cf687258b5333462c9553b64a28a9f708a9ed59"
+    },
+    "stage0_snapshot": {
+      "name": "enrichments.jsonl",
+      "bytes": 1878150,
+      "sha256": "01564d095e7945cee89895f3f278a0f0d66e9aee6b88530325f27e10a447dc5f"
+    },
+    "diagnostic_source_sha256": "cbecc712b05a8483e7824d9f40f6b7cc132f7aa80fe8956774dcff730e2e1971"
+  },
+  "prior_recovery": {
+    "proposed_mu": -0.088177,
+    "variance_floor": 0.01,
+    "sigma2_interval_from_trusted_medians": [
+      0.00999983430872143,
+      0.010000077490917974
+    ],
+    "floor_inside_interval": true,
+    "predicted_prior_point_at_floor": {
+      "forecast_skill_likelihood": 0.188951,
+      "forecast_edge_lower_bound": -0.252662,
+      "recent_edge_mean": -0.088177
+    },
+    "exact_quantile_matches": [
+      {
+        "cohort": "all_wallets",
+        "metric": "forecast_skill_likelihood",
+        "quantile": "median"
+      },
+      {
+        "cohort": "all_wallets",
+        "metric": "recent_edge_mean",
+        "quantile": "median"
+      },
+      {
+        "cohort": "trusted_wallets",
+        "metric": "forecast_skill_likelihood",
+        "quantile": "median"
+      },
+      {
+        "cohort": "trusted_wallets",
+        "metric": "forecast_edge_lower_bound",
+        "quantile": "median"
+      },
+      {
+        "cohort": "trusted_wallets",
+        "metric": "recent_edge_mean",
+        "quantile": "median"
+      }
+    ]
+  },
+  "prior_invariance_bound": {
+    "prior_dependent_gates": [
+      8,
+      9,
+      12
+    ],
+    "max_qualifiers_any_prior": {
+      "production_gates": 0,
+      "data_gates_suspended": 14,
+      "clv_gate_suspended": 13,
+      "data_and_clv_gates_suspended": 154
+    },
+    "trusted_ess_20_wallets": 42,
+    "trusted_ess_20_failing_clv_gate": 42,
+    "trusted_ess_20_prior_independent_failures": [
+      {
+        "gates": [
+          10,
+          13
+        ],
+        "wallets": 29
+      },
+      {
+        "gates": [
+          13
+        ],
+        "wallets": 13
+      }
+    ],
+    "prior_independent_model_economic_failure_histogram": {
+      "0": 14,
+      "1": 151,
+      "2": 311,
+      "3": 161,
+      "4": 196
+    }
+  },
+  "refit": null,
+  "limitations": [
+    "The bound is exact for the stored decisions. Gates 7 and 11 sum event weights, gate 10 reads hydration economics, gate 13 reads closing-line value, and gates 1-6 read hydration, so none of them depends on the population prior.",
+    "The refit rebuilds resolved bets from the bets export. Its entry price is the buys-only VWAP and its cost is net size times that price; both equal production's cost-basis inputs unless a position was bought again after a sell. The production-estimator reproduction check measures the effect before any variant is read.",
+    "Variants are diagnostics, not proposed production estimators. Each applied variance keeps production's floor and cap, so the gates see what production would have seen.",
+    "Historical, selected cohort. Qualifier counts are not prospective, fee-adjusted evidence that copying any wallet would be profitable."
+  ]
+}
