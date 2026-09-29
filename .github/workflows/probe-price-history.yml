@@ -1,0 +1,36 @@
+name: Probe historical price backfill (read-only)
+
+# Answers one question with live data: can closing prices for resolved Polymarket
+# markets be backfilled from the CLOB /prices-history endpoint, and at what
+# granularity? Read-only against public endpoints; writes nothing anywhere.
+on:
+  workflow_dispatch:
+  push:
+    branches: [claude/marketsignal-branch-review-o1use8]
+    paths:
+      - scripts/probe_price_history.py
+      - .github/workflows/probe-price-history.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: probe-price-history
+  cancel-in-progress: true
+
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6
+        with:
+          version: "0.12.3"
+          enable-cache: false
+      - name: Install locked Python dependencies
+        run: uv sync --frozen --no-dev
+      - name: Probe /prices-history on resolved and open markets
+        run: uv run --no-sync python scripts/probe_price_history.py
