@@ -1,0 +1,37 @@
+name: Probe Polygon on-chain trades (read-only)
+
+# Measures whether Polymarket fills can be read directly from Polygon: public RPC
+# range limits, fill density for the V1 (2022 to April 2026) and V2 (April 2026 on)
+# exchanges, decoded fills cross-checked against the Data API, and whether the
+# Goldsky orderbook subgraph still receives trades. Read-only; writes nothing.
+on:
+  workflow_dispatch:
+  push:
+    branches: [claude/marketsignal-branch-review-o1use8]
+    paths:
+      - scripts/probe_polygon_logs.py
+      - .github/workflows/probe-polygon-logs.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: probe-polygon-logs
+  cancel-in-progress: true
+
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6
+        with:
+          version: "0.12.3"
+          enable-cache: false
+      - name: Install locked Python dependencies
+        run: uv sync --frozen --no-dev
+      - name: Probe Polygon logs, decode fills, cross-check with the Data API
+        run: uv run --no-sync python scripts/probe_polygon_logs.py

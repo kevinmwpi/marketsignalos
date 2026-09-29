@@ -52,8 +52,7 @@ collection restarts in the cloud. Three findings change how Stages 0–1 read:
   therefore **untestable on this snapshot**, not (A) or (C).
 - **The prior variance floor is real but cannot explain the empty feed.** Every wallet
   also fails a gate that no prior changes, so the qualifier count is 0 under any prior.
-  See `benchmarks/2026-09-28-prior-floor.md` (branch `claude/dazzling-tesla-49rylc`
-  until merged).
+  See [the prior-floor diagnostic](benchmarks/2026-09-28-prior-floor.md).
 - **Closing prices are recoverable.** The [live probe](benchmarks/2026-09-29-price-history-probe.md)
   found that CLOB `/prices-history` with an explicit `startTs`/`endTs` window returns
   1-hour points for every probed market closed in 2023 or later, the last point at most
@@ -63,6 +62,13 @@ collection restarts in the cloud. Three findings change how Stages 0–1 read:
   append-only, bitemporal store (§8). Using it for CLV is a separate, versioned change,
   and bets on pre-2023 markets must then be excluded from CLV with a recorded reason
   rather than counted as missing.
+- **Polygon logs are complete but not cheaper, and the Goldsky subgraph is gone.** The
+  [chain probe](benchmarks/2026-09-29-polygon-logs-probe.md) decoded 30 of 30 Data API
+  trades exactly from V2 `OrderFilled` events. It also measured about 2.9 GB a day of
+  raw RPC data to follow every trade, and about 970 calls for one wallet's V2 history
+  (free nodes cap a query at 10,000 blocks). 2025 history is already pruned on free
+  nodes. The orderbook subgraph behind recent-trader discovery now returns
+  `ENDPOINT_DEPRECATED`. See Stage 4.
 
 **How to use this.** Stages run in order. Each stage has an **entry gate** — a
 condition that must already be true — and **acceptance evidence** — an artifact a
@@ -512,6 +518,16 @@ with its own volume, separate from the serving API. Before provisioning:
 - Set a Railway alert at $10 and a workspace compute limit at $15, and record in the
   runbook that the hard limit takes *all* workspace workloads offline.
 
+**Prepared 2026-09-29, not provisioned.** `deploy/worker.Dockerfile` packages the worker
+with production dependencies from `uv.lock`, and `deploy/railway-worker.toml` runs it
+as an hourly Railway cron service. CI builds the image and checks that plan mode runs
+without network access, that the worker refuses to start without a volume, and that
+the supervisor works inside the image. `psutil`, which the supervisor imports, was
+only a dev dependency until this change, so a production `--run` would have crashed.
+See `docs/railway-deployment.md`. Of the items above, a fresh volume only defers the
+dedupe-index risk (the index starts empty; the receipts' peak RSS tracks its growth).
+Retention, the recovery procedure and the billing alert are still open.
+
 **Acceptance evidence.** `docs/benchmarks/<date>-pilot-live.md`: 14 consecutive days
 of receipts with laptop off; measured peak RSS, CPU-seconds, and wall time per cycle
 against the 4 GiB / 20-minute / 60-minute-per-day guards; one deliberately killed
@@ -598,6 +614,24 @@ cohort-v2 candidate list whose screened population includes losers and inactives
 
 **Non-goals.** Do not replace Data API hydration with chain data. Chain logs give you
 the population; the Data API gives you enriched history. You need both.
+
+**Probe, 2026-09-29.** [Measured on live public infrastructure](benchmarks/2026-09-29-polygon-logs-probe.md),
+this non-goal holds:
+
+- **Decoding works.** The exchange `OrderFilled` events decode to the Data API's
+  trades exactly (30 of 30). Since April 2026 they come from the V2 exchanges,
+  whose event layout differs from V1.
+- **Use `OrderFilled` for the trade population.** Those events carry side and price,
+  which ERC-1155 transfers do not. Keep the ERC-1155 decoding for splits, merges and
+  redemptions only.
+- **Following the head is affordable on a free node; backfilling is not.** Following
+  new blocks costs up to 2.9 GB a day. A free node caps a query at 10,000 blocks,
+  so one wallet's V2 history takes about 970 calls. 2025 logs are already pruned.
+- **Plan for a paid archive RPC or indexer, but not yet.** Any on-chain history
+  before 2026 needs one, as a line item in §9, decided after Stage 3.
+- **Chain discovery now fills a gap.** The Goldsky orderbook subgraph that supplied
+  recent-trader discovery is shut down (`ENDPOINT_DEPRECATED`). A head-following
+  `OrderFilled` reader is its replacement.
 
 ---
 

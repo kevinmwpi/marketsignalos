@@ -1,0 +1,23 @@
+# Railway config-as-code for the lean pilot worker. Point the worker service's
+# config file at /deploy/railway-worker.toml. Nothing here is provisioned; see
+# docs/railway-deployment.md for the steps and what is still unverified.
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "deploy/worker.Dockerfile"
+watchPatterns = [
+  "deploy/worker.Dockerfile",
+  "deploy/start-worker.sh",
+  "deploy/lean-pilot.json",
+  "pyproject.toml",
+  "uv.lock",
+  ".migration-backup/services/polymarket-ingestor/src/**",
+]
+
+[deploy]
+# Hourly at minute 7 (not :00, where scheduled work queues up). The worker exits
+# at once when nothing is due, so the hourly trigger costs container start-up
+# only; collection cadence and the daily runtime allowance live in lean-pilot.json.
+cronSchedule = "7 * * * *"
+# A cron service must exit; a failed run is retried by the next trigger, not by
+# a restart loop that would bypass the worker's own cadence accounting.
+restartPolicyType = "NEVER"

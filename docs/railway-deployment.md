@@ -4,7 +4,72 @@ This is a prepared deployment, not a provisioned or verified live environment.
 The user selected Railway and requested preparation before paid provisioning.
 No hosting resources, billing settings, domains, or credentials were created.
 
-## Deployable topology
+As of 2026-09-29, the plan is the **scheduled worker below**. Railway runs
+collection and scoring; the website does not need Railway. The dashboard
+(`artifacts/marketsignalos-dashboard`) is a static site that reads the published
+research snapshot from GitHub, so any static host can serve it. The Replit
+deployment was a free trial that ends in mid-October 2026. The combined
+API-and-ingestion service further down predates both the worker and the Replit
+layout: its config files live under `.migration-backup/` and it is not the
+recommended path.
+
+## Scheduled worker (lean pilot)
+
+One Railway service runs `marketsignalos_polymarket.lean_pilot` once an hour and
+exits. The worker decides what is due (collection hourly, scoring daily) and keeps
+its runtime allowance on its volume; see [lean-pilot.md](lean-pilot.md).
+
+| Setting | Value |
+|---|---|
+| Source | This repository, root `/` |
+| Config file | `/deploy/railway-worker.toml` (set explicitly; Railway does not find it) |
+| Builder | Dockerfile, `deploy/worker.Dockerfile` |
+| Schedule | `7 * * * *` (hourly at minute 7), restart policy `NEVER` |
+| Volume | One volume, any mount path; Railway sets `RAILWAY_VOLUME_MOUNT_PATH` |
+| Data directory | `<volume>/pilot` |
+| Variables | None required. Do not set `DATABASE_URL`: the worker refuses to start. |
+
+The image holds only production dependencies from `uv.lock` and the ingestor
+source. `.github/workflows/worker-image.yml` builds it on every change to these
+inputs and checks three things without network access:
+
+- plan mode runs;
+- the worker refuses to start without a data directory;
+- the process supervisor works inside the image.
+
+Local equivalent:
+
+```bash
+docker build -f deploy/worker.Dockerfile -t marketsignalos-worker .
+docker run --rm --network none -e POLYMARKET_PILOT_DATA_DIR=/tmp/pilot marketsignalos-worker --plan
+```
+
+Without a data directory the entry point exits with status 2 rather than keep its
+cadence and runtime accounting on a disk that is wiped every run.
+
+**Not verified until provisioning:**
+
+- that Railway accepts these config keys;
+- that a cron service mounts its volume;
+- the first run's cold-start time, peak memory and cost.
+
+Record them in the Stage 2 evidence file (`docs/handoff-blueprint.md`).
+
+**Provisioning steps, after budget approval:**
+
+1. Create one Railway service from this repository and set its config-file path.
+2. Attach a volume before the first run.
+3. Set a usage alert at $10 and a workspace compute limit at $15. The hard limit
+   takes every workload in the workspace offline.
+4. Let the first scheduled run finish. Check `<volume>/pilot/.lean-pilot/runs/<id>/`
+   for the receipt and resource report.
+
+Stop the worker by removing the cron schedule. A run that is in progress finishes
+within its own 20-minute deadline.
+
+## Combined API service (pre-Replit layout)
+
+### Deployable topology
 
 This combined-service preparation predates the $15 target and is not a measured
 $15 deployment. The [lean pilot](lean-pilot.md) now has a separate run-once
@@ -35,7 +100,7 @@ and do not support replicas. Keep the API and ingestor together until the
 database migration described in [platform-roadmap.md](platform-roadmap.md).
 See [Railway volume limitations](https://docs.railway.com/volumes).
 
-## Service configuration
+### Service configuration
 
 | Setting | API / ingestion | Public web |
 |---|---|---|
@@ -52,7 +117,7 @@ automatically follow a changed service root. See
 [monorepo deployment](https://docs.railway.com/deployments/monorepo) and
 [config as code](https://docs.railway.com/config-as-code).
 
-## Provisioning steps, after budget approval
+### Provisioning steps, after budget approval
 
 1. Create a Railway project and an API service from this repository. Attach a
    persistent volume at `/data` **before the first running deployment**.
@@ -82,7 +147,7 @@ concurrent wallet requests and a configured API request rate of three per second
 These are initial limits to measure, not a throughput or total-memory guarantee.
 The existing ingestor still scans accumulated files during enrichment.
 
-## Operator controls
+### Operator controls
 
 Public GET feeds and `/platform/status` require no credentials. All mutation
 routes, `/ingestor/status`, `/signals/notifications/status`, and `/metrics`
@@ -106,7 +171,7 @@ and `SHOW_INGEST_CONTROLS=1` on the Next.js development server. The auth bypass 
 ignored in production and on Railway. Environment templates are examples, not
 automatically loaded configuration.
 
-## Deployment acceptance
+### Deployment acceptance
 
 - API `/health` and web `/api/health` return 200 without contacting upstream APIs.
 - Public POSTs to both `/ingestor/run` and the web `/api/ingestor/run` return
@@ -126,7 +191,7 @@ automatically loaded configuration.
 - Enable volume backups and test a restore before relying on the collected
   history. An attached volume by itself is not a backup.
 
-## Costs and rollback
+### Costs and rollback
 
 No budget or live cost estimate has been approved. Review Railway's current
 plan, compute and storage charges in the project before provisioning. Set an

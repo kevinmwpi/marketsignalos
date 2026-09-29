@@ -1,0 +1,9 @@
+# Docker build context is the repository root (deploy/worker.Dockerfile copies
+# explicit paths only); keep bulky and local-only trees out of the upload.
+.git
+**/node_modules
+.venv
+**/__pycache__
+.mypy_cache
+.pytest_cache
+.ruff_cache
