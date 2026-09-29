@@ -56,6 +56,22 @@ Every resolved market carried an actual `closedTime`.
    data that remains fetchable. The needed piece is a backfill of each resolved
    market's pre-close window.
 
+## Backfill verified live
+
+`closing_lines.py` was then run against the same 52 resolved markets on GitHub Actions
+([run 36513669853](https://github.com/kevinmwpi/marketsignalos/actions/runs/36513669853),
+commit `56b5f04`), twice into one store, and checked by `scripts/verify_closing_lines.py`:
+
+| Closed in | Outcome |
+|---|---|
+| 2021 | `no_history` 6/6 |
+| 2022 | `no_history` 6/6 |
+| 2023–2026 | `ok` 40/40, last point at most 1.5 h before close |
+
+The first run wrote 1,860 hourly observations (48-hour window). The second run skipped
+all 52 markets as final and wrote nothing. Every request used `startTs`/`endTs` with
+`fidelity=60`; none sent `interval`.
+
 ## Limits
 
 - Six markets per year, chosen by volume, plus 16 ordinary 2026 markets from the two
