@@ -29,6 +29,13 @@ def test_words_and_addresses() -> None:
     assert probe.topic_address("0x" + "0" * 24 + "C" * 40) == "0x" + "c" * 40
 
 
+def test_address_topic_is_the_indexed_form_of_an_address() -> None:
+    topic = probe.address_topic(MAKER.upper().replace("0X", "0x"))
+    assert len(topic) == 66
+    assert probe.topic_address(topic) == MAKER
+    assert log(V2, 0)["topics"][2] == topic  # same padding the node returns for maker
+
+
 def test_v2_buy_fill_pays_collateral_for_shares() -> None:
     # maker BUY: gives 40 collateral, receives 100 shares -> 0.40 per share
     fill = probe.decode_fill(log(V2, 0, TOKEN, 40_000_000, 100_000_000, 0, 0, 0), V1, V2)

@@ -12,7 +12,10 @@ measures, on live public infrastructure, what that would take:
   3. whether fills decoded from transaction receipts match the same trades as
      reported by the Data API (wallet, token, side, size, price);
   4. whether the Goldsky orderbook subgraph this repository already queries still
-     receives trades after the April 2026 move to the V2 exchanges.
+     receives trades after the April 2026 move to the V2 exchanges;
+  5. how wide a block range one ``eth_getLogs`` call accepts when it is filtered to a
+     single wallet as maker, which decides whether one wallet's full V2 history is
+     a handful of calls or thousands.
 
 Event layouts come from Polymarket's source, not memory:
   V1  ctf-exchange  src/exchange/interfaces/ITrading.sol
@@ -58,6 +61,8 @@ V2_SIGNATURE = (
 TRANSFER_SIGNATURE = "Transfer(address,address,uint256)"
 TRANSFER_TOPIC = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"
 RANGES = (100, 500, 1000, 2000, 5000, 10000)
+WALLET_RANGES = (5_000, 20_000, 100_000, 500_000, 2_000_000, 10_000_000)
+WALLETS_TO_TRACE = 3
 V1_SAMPLE_DATE = datetime(2025, 6, 2, tzinfo=UTC)
 DATA_API = "https://data-api.polymarket.com"
 GOLDSKY_ORDERBOOK = (
@@ -78,6 +83,11 @@ def words(data: str) -> list[int]:
 
 def topic_address(topic: str) -> str:
     return "0x" + topic[-40:].lower()
+
+
+def address_topic(address: str) -> str:
+    """An address left-padded to 32 bytes, as it appears in an indexed topic."""
+    return "0x" + address.lower().removeprefix("0x").rjust(64, "0")
 
 
 def decode_fill(log: dict[str, Any], v1_topic: str, v2_topic: str) -> dict[str, Any] | None:
@@ -226,6 +236,24 @@ def density(rpc: Rpc, start: int, blocks: int, addresses: list[str],
             "seconds": round(seconds, 3), "error": error, "sample": logs[:3]}
 
 
+def wallet_ranges(rpc: Rpc, head: int, wallet: str, addresses: list[str],
+                  topic: str) -> list[dict[str, Any]]:
+    """Widening ranges ending near the head, filtered to ``wallet`` as maker (topic 2)."""
+    rows = []
+    end = head - 20
+    for size in WALLET_RANGES:
+        result, error, seconds, nbytes = rpc.call("eth_getLogs", [{
+            "fromBlock": hex(max(1, end - size + 1)), "toBlock": hex(end),
+            "address": addresses, "topics": [topic, None, address_topic(wallet)],
+        }])
+        rows.append({"blocks": size, "ok": error is None,
+                     "logs": len(result) if isinstance(result, list) else None,
+                     "seconds": round(seconds, 3), "bytes": nbytes, "error": error})
+        if error:
+            break
+    return rows
+
+
 def cross_check(client: httpx.Client, rpc: Rpc, v1: str, v2: str) -> dict[str, Any]:
     response = client.get(f"{DATA_API}/trades", params={"limit": 40})
     trades = response.json() if response.is_success else []
@@ -291,6 +319,14 @@ def main(argv: list[str] | None = None) -> int:
             report["density_v1_2025"] = density(rpc, v1_start, 500, v1_addresses, v1)
             report["v1_after_v2_launch"] = density(rpc, head - 520, 500, v1_addresses, v1)
             report["cross_check"] = cross_check(client, rpc, v1, v2)
+            report["v2_launch_block"] = block_at(rpc, int(V2_LAUNCH.timestamp()), head)
+            wallets = list(dict.fromkeys(
+                str(c["trade"]["proxyWallet"]).lower()
+                for c in report["cross_check"]["checked"] if c["trade"].get("proxyWallet")
+            ))[:WALLETS_TO_TRACE]
+            report["wallet_ranges_v2"] = {
+                wallet: wallet_ranges(rpc, head, wallet, v2_addresses, v2) for wallet in wallets
+            }
             head_block, _, _, _ = rpc.call("eth_getBlockByNumber", [hex(head), False])
             old_block, _, _, _ = rpc.call("eth_getBlockByNumber", [hex(head - 43_200), False])
             if isinstance(head_block, dict) and isinstance(old_block, dict):
@@ -314,6 +350,12 @@ def summarize(report: dict[str, Any]) -> str:
         d = report.get(key) or {}
         lines.append(f"{key}: {d.get('logs')} logs / {d.get('blocks')} blocks = "
                      f"{d.get('logs_per_block')}/block err={d.get('error')}")
+    lines.append(f"v2_launch_block: {report.get('v2_launch_block')}")
+    for wallet, rows in (report.get("wallet_ranges_v2") or {}).items():
+        for row in rows:
+            lines.append(f"wallet {wallet[:10]} range {row['blocks']:>8}: ok={row['ok']} "
+                         f"logs={row['logs']} bytes={row['bytes']} s={row['seconds']} "
+                         f"err={row['error']}")
     checked = (report.get("cross_check") or {}).get("checked", [])
     for key in ("wallet_in_fill", "wallet_as_maker", "size_price_match"):
         lines.append(f"cross-check {key}: {sum(bool(c[key]) for c in checked)}/{len(checked)}")
