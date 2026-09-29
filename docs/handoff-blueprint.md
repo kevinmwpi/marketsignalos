@@ -41,6 +41,29 @@ filtered responses. This does not determine historical fetch causes or repair
 frozen scores. Coverage/resolution semantics remain open. Validation: 596 tests
 passed, one Windows skip; lint and root type checks passed on both platforms.
 
+**Fresh start and the CLV input, 2026-09-29:** the laptop-era local data is retired;
+collection restarts in the cloud. Three findings change how Stages 0–1 read:
+
+- **Gate 13 could not be passed on the frozen snapshot.** Price snapshots, CLV's only
+  input, began 2026-06-11; the snapshot was taken 2026-06-12 03:01 UTC. That is about
+  1.5 days of prices against 4.5 years of activity, and 632 of the 805 gate-13 failures
+  were too few observations. Suspending only gates 6 and 13 admits 22 wallets under
+  the current prior (at most 154 under any prior). Stage 0's classification is
+  therefore **untestable on this snapshot**, not (A) or (C).
+- **The prior variance floor is real but cannot explain the empty feed.** Every wallet
+  also fails a gate that no prior changes, so the qualifier count is 0 under any prior.
+  See `benchmarks/2026-09-28-prior-floor.md` (branch `claude/dazzling-tesla-49rylc`
+  until merged).
+- **Closing prices are recoverable.** The [live probe](benchmarks/2026-09-29-price-history-probe.md)
+  found that CLOB `/prices-history` with an explicit `startTs`/`endTs` window returns
+  1-hour points for every probed market closed in 2023 or later, the last point at most
+  1.5 h before close. `interval=max` hides this (nothing below 12 h). Markets from
+  2021–2022 have no order-book history. So no price-snapshot collector is needed:
+  `closing_lines.py` backfills each resolved market's pre-close window into an
+  append-only, bitemporal store (§8). Using it for CLV is a separate, versioned change,
+  and bets on pre-2023 markets must then be excluded from CLV with a recorded reason
+  rather than counted as missing.
+
 **How to use this.** Stages run in order. Each stage has an **entry gate** — a
 condition that must already be true — and **acceptance evidence** — an artifact a
 reviewer can inspect to confirm the stage is done. Do not start a stage whose entry
@@ -50,9 +73,7 @@ stage's evidence contradicts this document, update this document in the same com
 **Companion documents.** `docs/research-credibility.md` (evidence standards),
 `docs/platform-roadmap.md` (target architecture), `docs/lean-pilot.md` (budget
 worker), `docs/storage-benchmark.md` and `docs/enrichment-shadow.md` (storage
-evidence) currently exist **only on `codex/lean-pilot-15-budget`**.
-Per the user's delivery instruction, Stage 1 diagnostics and repairs
-continue there; merging main is a separate delivery decision.
+evidence) are on `main` since PR #36 merged on 2026-09-28.
 
 ---
 
@@ -891,7 +912,9 @@ Answer these before Stage 1; each changes what gets built.
 2. **Is `MIN_CLV_SAMPLE = 10` calibrated for the coverage you can achieve?** 632 of 833
    wallets fail it. If post-Stage-1 coverage still cannot produce 10 pre-close price
    observations for most wallets, the gate is measuring your collection cadence rather
-   than the wallet.
+   than the wallet. *Answered 2026-09-29:* on the frozen snapshot it measured how long
+   prices had been collected (about 1.5 days). Backfilled closing lines remove that
+   limit for markets closed in 2023 or later; re-decide the threshold on fresh data.
 3. **Does the entity-dedupe heuristic hold?** Consensus counts cluster wallets by
    shared display name. On-chain funding-source clustering is the rigorous upgrade and
    `CLAUDE.md` already labels the current approach a heuristic. It affects any

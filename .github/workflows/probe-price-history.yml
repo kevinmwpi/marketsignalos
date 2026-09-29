@@ -1,14 +1,17 @@
 name: Probe historical price backfill (read-only)
 
-# Answers one question with live data: can closing prices for resolved Polymarket
-# markets be backfilled from the CLOB /prices-history endpoint, and at what
-# granularity? Read-only against public endpoints; writes nothing anywhere.
+# Answers, with live data, whether closing prices for resolved Polymarket markets
+# can be backfilled from the CLOB /prices-history endpoint, and checks that the
+# closing-line backfill module gets the answers the probe established. Read-only
+# against public endpoints; everything it writes stays in the runner's /tmp.
 on:
   workflow_dispatch:
   push:
     branches: [claude/marketsignal-branch-review-o1use8]
     paths:
       - scripts/probe_price_history.py
+      - .migration-backup/services/polymarket-ingestor/src/marketsignalos_polymarket/closing_lines.py
+      - scripts/verify_closing_lines.py
       - .github/workflows/probe-price-history.yml
 
 permissions:
@@ -22,6 +25,8 @@ jobs:
   probe:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
+    env:
+      PYTHONPATH: .migration-backup/services/polymarket-ingestor/src
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -33,4 +38,22 @@ jobs:
       - name: Install locked Python dependencies
         run: uv sync --frozen --no-dev
       - name: Probe /prices-history on resolved and open markets
+        # Evidence is committed in docs/benchmarks/2026-09-29-price-history-probe.*;
+        # re-run on demand to check the endpoint still behaves the same way.
+        if: github.event_name == 'workflow_dispatch'
         run: uv run --no-sync python scripts/probe_price_history.py
+      - name: Live check of the closing-line backfill against the probe's answers
+        run: |
+          uv run --no-sync python - <<'EOF' > ids.txt
+          import json
+          probe = json.load(open("docs/benchmarks/2026-09-29-price-history-probe.json"))
+          print("\n".join(m["condition_id"] for m in probe["markets"] if m["group"] != "open"))
+          EOF
+          uv run --no-sync python -m marketsignalos_polymarket.closing_lines \
+            --condition-ids-file ids.txt --store /tmp/closing-lines
+          # A second run must not refetch any market that is already final.
+          uv run --no-sync python -m marketsignalos_polymarket.closing_lines \
+            --condition-ids-file ids.txt --store /tmp/closing-lines
+          uv run --no-sync python scripts/verify_closing_lines.py \
+            --probe docs/benchmarks/2026-09-29-price-history-probe.json \
+            --receipts /tmp/closing-lines/closing_line_receipts.jsonl

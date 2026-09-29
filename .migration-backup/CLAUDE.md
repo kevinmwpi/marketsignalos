@@ -317,6 +317,8 @@ were provisioned. Keep the $15/month target and prepare-before-provisioning cons
 | `docs/lean-pilot.md` | $15-target worker limits, recovery, and publication constraints |
 | `docs/storage-benchmark.md` | Offline activity JSONL/Parquet benchmark and source integrity |
 | `docs/enrichment-shadow.md` | Full scorer parity and memory measurements |
+| `docs/benchmarks/2026-09-29-price-history-probe.md` | Live probe: closing prices recoverable at 1 h for markets closed 2023+ via explicit windows; basis for `closing_lines.py` |
+| `docs/llm-judge.md` | Market-matcher eval set, TF-IDF baseline tooling, and the planned LLM judge (Phase 1 built) |
 | `docs/prd.md` | Product requirements, MVP scope, success metrics |
 | `docs/architecture.md` | High-level data flow and key principles |
 | `docs/0001-tech-stack.md` | ADR explaining stack choices |
