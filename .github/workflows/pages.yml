@@ -1,0 +1,73 @@
+name: Publish dashboard
+
+# Builds the dashboard as a static site and publishes it to GitHub Pages. The
+# site reads the research snapshot published by research-snapshot.yml at view
+# time, so data updates need no redeploy; only dashboard code changes do.
+# Requires Settings > Pages > Source: "GitHub Actions". Pull requests build only.
+on:
+  push:
+    branches: [main]
+    paths:
+      - artifacts/marketsignalos-dashboard/**
+      - lib/**
+      - package.json
+      - pnpm-lock.yaml
+      - pnpm-workspace.yaml
+      - .github/workflows/pages.yml
+  pull_request:
+    paths:
+      - artifacts/marketsignalos-dashboard/**
+      - lib/**
+      - package.json
+      - pnpm-lock.yaml
+      - pnpm-workspace.yaml
+      - .github/workflows/pages.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: "24"
+      - run: npm install --global pnpm@10.26.1
+      - run: pnpm install --frozen-lockfile
+      - name: Build the static site (no API requests)
+        run: pnpm --filter @workspace/marketsignalos-dashboard run build
+        env:
+          PORT: "23002" # vite.config.ts requires it even for a build
+          BASE_PATH: "/"
+          NODE_ENV: production
+          VITE_STATIC_SITE: "1"
+      - name: Serve client-side routes through the Pages 404 fallback
+        run: cp artifacts/marketsignalos-dashboard/dist/public/index.html artifacts/marketsignalos-dashboard/dist/public/404.html
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: artifacts/marketsignalos-dashboard/dist/public
+
+  deploy:
+    if: github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1

@@ -8,6 +8,7 @@ import PolymarketLeaderboardPanel, {
 import SkilledBetsPanel, { type SkilledBet } from "@/components/SkilledBetsPanel";
 import WatchlistForm from "@/components/WatchlistForm";
 import ResearchCandidatesPanel from "@/components/ResearchCandidatesPanel";
+import { apiBase } from "@/lib/api-base";
 
 type DashboardPayload = {
   skilled_bets?: SkilledBet[];
@@ -20,11 +21,8 @@ type DashboardPayload = {
   as_of?: string;
 };
 
-const configuredSignalBase = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, "");
-const signalUrl = (path: string) => `${configuredSignalBase || "/api"}${path}`;
-
-async function getJson(path: string): Promise<unknown> {
-  const response = await fetch(signalUrl(path), { cache: "no-store" });
+async function getJson(base: string, path: string): Promise<unknown> {
+  const response = await fetch(`${base}${path}`, { cache: "no-store" });
   if (!response.ok) throw new Error(`Request failed (${response.status})`);
   return response.json();
 }
@@ -49,7 +47,7 @@ function DashboardSkeleton() {
   );
 }
 
-function Header({ status }: { status: "connecting" | "unavailable" | "connected" }) {
+function Header({ status }: { status: "connecting" | "unavailable" | "connected" | "static" }) {
   return (
     <header className="border-b border-[hsl(var(--border))] bg-[hsl(var(--card))]">
       <div className="mx-auto flex max-w-[1520px] items-center justify-between gap-4 px-4 py-3 sm:px-6">
@@ -65,7 +63,7 @@ function Header({ status }: { status: "connecting" | "unavailable" | "connected"
         <div className="flex items-center gap-3">
           <span className="hidden font-mono text-[10px] uppercase tracking-widest text-[hsl(var(--muted-foreground))] sm:inline">Polymarket research terminal</span>
           <span role="status" className="flex items-center gap-1.5 rounded-full border border-[hsl(var(--border))] px-2 py-1 font-mono text-[10px] font-semibold uppercase tracking-wider">
-            API {status}
+            {status === "static" ? "Static snapshot" : `API ${status}`}
           </span>
         </div>
       </div>
@@ -73,23 +71,42 @@ function Header({ status }: { status: "connecting" | "unavailable" | "connected"
   );
 }
 
+function StaticSiteNotice() {
+  return (
+    <section className="rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-5" aria-label="Signal feed" data-testid="status-static-site">
+      <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.18em] text-[hsl(var(--muted-foreground))]">Signal feed / not on this site</p>
+      <h2 className="mt-1 text-lg font-semibold">Qualified wallets and their open bets need the scoring API</h2>
+      <p className="mt-2 max-w-3xl text-xs leading-relaxed text-[hsl(var(--muted-foreground))]">
+        This site is a static page. The research candidates above come from a snapshot of public Polymarket trades that a scheduled job refreshes every six hours.
+        The feed of wallets that pass every evidence gate, their exits and the skill leaderboard are computed by the scoring pipeline and are not served here.
+      </p>
+      <a className="mt-3 inline-block font-mono text-[11px] font-semibold text-[hsl(var(--foreground))] hover:underline" data-testid="link-source" href="https://github.com/kevinmwpi/marketsignalos" rel="noreferrer" target="_blank">
+        Methodology, evidence and source on GitHub →
+      </a>
+    </section>
+  );
+}
+
 export default function DashboardPage() {
   const showControls = import.meta.env.DEV && import.meta.env.VITE_SHOW_INGEST_CONTROLS === "1";
+  const staticSite = apiBase === null;
   const [payload, setPayload] = useState<DashboardPayload | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!staticSite);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
   const load = useCallback(async (silent = false) => {
+    const base = apiBase;
+    if (base === null) return;
     if (!silent) setLoading(true);
     setRefreshing(true);
     setError(null);
     try {
       const [bets, exits, leaderboard, summary] = await Promise.all([
-        getJson("/signals/skilled-bets?min_skill=0.8&min_resolved=20&min_independent_events=20&max_bet_age_days=90&require_positive_edge=true&limit=50"),
-        getJson("/signals/exits?limit=10"),
-        getJson("/signals/polymarket-leaderboard?min_resolved=20&min_skill=0.8&tailability=tailable&limit=10"),
-        getJson("/signals/skilled-bets/summary"),
+        getJson(base, "/signals/skilled-bets?min_skill=0.8&min_resolved=20&min_independent_events=20&max_bet_age_days=90&require_positive_edge=true&limit=50"),
+        getJson(base, "/signals/exits?limit=10"),
+        getJson(base, "/signals/polymarket-leaderboard?min_resolved=20&min_skill=0.8&tailability=tailable&limit=10"),
+        getJson(base, "/signals/skilled-bets/summary"),
       ]);
       const raw: unknown = { bets, exits, leaderboard, summary };
       const root = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
@@ -120,7 +137,7 @@ export default function DashboardPage() {
 
   return (
     <div className="min-h-[100dvh] bg-[hsl(var(--background))] text-[hsl(var(--foreground))]">
-      <Header status={error ? "unavailable" : loading ? "connecting" : "connected"} />
+      <Header status={staticSite ? "static" : error ? "unavailable" : loading ? "connecting" : "connected"} />
       <main className="mx-auto max-w-[1520px] space-y-6 px-4 pb-16 pt-5 sm:px-6">
         <div className="flex flex-col justify-between gap-4 border-b border-[hsl(var(--border))] pb-5 lg:flex-row lg:items-end">
           <div>
@@ -132,7 +149,7 @@ export default function DashboardPage() {
           </div>
           <div className="flex flex-wrap items-center gap-2">
             {asOf && <span className="font-mono text-[10px] text-[hsl(var(--muted-foreground))]">updated {new Date(asOf).toLocaleString()}</span>}
-            <button
+            {!staticSite && <button
               className="rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-3 py-1.5 font-mono text-[11px] font-semibold text-[hsl(var(--foreground))] transition-colors hover:bg-[hsl(var(--secondary))] disabled:opacity-50"
               data-testid="button-refresh-signals"
               disabled={refreshing}
@@ -140,12 +157,13 @@ export default function DashboardPage() {
               type="button"
             >
               {refreshing ? "Refreshing…" : "Refresh signals"}
-            </button>
+            </button>}
           </div>
         </div>
 
         <ResearchCandidatesPanel />
 
+        {staticSite ? <StaticSiteNotice /> : <>
         <div className="pt-3">
           <h2 className="text-lg font-semibold">Actionable skilled bets</h2>
           <p className="mt-1 text-xs text-[hsl(var(--muted-foreground))]">Only wallets that pass the historical evidence and position filters appear here. The research snapshot does not qualify a signal.</p>
@@ -197,6 +215,7 @@ export default function DashboardPage() {
           </div>
           {loading ? <div className="h-48 animate-pulse rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))]" /> : error ? <p role="status" className="text-sm text-red-700">Leaderboard unavailable while the API request is failing.</p> : <PolymarketLeaderboardPanel rows={leaderboard} />}
         </section>
+        </>}
       </main>
     </div>
   );
