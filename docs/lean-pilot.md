@@ -21,6 +21,7 @@ The default configuration is committed in `deploy/lean-pilot.json`:
 |---|---:|---|
 | Collection | Every hour | Refresh a rotating subset of eligible wallets |
 | Scoring | Every 24 hours | Recompute derived scores into a new local generation |
+| Closing lines | Every 6 hours in `deploy/lean-pilot.json`; off in code | Backfill each traded market's 48-hour pre-close price window, at most 200 markets and 240 s per run. Collected for the gate-13 closing-line decision; scoring does not read it yet |
 | Wallet batch | 20 | Oldest-polled first within the existing shallow cohort |
 | Leaderboard seed | 25, day/volume | Bounded discovery input; no profit leaderboard |
 | Activity budget | 10 calls/wallet | Shared across recent, historical, and boundary pagination |

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -10,11 +11,18 @@ import pytest
 from marketsignalos_polymarket.closing_lines import (
     OBSERVATIONS_FILE,
     RECEIPTS_FILE,
+    RETRY_AFTER,
+    STORE_DIR,
+    activity_condition_ids,
     backfill,
     fetch_window,
     final_conditions,
+    latest_receipts,
+    load_closing_lines,
     parse_close,
     parse_token_ids,
+    run_pending,
+    select_pending,
 )
 
 CLOSE = 1_735_689_600  # 2025-01-01T00:00:00Z
@@ -142,3 +150,126 @@ def test_files_are_append_only_and_tolerate_only_a_torn_last_line(tmp_path: Path
     receipts.write_text("not json\n" + receipts.read_text())
     with pytest.raises(ValueError, match="invalid JSON"):
         final_conditions(tmp_path)
+
+
+# ── What scoring reads, and how the worker chooses what to fetch ─────────────
+
+def _append(path: Path, *rows: dict[str, Any]) -> None:
+    with path.open("a", encoding="utf-8") as handle:
+        for row in rows:
+            handle.write(json.dumps(row) + "\n")
+
+
+def _observation(cid: str, event: str, observed: str, price: float,
+                 outcome_index: int = 0) -> dict[str, Any]:
+    return {"condition_id": cid, "token_id": "t", "outcome_index": outcome_index,
+            "event_time": event, "observed_time": observed, "price": price,
+            "fidelity_minutes": 60, "source": "clob:/prices-history"}
+
+
+def test_scoring_loads_the_latest_pre_close_yes_point_and_the_no_history_markets(
+    tmp_path: Path,
+) -> None:
+    _append(tmp_path / OBSERVATIONS_FILE,
+            _observation("0xA", "2024-12-31T22:00:00Z", "2026-09-29T00:00:00Z", 0.4),
+            _observation("0xa", "2024-12-31T23:00:00Z", "2026-09-29T00:00:00Z", 0.6),
+            _observation("0xa", "2024-12-31T23:30:00Z", "2026-09-29T00:00:00Z", 0.9, 1),
+            _observation("0xb", "2024-12-31T23:00:00Z", "2026-09-29T00:00:00Z", 0.0))
+    _append(tmp_path / RECEIPTS_FILE,
+            {"condition_id": "0xc", "status": "no_history", "observed_time": "2026-09-29T00:00:00Z"},
+            {"condition_id": "0xd", "status": "no_history", "observed_time": "2026-09-29T00:00:00Z"},
+            {"condition_id": "0xd", "status": "http_error", "observed_time": "2026-09-30T00:00:00Z"})
+    closing = load_closing_lines(tmp_path)
+    assert closing.points == {"0xa": (datetime(2024, 12, 31, 23, tzinfo=UTC), 0.6)}
+    assert closing.no_history == {"0xc"}  # the latest receipt decides
+    assert load_closing_lines(tmp_path / "missing").points == {}
+
+
+def test_a_frozen_snapshot_never_sees_prices_backfilled_after_it(tmp_path: Path) -> None:
+    _append(tmp_path / OBSERVATIONS_FILE,
+            _observation("0xa", "2024-12-31T23:00:00Z", "2026-09-29T00:00:00Z", 0.6))
+    _append(tmp_path / RECEIPTS_FILE,
+            {"condition_id": "0xb", "status": "no_history", "observed_time": "2026-09-29T00:00:00Z"})
+    frozen = load_closing_lines(tmp_path, observed_before=datetime(2026, 6, 12, tzinfo=UTC))
+    assert (frozen.points, frozen.no_history) == ({}, frozenset())
+    assert load_closing_lines(tmp_path, observed_before=datetime(2026, 9, 29, tzinfo=UTC)).points
+
+
+def test_activity_conditions_are_traded_markets_in_first_seen_order(tmp_path: Path) -> None:
+    path = tmp_path / "activity.jsonl"
+    path.write_text("\n".join([
+        json.dumps({"type": "TRADE", "condition_id": "0xB"}),
+        "not json",
+        json.dumps({"type": "REDEEM", "condition_id": "0xz"}),
+        json.dumps({"type": "TRADE", "condition_id": "0xa"}),
+        json.dumps({"type": "TRADE", "condition_id": "0xb"}),
+    ]) + "\n")
+    assert activity_condition_ids(path) == ["0xb", "0xa"]
+    assert activity_condition_ids(tmp_path / "missing.jsonl") == []
+
+
+def test_selection_skips_final_markets_and_waits_before_retrying_the_rest() -> None:
+    now = datetime(2026, 9, 30, 12, tzinfo=UTC)
+    receipts = {
+        "0xok": ("ok", now - timedelta(days=9)),
+        "0xgone": ("no_history", now - timedelta(days=9)),
+        "0xopen_recent": ("not_closed", now - timedelta(hours=1)),
+        "0xopen_old": ("not_closed", now - RETRY_AFTER),
+        "0xerror_older": ("http_error", now - RETRY_AFTER - timedelta(hours=5)),
+    }
+    ids = ["0xok", "0xgone", "0xopen_recent", "0xopen_old", "0xerror_older", "0xnew1", "0xnew2"]
+    assert select_pending(ids, receipts, now=now, limit=10) == [
+        "0xnew1", "0xnew2", "0xerror_older", "0xopen_old"]  # never tried, then stalest retry
+    assert select_pending(ids, receipts, now=now, limit=3) == ["0xnew1", "0xnew2", "0xerror_older"]
+
+
+class Tick:
+    def __init__(self, step: float) -> None:
+        self.t, self.step = 0.0, step
+
+    def __call__(self) -> float:
+        self.t += self.step
+        return self.t
+
+
+def test_backfill_starts_no_market_after_its_deadline(tmp_path: Path) -> None:
+    fake = FakeClob({c: _market(c, "t" + c) for c in ("0xa", "0xb", "0xc")},
+                    {"t0xa": [(CLOSE - 60, 0.5)], "t0xb": [(CLOSE - 60, 0.5)],
+                     "t0xc": [(CLOSE - 60, 0.5)]})
+    summary = backfill(["0xa", "0xb", "0xc"], tmp_path, get=fake, deadline=2.5, clock=Tick(1.0))
+    assert summary.stopped_early
+    assert summary.by_status == {"ok": 2}
+    assert set(latest_receipts(tmp_path)) == {"0xa", "0xb"}  # 0xc waits for the next run
+
+
+def test_worker_pass_fetches_what_wallets_traded_and_is_bounded(tmp_path: Path) -> None:
+    (tmp_path / "polymarket_activity.jsonl").write_text("".join(
+        json.dumps({"type": "TRADE", "condition_id": c}) + "\n" for c in ("0xa", "0xb", "0xc")))
+    fake = FakeClob({"0xa": _market("0xa", "ta"), "0xb": _market("0xb", "tb")},
+                    {"ta": [(CLOSE - 60, 0.5)], "tb": []})
+    now = datetime(2026, 9, 30, tzinfo=UTC)
+    first = run_pending(tmp_path, limit=2, max_seconds=60, get=fake, now=now)
+    assert first["status"] == "succeeded"
+    assert (first["conditions_in_activity"], first["selected"]) == (3, 2)
+    assert first["summary"]["by_status"] == {"ok": 1, "no_history": 1}
+    assert (tmp_path / STORE_DIR / OBSERVATIONS_FILE).exists()
+
+    second = run_pending(tmp_path, limit=2, max_seconds=60, get=fake, now=now)
+    assert second["selected"] == 1  # only 0xc is left; it is still open
+    assert second["summary"]["by_status"] == {"not_closed": 1}
+    assert run_pending(tmp_path, limit=2, max_seconds=60, get=fake, now=now)["selected"] == 0
+
+
+def test_a_failed_market_lookup_is_partial_and_keeps_details_out_of_the_result(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "polymarket_activity.jsonl").write_text(
+        json.dumps({"type": "TRADE", "condition_id": "0xa"}) + "\n")
+
+    def broken(url: str, params: dict[str, Any]) -> Any:
+        raise httpx.ConnectError("https://secret.example/?token=abc")
+
+    result = run_pending(tmp_path, limit=5, max_seconds=60, get=broken)
+    assert result["status"] == "partial"
+    assert result["error_type"] == "ConnectError"
+    assert "secret" not in json.dumps(result)

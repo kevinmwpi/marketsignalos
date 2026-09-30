@@ -15,8 +15,15 @@ probe in docs/benchmarks/2026-09-29-price-history-probe.md established:
 Rows follow the blueprint's ``price_observations`` contract (docs/handoff-blueprint.md
 section 8): each point keeps its event time and the time it was fetched, so a
 backfilled price can never pass for one observed live. Both files are append-only.
-Nothing here feeds scoring yet; using these closing lines for CLV is a separate,
-versioned change.
+
+Scoring does not read this store. The last pre-close price was within 0.01 of the
+outcome for 38 of 40 probed markets, so CLV against it would mostly restate whether
+a bet won; which pre-close point should serve as the closing line is an open gate-13
+decision (docs/handoff-blueprint.md). :func:`load_closing_lines` is the reader that
+decision will build on; any use in scoring must pass ``observed_before`` when
+rescoring a frozen snapshot, so later backfills cannot leak into it. The lean-pilot
+worker fills the store in bounded batches through :func:`run_pending`, so the
+windows exist once the definition is settled.
 
 The YES price is the first outcome's token, matching how CLV already reads prices.
 
@@ -33,7 +40,7 @@ import logging
 import time
 from collections.abc import Callable, Iterable, Iterator
 from dataclasses import asdict, dataclass, field, replace
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -50,9 +57,15 @@ DEFAULT_WINDOW_HOURS = 48
 GAMMA_BATCH = 20
 OBSERVATIONS_FILE = "price_observations.jsonl"
 RECEIPTS_FILE = "closing_line_receipts.jsonl"
+# The store's directory inside a pilot/ingestor data directory.
+STORE_DIR = "closing_lines"
+ACTIVITY_FILE = "polymarket_activity.jsonl"
 # A market in one of these states is never fetched again. Everything else
-# (not yet closed, missing fields, HTTP errors) is retried on the next run.
+# (not yet closed, missing fields, HTTP errors) is retried, but the worker waits
+# RETRY_AFTER before asking again so open markets do not eat every batch.
 FINAL_STATUSES = frozenset({"ok", "no_history"})
+RETRY_AFTER = timedelta(hours=24)
+HEADERS = {"User-Agent": "MarketSignalOS-closing-lines/0.1", "Accept": "application/json"}
 
 # (url, params) -> parsed JSON; transport and HTTP errors raise httpx.HTTPError.
 GetJson = Callable[[str, dict[str, Any]], Any]
@@ -129,6 +142,21 @@ class BackfillSummary:
     skipped_final: int = 0
     by_status: dict[str, int] = field(default_factory=dict)
     observations_written: int = 0
+    stopped_early: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class ClosingLines:
+    """A point-in-time summary of the store.
+
+    ``points`` maps a condition id to its latest pre-close YES observation
+    (event time, price). ``no_history`` holds markets whose latest receipt says
+    the order book has no price history at all (the 2021-2022 era); CLV must
+    exclude those with that reason rather than count them as missing.
+    """
+
+    points: dict[str, tuple[datetime, float]] = field(default_factory=dict)
+    no_history: frozenset[str] = frozenset()
 
 
 def http_get_json(client: httpx.Client, *, spacing_seconds: float = 0.2) -> GetJson:
@@ -144,32 +172,131 @@ def http_get_json(client: httpx.Client, *, spacing_seconds: float = 0.2) -> GetJ
 
 
 def _read_jsonl(path: Path) -> Iterator[dict[str, Any]]:
-    """Yield rows; tolerate only a torn final line (a crash mid-append), nothing else."""
+    """Stream rows; tolerate only a torn final line (a crash mid-append), nothing else.
+
+    Every writer ends a row with a newline, so a last line without one is torn
+    even if it happens to parse.
+    """
     if not path.exists():
         return
-    text = path.read_text(encoding="utf-8")
-    lines = text.split("\n")
-    complete, trailing = lines[:-1], lines[-1]
-    for number, line in enumerate(complete, 1):
-        if not line.strip():
+    with path.open(encoding="utf-8") as handle:
+        for number, line in enumerate(handle, 1):
+            if not line.endswith("\n"):
+                if line.strip():
+                    log.warning("ignoring a torn final line in %s", path.name)
+                return
+            if not line.strip():
+                continue
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError as exc:
+                raise ValueError(f"{path.name}:{number}: invalid JSON ({exc.msg})") from exc
+            if not isinstance(row, dict):
+                raise ValueError(f"{path.name}:{number}: expected an object")
+            yield row
+
+
+def _parse_time(value: Any) -> datetime | None:
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=UTC)
+
+
+def latest_receipts(
+    store: Path, *, observed_before: datetime | None = None,
+) -> dict[str, tuple[str, datetime]]:
+    """Latest (status, observed time) per condition id, optionally as of a cutoff."""
+    latest: dict[str, tuple[str, datetime]] = {}
+    for row in _read_jsonl(store / RECEIPTS_FILE):
+        observed = _parse_time(row.get("observed_time"))
+        if observed is None or (observed_before is not None and observed > observed_before):
             continue
-        try:
-            row = json.loads(line)
-        except json.JSONDecodeError as exc:
-            raise ValueError(f"{path.name}:{number}: invalid JSON ({exc.msg})") from exc
-        if not isinstance(row, dict):
-            raise ValueError(f"{path.name}:{number}: expected an object")
-        yield row
-    if trailing.strip():
-        log.warning("ignoring a torn final line in %s", path.name)
+        cid = str(row.get("condition_id", "")).lower()
+        if cid:
+            latest[cid] = (str(row.get("status", "")), observed)
+    return latest
 
 
 def final_conditions(store: Path) -> set[str]:
     """Condition ids whose latest receipt is final."""
-    latest: dict[str, str] = {}
-    for row in _read_jsonl(store / RECEIPTS_FILE):
-        latest[str(row.get("condition_id", "")).lower()] = str(row.get("status", ""))
-    return {cid for cid, status in latest.items() if status in FINAL_STATUSES}
+    return {cid for cid, (status, _) in latest_receipts(store).items()
+            if status in FINAL_STATUSES}
+
+
+def load_closing_lines(store: Path, *, observed_before: datetime | None = None) -> ClosingLines:
+    """The latest pre-close YES price per market and the markets with no history.
+
+    Only rows fetched at or before ``observed_before`` count when it is given: a
+    frozen snapshot rescored later must not see prices backfilled after it. Memory
+    is one point per market however many observations the store holds.
+    """
+    receipts = latest_receipts(store, observed_before=observed_before)
+    no_history = frozenset(cid for cid, (status, _) in receipts.items()
+                           if status == "no_history")
+    points: dict[str, tuple[datetime, float]] = {}
+    for row in _read_jsonl(store / OBSERVATIONS_FILE):
+        if row.get("outcome_index") != 0:
+            continue
+        observed = _parse_time(row.get("observed_time"))
+        event = _parse_time(row.get("event_time"))
+        price = row.get("price")
+        if (observed is None or event is None or isinstance(price, bool)
+                or not isinstance(price, (int, float)) or price <= 0.0):
+            continue
+        if observed_before is not None and observed > observed_before:
+            continue
+        cid = str(row.get("condition_id", "")).lower()
+        current = points.get(cid)
+        if current is None or event >= current[0]:
+            points[cid] = (event, float(price))
+    return ClosingLines(points=points, no_history=no_history)
+
+
+def activity_condition_ids(path: Path) -> list[str]:
+    """Distinct condition ids of TRADE events, in first-seen order.
+
+    Reads the activity store the way the ingestor does: row by row, skipping
+    lines it cannot parse, because that file can exceed memory.
+    """
+    seen: dict[str, None] = {}
+    if not path.exists():
+        return []
+    with path.open(encoding="utf-8") as handle:
+        for line in handle:
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(row, dict) and row.get("type") == "TRADE":
+                cid = str(row.get("condition_id", "")).strip().lower()
+                if cid:
+                    seen.setdefault(cid, None)
+    return list(seen)
+
+
+def select_pending(
+    condition_ids: Iterable[str], receipts: dict[str, tuple[str, datetime]], *,
+    now: datetime, limit: int, retry_after: timedelta = RETRY_AFTER,
+) -> list[str]:
+    """Markets to fetch next: never-tried ones first, then the stalest retries.
+
+    Final markets are skipped for good. A market that was open, or whose fetch
+    failed, waits ``retry_after`` before it is asked about again.
+    """
+    fresh: list[str] = []
+    retry: list[tuple[datetime, str]] = []
+    for cid in dict.fromkeys(c.strip().lower() for c in condition_ids if c.strip()):
+        receipt = receipts.get(cid)
+        if receipt is None:
+            fresh.append(cid)
+        elif receipt[0] not in FINAL_STATUSES and now - receipt[1] >= retry_after:
+            retry.append((receipt[1], cid))
+    retry.sort()
+    return (fresh + [cid for _, cid in retry])[:max(0, limit)]
 
 
 def lookup_closed_markets(condition_ids: list[str], get: GetJson) -> dict[str, dict[str, Any]]:
@@ -253,13 +380,16 @@ def _receipt_for(
 def backfill(
     condition_ids: Iterable[str], store: Path, *, get: GetJson,
     window_hours: int = DEFAULT_WINDOW_HOURS,
+    deadline: float | None = None, clock: Callable[[], float] = time.monotonic,
 ) -> BackfillSummary:
     """Fetch pre-close windows for resolved markets not already final in ``store``.
 
     Each market's observations are appended before its receipt, so an ``ok``
     receipt always has its rows. A crash between the two refetches that market
     next run; the repeat rows differ only in ``observed_time``, and readers keep
-    the latest observation per (token, event_time).
+    the latest observation per (token, event_time). With a ``deadline`` (on
+    ``clock``), no new market is started once it has passed; markets left over
+    have no receipt and are picked up by the next run.
     """
     wanted = list(dict.fromkeys(cid.strip().lower() for cid in condition_ids if cid.strip()))
     summary = BackfillSummary(requested=len(wanted))
@@ -273,6 +403,9 @@ def backfill(
     with (store / OBSERVATIONS_FILE).open("a", encoding="utf-8") as obs_out, \
             (store / RECEIPTS_FILE).open("a", encoding="utf-8") as receipt_out:
         for cid in todo:
+            if deadline is not None and clock() >= deadline:
+                summary.stopped_early = True
+                break
             receipt, observations = _receipt_for(cid, rows.get(cid), get, window_hours)
             for observation in observations:
                 obs_out.write(json.dumps(asdict(observation), separators=(",", ":")) + "\n")
@@ -282,6 +415,41 @@ def backfill(
             summary.observations_written += len(observations)
             summary.by_status[receipt.status] = summary.by_status.get(receipt.status, 0) + 1
     return summary
+
+
+def run_pending(
+    data_dir: Path, *, limit: int, max_seconds: float, get: GetJson | None = None,
+    now: datetime | None = None, clock: Callable[[], float] = time.monotonic,
+) -> dict[str, Any]:
+    """One bounded backfill pass for the markets a data directory's wallets traded.
+
+    Used by the lean-pilot worker. At most ``limit`` markets are attempted and no
+    new one starts after ``max_seconds``; the rest wait for the next pass. The
+    result is ``partial`` when the pass stopped early, a market's fetch failed, or
+    the Gamma lookup failed. Exception details stay in the log, never the result.
+    """
+    store = data_dir / STORE_DIR
+    conditions = activity_condition_ids(data_dir / ACTIVITY_FILE)
+    pending = select_pending(conditions, latest_receipts(store),
+                             now=now or datetime.now(UTC), limit=limit)
+    result: dict[str, Any] = {"conditions_in_activity": len(conditions),
+                              "selected": len(pending)}
+    if not pending:
+        return {"status": "succeeded", **result, "summary": asdict(BackfillSummary())}
+    deadline = clock() + max_seconds
+    try:
+        if get is None:
+            with httpx.Client(timeout=20.0, headers=HEADERS) as client:
+                summary = backfill(pending, store, get=http_get_json(client),
+                                   deadline=deadline, clock=clock)
+        else:
+            summary = backfill(pending, store, get=get, deadline=deadline, clock=clock)
+    except (httpx.HTTPError, ValueError) as exc:
+        log.warning("closing-line market lookup failed: %s", exc)
+        return {"status": "partial", **result, "error_type": type(exc).__name__}
+    failed = summary.by_status.get("http_error", 0) > 0
+    status = "partial" if summary.stopped_early or failed else "succeeded"
+    return {"status": status, **result, "summary": asdict(summary)}
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -296,9 +464,8 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("--window-hours must be positive")
     ids = [line.strip() for line in args.condition_ids_file.read_text().splitlines()]
     ids = [cid for cid in ids if cid][: args.limit]
-    headers = {"User-Agent": "MarketSignalOS-closing-lines/0.1", "Accept": "application/json"}
     try:
-        with httpx.Client(timeout=20.0, headers=headers) as client:
+        with httpx.Client(timeout=20.0, headers=HEADERS) as client:
             summary = backfill(ids, args.store, get=http_get_json(client),
                                window_hours=args.window_hours)
     except (httpx.HTTPError, ValueError) as exc:
