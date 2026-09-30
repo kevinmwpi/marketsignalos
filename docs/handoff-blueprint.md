@@ -1,10 +1,9 @@
 # MarketSignalOS — Engineering Handoff Blueprint
 
-**Replit integration, September 28:** the historical stages and evidence below
-remain the research reference. The [integration guide](lean-pilot-integration.md)
-records current runtime paths, merge checks and the separate GitHub snapshot
-collector. Replit now serves the React/Vite artifact and imports Python packages
-from `.migration-backup`; do not apply the old directory layout wholesale.
+**Layout, 2026-09-30:** code lives in `apps/api`, `apps/dashboard` and
+`services/polymarket-ingestor`. The Replit-era `.migration-backup/` and `artifacts/`
+directories and the Next.js app are gone. Sections below keep the paths that were
+current when they were written; `CLAUDE.md` has today's commands.
 
 **Status:** authoritative build reference. Supersedes the "+EV Polymarket Analytics
 Engine" handoff blueprint (Celery/Redis/PyTorch/WebSocket architecture). Where this

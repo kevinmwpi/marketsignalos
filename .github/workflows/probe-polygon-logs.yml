@@ -6,11 +6,6 @@ name: Probe Polygon on-chain trades (read-only)
 # Goldsky orderbook subgraph still receives trades. Read-only; writes nothing.
 on:
   workflow_dispatch:
-  push:
-    branches: [claude/marketsignal-branch-review-o1use8]
-    paths:
-      - scripts/probe_polygon_logs.py
-      - .github/workflows/probe-polygon-logs.yml
 
 permissions:
   contents: read

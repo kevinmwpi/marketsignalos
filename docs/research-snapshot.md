@@ -20,7 +20,7 @@ place. Partial captures can still be reviewed locally but never replace the sche
 complete capture. The generated JSON records the source commit and Actions run URL.
 
 Publication uses the job's ephemeral repository token, scoped to contents write at the
-job level. No personal token or Replit secret is needed. The publisher writes only
+job level. No personal token or other secret is needed. The publisher writes only
 `research-snapshot.json` on the dedicated `codex/research-snapshots` branch, initially an
 orphan branch. Updates retain previous commits, reject non-fast-forward races, and read
 back the resulting ref and verify the uploaded blob digest. Do not manually edit this
@@ -31,8 +31,8 @@ It validates both that capture and its bundled fallback, chooses the newest vali
 and labels fallback use. A failed refresh cannot replace a newer capture already shown.
 Reads have a five-second timeout and 2 MB size cap. The page checks every 15 minutes while
 visible; “Refresh research data” checks immediately. It never starts an ingestion job.
-Source caching can delay visibility by several minutes. Data changes require no Replit
-republish after this frontend integration is deployed.
+Source caching can delay visibility by several minutes. Data changes need no site
+redeploy: GitHub Pages serves the dashboard, which fetches the capture at view time.
 
 Captures over eight hours old are marked overdue (six-hour cadence plus two hours of
 slack). GitHub schedules are best effort and can be delayed or dropped. Public scheduled
@@ -48,27 +48,27 @@ duplicate Codex heartbeat. GitHub's existing workflow notification preferences a
 
 References: [standard public-runner billing](https://docs.github.com/en/billing/concepts/product-billing/github-actions)
 and [scheduled-run limitations](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#schedule).
-This does not change Replit's plan, hosting expiration, or any existing Railway service.
 
 ## Collect and publish
 
-From the repository root, locally or in the Replit development shell:
+From the repository root:
 
 ```sh
 uv sync --frozen --no-dev
 uv run --no-sync python scripts/collect_research_snapshot.py --run --wallet-limit 10 --max-seconds 180
-uv run --frozen --with pytest python -m pytest scripts/tests/test_research_snapshot.py artifacts/api-server/tests/test_adapter.py -q
-pnpm --filter @workspace/marketsignalos-dashboard run typecheck
+uv sync --frozen
+uv run --no-sync pytest -q scripts/tests/test_research_snapshot.py scripts/tests/test_research_publication.py
+pnpm --filter @marketsignalos/dashboard run typecheck
 ```
 
-For a manual bundled fallback, review `artifacts/marketsignalos-dashboard/public/data/research-snapshot.json`, commit it
-with the collector/UI version, merge the reviewed branch to `main`, pull `main` in Replit,
-then republish. Vite copies the file into `dist/public/data/research-snapshot.json`.
-Verify the public download's SHA-256 matches the committed file and expand a wallet on
-the public page. GitHub updates alone do not prove that Replit has republished.
+For a manual bundled fallback, review `apps/dashboard/public/data/research-snapshot.json`,
+commit it with the collector/UI version and merge the reviewed branch to `main`; the
+Pages workflow then republishes the site. Vite copies the file into
+`dist/public/data/research-snapshot.json`. Verify the public download's SHA-256 matches
+the committed file and expand a wallet on the public page.
 
 The September 19 initial bundled capture was collected once on the development computer.
-After publication, serving it takes place on Replit and does not require that computer.
+Serving it does not require that computer.
 Reloading or “Refresh signals” does not collect another snapshot. Restarts restore the
 bundled fallback; the scheduled data branch supplies subsequent captures independently.
 

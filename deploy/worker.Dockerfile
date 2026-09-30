@@ -13,7 +13,7 @@ ENV UV_PROJECT_ENVIRONMENT=/opt/venv \
     UV_LINK_MODE=copy \
     PATH=/opt/venv/bin:$PATH \
     PYTHONUNBUFFERED=1 \
-    PYTHONPATH=/app/.migration-backup/services/polymarket-ingestor/src
+    PYTHONPATH=/app/services/polymarket-ingestor/src
 
 WORKDIR /app
 
@@ -23,7 +23,7 @@ WORKDIR /app
 COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev --no-install-project && rm /usr/local/bin/uv
 
-COPY .migration-backup/services/polymarket-ingestor/src .migration-backup/services/polymarket-ingestor/src
+COPY services/polymarket-ingestor/src services/polymarket-ingestor/src
 COPY deploy/lean-pilot.json deploy/start-worker.sh deploy/
 
 ENTRYPOINT ["bash", "/app/deploy/start-worker.sh"]

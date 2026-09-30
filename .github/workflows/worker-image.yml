@@ -8,19 +8,21 @@ on:
   pull_request:
     paths:
       - deploy/**
+      - railway.toml
       - .dockerignore
       - pyproject.toml
       - uv.lock
-      - .migration-backup/services/polymarket-ingestor/src/**
+      - services/polymarket-ingestor/src/**
       - .github/workflows/worker-image.yml
   push:
     branches: [main]
     paths:
       - deploy/**
+      - railway.toml
       - .dockerignore
       - pyproject.toml
       - uv.lock
-      - .migration-backup/services/polymarket-ingestor/src/**
+      - services/polymarket-ingestor/src/**
       - .github/workflows/worker-image.yml
   workflow_dispatch:
 

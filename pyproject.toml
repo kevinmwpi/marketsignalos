@@ -1,7 +1,7 @@
 [project]
-name = "repl-nix-workspace"
+name = "marketsignalos"
 version = "0.1.0"
-description = "Add your description here"
+description = "Polymarket wallet research: ingestion, Bayesian skill scoring and a public dashboard"
 requires-python = ">=3.13"
 dependencies = [
     "alembic>=1.20.0",
@@ -21,8 +21,8 @@ dev = [
 ]
 
 [tool.uv.sources]
-marketsignalos-api = { path = ".migration-backup/apps/api", editable = true }
-marketsignalos-polymarket = { path = ".migration-backup/services/polymarket-ingestor", editable = true }
+marketsignalos-api = { path = "apps/api", editable = true }
+marketsignalos-polymarket = { path = "services/polymarket-ingestor", editable = true }
 
 [tool.ruff]
 line-length = 100
@@ -35,8 +35,16 @@ ignore = ["TRY004"]
 python_version = "3.13"
 ignore_missing_imports = true
 strict = true
-mypy_path = [".migration-backup/apps/api/src", ".migration-backup/services/polymarket-ingestor/src"]
+mypy_path = ["apps/api/src", "services/polymarket-ingestor/src"]
+# Research-snapshot collection and publication predate strict typing of scripts/.
+# Everything else under scripts/ is checked; remove entries here as they are typed.
+exclude = [
+    "^scripts/collect_research_snapshot\\.py$",
+    "^scripts/publish_research_snapshot\\.py$",
+    "^scripts/tests/test_research_publication\\.py$",
+    "^scripts/tests/test_research_snapshot\\.py$",
+]
 
 [tool.pytest.ini_options]
-testpaths = [".migration-backup/apps/api/tests", ".migration-backup/services/polymarket-ingestor/tests", "artifacts/api-server/tests", "scripts/tests"]
-pythonpath = [".migration-backup/apps/api/src", ".migration-backup/services/polymarket-ingestor/src"]
+testpaths = ["apps/api/tests", "services/polymarket-ingestor/tests", "scripts/tests"]
+pythonpath = ["apps/api/src", "services/polymarket-ingestor/src"]
