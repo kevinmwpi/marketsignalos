@@ -12,7 +12,7 @@ watchPatterns = [
   "deploy/lean-pilot.json",
   "pyproject.toml",
   "uv.lock",
-  ".migration-backup/services/polymarket-ingestor/src/**",
+  "services/polymarket-ingestor/src/**",
 ]
 
 [deploy]

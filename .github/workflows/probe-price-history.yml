@@ -6,13 +6,6 @@ name: Probe historical price backfill (read-only)
 # against public endpoints; everything it writes stays in the runner's /tmp.
 on:
   workflow_dispatch:
-  push:
-    branches: [claude/marketsignal-branch-review-o1use8]
-    paths:
-      - scripts/probe_price_history.py
-      - .migration-backup/services/polymarket-ingestor/src/marketsignalos_polymarket/closing_lines.py
-      - scripts/verify_closing_lines.py
-      - .github/workflows/probe-price-history.yml
 
 permissions:
   contents: read
@@ -26,7 +19,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     env:
-      PYTHONPATH: .migration-backup/services/polymarket-ingestor/src
+      PYTHONPATH: services/polymarket-ingestor/src
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -40,7 +33,6 @@ jobs:
       - name: Probe /prices-history on resolved and open markets
         # Evidence is committed in docs/benchmarks/2026-09-29-price-history-probe.*;
         # re-run on demand to check the endpoint still behaves the same way.
-        if: github.event_name == 'workflow_dispatch'
         run: uv run --no-sync python scripts/probe_price_history.py
       - name: Live check of the closing-line backfill against the probe's answers
         run: |

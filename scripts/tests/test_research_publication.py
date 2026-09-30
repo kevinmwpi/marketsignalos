@@ -15,10 +15,7 @@ import publish_research_snapshot as publisher
 def candidate(tmp_path):
     root = Path(__file__).resolve().parents[2]
     data = json.loads(
-        (
-            root
-            / "artifacts/marketsignalos-dashboard/public/data/research-snapshot.json"
-        ).read_text(encoding="utf-8")
+        (root / "apps/dashboard/public/data/research-snapshot.json").read_text(encoding="utf-8")
     )
     data["generated_at"] = datetime.now(UTC).isoformat()
     output = tmp_path / "candidate.json"

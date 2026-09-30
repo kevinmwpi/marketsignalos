@@ -67,7 +67,9 @@ def test_probe_market_records_every_request_even_on_errors() -> None:
             return None, None, "ConnectError: boom"
         return 200, {"history": [{"t": CLOSE - 7200, "p": 0.5}]}, None
 
-    market = {"token_id": "123", "close_ts": CLOSE, "group": "resolved-2024", "requests": {}}
+    market: dict[str, Any] = {
+        "token_id": "123", "close_ts": CLOSE, "group": "resolved-2024", "requests": {},
+    }
     probe.probe_market(get, market)
     assert set(market["requests"]) == {
         "max@1m", "max@60m", "max@360m", "max@720m", "max@1440m",

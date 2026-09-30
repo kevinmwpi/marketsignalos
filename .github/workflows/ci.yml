@@ -3,8 +3,7 @@ name: Integration checks
 on:
   pull_request:
   push:
-    # Validate this migration branch even while GitHub prepares its large PR merge.
-    branches: [main, codex/lean-pilot-replit-integration]
+    branches: [main]
 
 permissions:
   contents: read
@@ -32,10 +31,10 @@ jobs:
           enable-cache: false
       - run: uv sync --frozen
       - name: Check backend style
-        run: uv run --no-sync ruff check .migration-backup/apps/api .migration-backup/services/polymarket-ingestor
-      - name: Check cross-package types including legacy tests
-        run: uv run --no-sync mypy .migration-backup --config-file pyproject.toml
-      - name: Test pilot, API, publication and isolated production startup
+        run: uv run --no-sync ruff check apps/api services/polymarket-ingestor scripts
+      - name: Check cross-package types, including tests
+        run: uv run --no-sync mypy apps/api services/polymarket-ingestor scripts --config-file pyproject.toml
+      - name: Test the API, the ingestor and the research scripts
         run: uv run --no-sync pytest -q
 
   dashboard:
@@ -50,14 +49,9 @@ jobs:
           node-version: "24"
       - run: npm install --global pnpm@10.26.1
       - run: pnpm install --frozen-lockfile
-      - run: pnpm --filter @workspace/marketsignalos-dashboard run typecheck
+      - run: pnpm --filter @marketsignalos/dashboard run typecheck
       - name: Test snapshot loading, fallback and API selection
-        run: >
-          pnpm --filter @workspace/scripts exec tsx --test
-          ../artifacts/marketsignalos-dashboard/src/lib/research-snapshot-loader.test.ts
-          ../artifacts/marketsignalos-dashboard/src/lib/api-base.test.ts
-      - run: pnpm --filter @workspace/marketsignalos-dashboard run build
+        run: pnpm --filter @marketsignalos/dashboard run test
+      - run: pnpm --filter @marketsignalos/dashboard run build
         env:
-          PORT: "23002"
-          BASE_PATH: "/"
           NODE_ENV: production

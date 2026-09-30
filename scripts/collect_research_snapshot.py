@@ -19,9 +19,7 @@ import httpx
 
 BASE_URL = "https://data-api.polymarket.com"
 DEFAULT_OUTPUT = (
-    Path(__file__).resolve().parents[1]
-    / "artifacts"
-    / "marketsignalos-dashboard/public/data/research-snapshot.json"
+    Path(__file__).resolve().parents[1] / "apps/dashboard/public/data/research-snapshot.json"
 )
 MAX_RESPONSE_BYTES = 1_000_000
 MAX_SNAPSHOT_BYTES = 2_000_000
