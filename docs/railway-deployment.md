@@ -24,7 +24,7 @@ its runtime allowance on its volume; see [lean-pilot.md](lean-pilot.md).
 | Setting | Value |
 |---|---|
 | Source | This repository, root `/` |
-| Config file | `/deploy/railway-worker.toml` (set explicitly; Railway does not find it) |
+| Config file | `/railway.toml` (Railway reads it from the repository root automatically) |
 | Builder | Dockerfile, `deploy/worker.Dockerfile` |
 | Schedule | `7 * * * *` (hourly at minute 7), restart policy `NEVER` |
 | Volume | One volume, any mount path; Railway sets `RAILWAY_VOLUME_MOUNT_PATH` |
@@ -59,9 +59,9 @@ Record them in the Stage 2 evidence file (`docs/handoff-blueprint.md`).
 
 **Provisioning steps, after budget approval:**
 
-1. Create one Railway service from this repository and set its config-file path.
-   Until the path is set, Railway builds the repository root with its defaults
-   and redeploys on every push, which is not this worker.
+1. Create one Railway service from this repository. It picks up `/railway.toml`
+   on its own. Before that file existed, Railway's default build ran
+   `uvicorn main:app` against the repository root and crashed on start.
 2. Remove any public domain under the service's networking settings. The worker
    serves no HTTP traffic.
 3. Attach a volume before the first run.

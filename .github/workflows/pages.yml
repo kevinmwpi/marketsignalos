@@ -35,6 +35,9 @@ jobs:
   build:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    permissions:
+      contents: read
+      pages: read
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
@@ -44,11 +47,15 @@ jobs:
           node-version: "24"
       - run: npm install --global pnpm@10.26.1
       - run: pnpm install --frozen-lockfile
+      # The site's path depends on the Pages settings: "" with a custom domain,
+      # "/marketsignalos" at kevinmwpi.github.io. Ask Pages rather than assume.
+      - id: pages
+        uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
       - name: Build the static site (no API requests)
         run: pnpm --filter @workspace/marketsignalos-dashboard run build
         env:
           PORT: "23002" # vite.config.ts requires it even for a build
-          BASE_PATH: "/"
+          BASE_PATH: ${{ steps.pages.outputs.base_path }}/
           NODE_ENV: production
           VITE_STATIC_SITE: "1"
       - name: Serve client-side routes through the Pages 404 fallback

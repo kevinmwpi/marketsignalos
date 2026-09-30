@@ -519,7 +519,7 @@ with its own volume, separate from the serving API. Before provisioning:
   runbook that the hard limit takes *all* workspace workloads offline.
 
 **Prepared 2026-09-29, not provisioned.** `deploy/worker.Dockerfile` packages the worker
-with production dependencies from `uv.lock`, and `deploy/railway-worker.toml` runs it
+with production dependencies from `uv.lock`, and the root `railway.toml` runs it
 as an hourly Railway cron service. CI builds the image and checks that plan mode runs
 without network access, that the worker refuses to start without a volume, and that
 the supervisor works inside the image. `psutil`, which the supervisor imports, was
