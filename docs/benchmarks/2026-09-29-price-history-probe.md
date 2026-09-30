@@ -72,6 +72,42 @@ The first run wrote 1,860 hourly observations (48-hour window). The second run s
 all 52 markets as final and wrote nothing. Every request used `startTs`/`endTs` with
 `fidelity=60`; none sent `interval`.
 
+## Follow-up, 2026-09-30: the last pre-close price is the outcome
+
+Before wiring these prices into CLV, the prices themselves were checked, using the
+`last_before_close_price` this probe recorded (`window14d@60m`) for each of the 40
+markets closed in 2023 or later:
+
+| Distance of the last pre-close price from 0 or 1 | Markets |
+|---|---:|
+| ≤ 0.01 | 38 |
+| 0.208 | 1 |
+| 0.5 | 1 |
+
+All 40 closed on an actual `closedTime`. By the time a market closes, its outcome is
+almost always known, so the last price before close is effectively the result. CLV
+against it (closing price minus entry) mostly restates whether the bet won, which
+gates 8 and 9 already measure. Using it for gate 13 would turn the one gate meant as
+independent evidence into a copy of the others, which amounts to loosening it
+(blueprint invariant 1). Scoring therefore does not read the backfill.
+
+A usable closing line has to come from before the outcome is known: a fixed lead
+before close, or the price a fixed time after entry. Choosing between them is a
+diagnostic for pilot data, which is why the worker collects each traded market's
+48-hour pre-close window. Reproduce the table with:
+
+```python
+import json
+d = json.load(open("docs/benchmarks/2026-09-29-price-history-probe.json"))
+prices = [m["requests"]["window14d@60m"]["last_before_close_price"] for m in d["markets"]
+          if m["group"].startswith("resolved-") and m["group"] >= "resolved-2023"]
+print(len(prices), sum(min(p, 1 - p) <= 0.01 for p in prices))  # 40 38
+```
+
+The same flaw was latent in forecast-v4: its live snapshots of a market about to close
+would carry the same near-final prices. It never showed because the frozen snapshot
+held only about 1.5 days of snapshots.
+
 ## Limits
 
 - Six markets per year, chosen by volume, plus 16 ordinary 2026 markets from the two

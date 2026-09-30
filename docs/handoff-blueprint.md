@@ -58,9 +58,15 @@ collection restarts in the cloud. Three findings change how Stages 0–1 read:
   1.5 h before close. `interval=max` hides this (nothing below 12 h). Markets from
   2021–2022 have no order-book history. So no price-snapshot collector is needed:
   `closing_lines.py` backfills each resolved market's pre-close window into an
-  append-only, bitemporal store (§8). Using it for CLV is a separate, versioned change,
-  and bets on pre-2023 markets must then be excluded from CLV with a recorded reason
-  rather than counted as missing.
+  append-only, bitemporal store (§8). Bets on pre-2023 markets must be excluded from
+  CLV with a recorded reason rather than counted as missing.
+- **But the last pre-close price is the outcome, so it cannot be gate 13's closing
+  line.** In the [follow-up](benchmarks/2026-09-29-price-history-probe.md#follow-up-2026-09-30-the-last-pre-close-price-is-the-outcome),
+  38 of 40 resolved markets last traded within 0.01 of 0 or 1. CLV against that price
+  mostly restates whether a bet won, which gates 8 and 9 already measure, so wiring
+  it in would loosen gate 13 (invariant 1). The flaw was latent in forecast-v4 too.
+  Scoring does not read the backfill. The worker collects each traded market's
+  48-hour pre-close window so that open decision 6 (§12) can be settled on pilot data.
 - **Polygon logs are complete but not cheaper, and the Goldsky subgraph is gone.** The
   [chain probe](benchmarks/2026-09-29-polygon-logs-probe.md) decoded 30 of 30 Data API
   trades exactly from V2 `OrderFilled` events. It also measured about 2.9 GB a day of
@@ -958,3 +964,14 @@ Answer these before Stage 1; each changes what gets built.
 5. **Retention.** Score generations at ~426 MB each, raw archive, logs, abandoned
    generations. Nothing deletes anything today. Required before Stage 2 runs unattended
    for weeks.
+6. **What is the closing line for a resolved bet?** Not the last price before close:
+   that is the outcome (38 of 40 probed markets). Candidates:
+   - the last price at least *L* hours before close;
+   - the price *h* hours after entry, which is also defined for open and exited bets.
+
+   Decide on pilot data with a diagnostic. It should report two things for each
+   candidate, then the gate 13 pass counts before and after:
+   - how often the reference sits within 0.01 of the outcome;
+   - how strongly CLV correlates with winning.
+
+   The winning definition becomes a new score version.
