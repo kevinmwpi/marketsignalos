@@ -1,9 +1,9 @@
 # Lean pilot: $15 monthly design target
 
-For the Replit layout and current merge status, see the
-[September 28 integration guide](lean-pilot-integration.md). Commands below retain
-their historical paths; install current Python packages with `uv sync --frozen`
-from the repository root, then use `uv run --no-sync python -m ...`.
+Commands below keep the paths current when they were written. The worker now
+ships as `deploy/worker.Dockerfile` and runs on Railway through `railway.toml`;
+see [railway-deployment.md](railway-deployment.md) and, for today's commands,
+`CLAUDE.md`.
 
 Status after the 2026-09-09/10 development pass: implemented locally and tested;
 not deployed or measured on Railway. No cloud services, schedules, billing
