@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useParams } from "wouter";
 import type { ReactElement } from "react";
 import type { SkilledBet } from "../components/SkilledBetsPanel";
+import { apiBase } from "../lib/api-base";
 
 type WalletBet = {
   proxy_wallet: string;
@@ -287,9 +288,7 @@ function TradingStyleCard({ e }: { e: Enrichment }): ReactElement | null {
 }
 
 async function getWalletDetail(address: string): Promise<WalletDetail | null> {
-  const apiBase =
-    (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, "") ??
-    "/api";
+  if (apiBase === null) return null;
   try {
     const response = await fetch(
       `${apiBase}/signals/wallets/${encodeURIComponent(address)}`,
@@ -323,6 +322,28 @@ export default function WalletPage() {
       active = false;
     };
   }, [address, attempt]);
+
+  if (apiBase === null) {
+    return (
+      <div className="min-h-[100dvh] bg-[hsl(var(--background))]">
+        <main className="mx-auto max-w-4xl px-6 py-16" data-testid="status-static-wallet">
+          <p className="text-sm font-semibold text-zinc-900">Wallet detail is not on this site</p>
+          <p className="mt-1.5 text-xs text-zinc-500">
+            Scores for <span className="font-mono">{address}</span> come from the scoring API, which
+            this static site does not run.
+          </p>
+          <div className="mt-4 flex items-center gap-4">
+            <a className="text-sm font-semibold text-zinc-700 hover:underline" href={`https://polymarket.com/profile/${encodeURIComponent(address)}`} rel="noreferrer" target="_blank">
+              Polymarket profile
+            </a>
+            <Link className="text-sm font-semibold text-emerald-700 hover:underline" href="/" data-testid="link-back-dashboard">
+              Back to dashboard
+            </Link>
+          </div>
+        </main>
+      </div>
+    );
+  }
 
   if (loading) {
     return (

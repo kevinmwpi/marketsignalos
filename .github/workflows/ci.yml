@@ -51,8 +51,11 @@ jobs:
       - run: npm install --global pnpm@10.26.1
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @workspace/marketsignalos-dashboard run typecheck
-      - name: Test snapshot loading and fallback
-        run: pnpm --filter @workspace/scripts exec tsx --test ../artifacts/marketsignalos-dashboard/src/lib/research-snapshot-loader.test.ts
+      - name: Test snapshot loading, fallback and API selection
+        run: >
+          pnpm --filter @workspace/scripts exec tsx --test
+          ../artifacts/marketsignalos-dashboard/src/lib/research-snapshot-loader.test.ts
+          ../artifacts/marketsignalos-dashboard/src/lib/api-base.test.ts
       - run: pnpm --filter @workspace/marketsignalos-dashboard run build
         env:
           PORT: "23002"
