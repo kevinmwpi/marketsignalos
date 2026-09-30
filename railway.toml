@@ -1,10 +1,12 @@
-# Railway config-as-code for the lean pilot worker. Point the worker service's
-# config file at /deploy/railway-worker.toml. Nothing here is provisioned; see
-# docs/railway-deployment.md for the steps and what is still unverified.
+# Railway config-as-code for the lean pilot worker. Railway reads this file from
+# the repository root on its own, so a service created from this repository builds
+# the worker image, not Railway's default build of the root. Nothing here is
+# provisioned; see docs/railway-deployment.md for the steps and what is unverified.
 [build]
 builder = "DOCKERFILE"
 dockerfilePath = "deploy/worker.Dockerfile"
 watchPatterns = [
+  "railway.toml",
   "deploy/worker.Dockerfile",
   "deploy/start-worker.sh",
   "deploy/lean-pilot.json",
