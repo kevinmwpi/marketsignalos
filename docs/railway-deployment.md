@@ -7,7 +7,9 @@ No hosting resources, billing settings, domains, or credentials were created.
 As of 2026-09-29, the plan is the **scheduled worker below**. Railway runs
 collection and scoring; the website does not need Railway. The dashboard
 (`artifacts/marketsignalos-dashboard`) is a static site that reads the published
-research snapshot from GitHub, so any static host can serve it. The Replit
+research snapshot from GitHub. `.github/workflows/pages.yml` builds it with
+`VITE_STATIC_SITE=1`, so it makes no API requests, and publishes it to GitHub
+Pages at `www.marketsignal.com`. The Replit
 deployment was a free trial that ends in mid-October 2026. The combined
 API-and-ingestion service further down predates both the worker and the Replit
 layout: its config files live under `.migration-backup/` and it is not the
@@ -58,10 +60,14 @@ Record them in the Stage 2 evidence file (`docs/handoff-blueprint.md`).
 **Provisioning steps, after budget approval:**
 
 1. Create one Railway service from this repository and set its config-file path.
-2. Attach a volume before the first run.
-3. Set a usage alert at $10 and a workspace compute limit at $15. The hard limit
+   Until the path is set, Railway builds the repository root with its defaults
+   and redeploys on every push, which is not this worker.
+2. Remove any public domain under the service's networking settings. The worker
+   serves no HTTP traffic.
+3. Attach a volume before the first run.
+4. Set a usage alert at $10 and a workspace compute limit at $15. The hard limit
    takes every workload in the workspace offline.
-4. Let the first scheduled run finish. Check `<volume>/pilot/.lean-pilot/runs/<id>/`
+5. Let the first scheduled run finish. Check `<volume>/pilot/.lean-pilot/runs/<id>/`
    for the receipt and resource report.
 
 Stop the worker by removing the cron schedule. A run that is in progress finishes
