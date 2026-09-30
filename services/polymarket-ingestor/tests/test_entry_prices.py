@@ -1,0 +1,268 @@
+from __future__ import annotations
+
+import json
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
+from typing import Any
+
+import httpx
+
+from marketsignalos_polymarket.closing_lines import ACTIVITY_FILE
+from marketsignalos_polymarket.entry_prices import (
+    CHUNK_SECONDS,
+    HORIZON_SECONDS,
+    OBSERVATIONS_FILE,
+    RECEIPTS_FILE,
+    STORE_DIR,
+    backfill,
+    chunk_start,
+    latest_receipts,
+    load_entry_prices,
+    lookup_yes_tokens,
+    needed_chunks,
+    price_after,
+    run_pending,
+    select_pending,
+)
+
+C = CHUNK_SECONDS
+W = 2870 * C  # 2025-01-02T00:00:00Z, a chunk boundary
+HOUR = 3600
+
+
+def _at(ts: int) -> datetime:
+    return datetime.fromtimestamp(ts, UTC)
+
+
+class FakeApi:
+    """Gamma + CLOB stand-in. Gamma honours the ``closed`` filter, as the real one does.
+
+    ``markets`` maps condition id to (YES token, closed); ``history`` maps token id to
+    (t, p) points or an error.
+    """
+
+    def __init__(self, markets: dict[str, tuple[str, bool]],
+                 history: dict[str, list[tuple[int, float]] | Exception]) -> None:
+        self.markets = markets
+        self.history = history
+        self.calls: list[tuple[str, dict[str, Any]]] = []
+
+    def __call__(self, url: str, params: dict[str, Any]) -> Any:
+        self.calls.append((url, dict(params)))
+        if url.endswith("/markets"):
+            closed = params["closed"] == "true"
+            return [{"conditionId": cid, "clobTokenIds": json.dumps([token, token + "-no"])}
+                    for cid in params["condition_ids"]
+                    for token, is_closed in [self.markets.get(cid, ("", not closed))]
+                    if token and is_closed == closed]
+        result = self.history[params["market"]]
+        if isinstance(result, Exception):
+            raise result
+        return {"history": [{"t": t, "p": p} for t, p in result]}
+
+    def price_requests(self) -> list[dict[str, Any]]:
+        return [params for url, params in self.calls if url.endswith("/prices-history")]
+
+
+def _rows(path: Path) -> list[dict[str, Any]]:
+    return [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
+
+
+def _write_activity(data_dir: Path, rows: list[Any]) -> None:
+    lines = [row if isinstance(row, str) else json.dumps(row) for row in rows]
+    (data_dir / ACTIVITY_FILE).write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def _buy(cid: str, ts: object, **extra: Any) -> dict[str, Any]:
+    return {"type": "TRADE", "side": "BUY", "condition_id": cid, "timestamp": ts, **extra}
+
+
+def _receipt(cid: str, start: int, status: str, observed: datetime) -> dict[str, Any]:
+    return {"condition_id": cid, "chunk_start": _at(start).isoformat(),
+            "chunk_end": _at(start + C).isoformat(), "status": status,
+            "observed_time": observed.isoformat()}
+
+
+def _write_receipts(store: Path, rows: list[dict[str, Any]]) -> None:
+    store.mkdir(parents=True, exist_ok=True)
+    with (store / RECEIPTS_FILE).open("a", encoding="utf-8") as handle:
+        for row in rows:
+            handle.write(json.dumps(row) + "\n")
+
+
+# ── Which chunks ─────────────────────────────────────────────────────────────
+
+def test_needed_chunks_cover_the_week_after_each_buy(tmp_path: Path) -> None:
+    _write_activity(tmp_path, [
+        _buy("0xA", W + 3 * 86400),  # the week runs into the next chunk
+        _buy("0xb", W),  # the horizon ends exactly on the next chunk's first hour
+        {**_buy("0xc", W), "side": "SELL"},
+        {**_buy("0xd", W), "type": "REDEEM"},
+        _buy("0xe", 0), _buy("0xf", True), _buy("", W), _buy("0xg", "1735776000"),
+        "not json", "[1, 2]",
+    ])
+    assert needed_chunks(tmp_path / ACTIVITY_FILE) == {
+        ("0xa", W), ("0xa", W + C), ("0xb", W), ("0xb", W + C)}
+    assert needed_chunks(tmp_path / ACTIVITY_FILE, horizon_seconds=HOUR) == {
+        ("0xa", W), ("0xb", W)}
+    assert needed_chunks(tmp_path / "missing.jsonl") == set()
+    assert chunk_start(W + C - 1) == W
+    assert HORIZON_SECONDS <= CHUNK_SECONDS  # a buy never reaches more than two chunks
+
+
+def test_select_pending_waits_for_ended_chunks_and_skips_final_ones() -> None:
+    now = _at(W + 3 * C + 1800)
+    needed = {("0xa", W), ("0xa", W + 2 * C), ("0xb", W), ("0xc", W), ("0xd", W),
+              ("0xe", W + C)}
+    receipts = {
+        ("0xb", W): ("ok", now - timedelta(days=30)),
+        ("0xc", W): ("http_error", now - timedelta(hours=1)),
+        ("0xd", W): ("no_token", now - timedelta(hours=25)),
+    }
+    # (0xa, W + 2C) ends at W + 3C, less than an hour before now: it could still change.
+    assert select_pending(needed, receipts, now=now, limit=10) == [
+        ("0xe", W + C), ("0xa", W), ("0xd", W)]
+    assert select_pending(needed, receipts, now=now, limit=2) == [("0xe", W + C), ("0xa", W)]
+    assert select_pending(needed, receipts, now=now, limit=0) == []
+    receipts[("0xa", W)] = ("empty", now)  # empty is final: no order-book history
+    assert ("0xa", W) not in select_pending(needed, receipts, now=now, limit=10)
+
+
+def test_latest_receipts_apply_the_observed_before_cutoff(tmp_path: Path) -> None:
+    first = _at(W + 2 * C)
+    _write_receipts(tmp_path, [_receipt("0xA", W, "http_error", first),
+                               _receipt("0xa", W, "ok", first + timedelta(days=1))])
+    assert latest_receipts(tmp_path) == {("0xa", W): ("ok", first + timedelta(days=1))}
+    assert latest_receipts(tmp_path, observed_before=first) == {
+        ("0xa", W): ("http_error", first)}
+
+
+# ── Fetching ─────────────────────────────────────────────────────────────────
+
+def test_token_lookup_asks_for_open_markets_then_closed_ones() -> None:
+    api = FakeApi({"0xa": ("tok-a", False), "0xb": ("tok-b", True)}, {})
+    assert lookup_yes_tokens(["0xa", "0xb", "0xc"], api) == {"0xa": "tok-a", "0xb": "tok-b"}
+    asked = [(params["closed"], params["condition_ids"]) for _, params in api.calls]
+    assert asked == [("false", ["0xa", "0xb", "0xc"]), ("true", ["0xb", "0xc"])]
+
+
+def test_backfill_records_every_outcome_and_keeps_points_inside_the_chunk(
+    tmp_path: Path,
+) -> None:
+    api = FakeApi(
+        {"0xa": ("tok-a", True), "0xb": ("tok-b", True), "0xd": ("tok-d", False)},
+        {"tok-a": [(W - HOUR, 0.1), (W, 0.4), (W + HOUR, 0.45), (W + C, 0.9)],
+         "tok-b": [],
+         "tok-d": httpx.ConnectError("boom")},
+    )
+    store = tmp_path / STORE_DIR
+    summary = backfill([("0xa", W), ("0xb", W), ("0xc", W), ("0xd", W)], store, get=api)
+
+    assert summary.by_status == {"ok": 1, "empty": 1, "no_token": 1, "http_error": 1}
+    assert summary.observations_written == 2 and not summary.stopped_early
+    receipts = {row["condition_id"]: row for row in _rows(store / RECEIPTS_FILE)}
+    assert receipts["0xa"]["points"] == 2 and receipts["0xa"]["token_id"] == "tok-a"
+    assert receipts["0xa"]["chunk_end"] == _at(W + C).isoformat().replace("+00:00", "Z")
+    assert receipts["0xd"]["error"] == "boom"
+    observations = _rows(store / OBSERVATIONS_FILE)
+    assert [(o["event_time"], o["price"], o["outcome_index"]) for o in observations] == [
+        ("2025-01-02T00:00:00Z", 0.4, 0), ("2025-01-02T01:00:00Z", 0.45, 0)]
+    assert all(o["observed_time"] == receipts["0xa"]["observed_time"] for o in observations)
+    for params in api.price_requests():
+        assert params["startTs"] == W and params["endTs"] == W + C
+        assert params["fidelity"] == 60 and "interval" not in params
+
+
+def test_backfill_starts_no_chunk_after_the_deadline(tmp_path: Path) -> None:
+    api = FakeApi({"0xa": ("tok-a", True), "0xb": ("tok-b", True)},
+                  {"tok-a": [(W, 0.5)], "tok-b": [(W, 0.5)]})
+    ticks = iter([0.0, 11.0])
+    summary = backfill([("0xa", W), ("0xb", W)], tmp_path, get=api, deadline=10.0,
+                       clock=lambda: next(ticks))
+    assert summary.stopped_early and summary.by_status == {"ok": 1}
+    assert [row["condition_id"] for row in _rows(tmp_path / RECEIPTS_FILE)] == ["0xa"]
+
+
+# ── The pilot stage ──────────────────────────────────────────────────────────
+
+def test_run_pending_fetches_each_ended_chunk_once(tmp_path: Path) -> None:
+    _write_activity(tmp_path, [_buy("0xa", W + 86400), _buy("0xa", W + 2 * 86400)])
+    api = FakeApi({"0xa": ("tok-a", True)},
+                  {"tok-a": [(W + 2 * 86400 - HOUR, 0.3), (W + C, 0.35)]})
+    now = _at(W + 2 * C + 2 * HOUR)
+
+    first = run_pending(tmp_path, limit=10, max_seconds=60, get=api, now=now)
+    assert first["status"] == "succeeded"
+    assert first["chunks_needed"] == 2 and first["selected"] == 2
+    assert first["summary"]["by_status"] == {"ok": 2}
+    requests = len(api.calls)
+
+    again = run_pending(tmp_path, limit=10, max_seconds=60, get=api, now=now)
+    assert again["status"] == "succeeded" and again["selected"] == 0
+    assert len(api.calls) == requests  # final chunks are never fetched again
+    series = load_entry_prices(tmp_path / STORE_DIR)["0xa"]
+    assert price_after(series, W + 86400, 86400) == 0.3
+
+
+def test_run_pending_is_partial_when_a_chunk_fails(tmp_path: Path) -> None:
+    _write_activity(tmp_path, [_buy("0xa", W)])
+    api = FakeApi({"0xa": ("tok-a", True)}, {"tok-a": httpx.ReadTimeout("slow")})
+    result = run_pending(tmp_path, limit=10, max_seconds=60, get=api, now=_at(W + 3 * C))
+    assert result["status"] == "partial"
+    assert result["summary"]["by_status"] == {"http_error": 2}
+
+
+def test_run_pending_is_partial_without_details_when_the_lookup_fails(tmp_path: Path) -> None:
+    _write_activity(tmp_path, [_buy("0xa", W)])
+
+    def broken(url: str, params: dict[str, Any]) -> Any:
+        return {"error": "https://gamma.example/?token=secret"}
+
+    result = run_pending(tmp_path, limit=10, max_seconds=60, get=broken, now=_at(W + 3 * C))
+    assert result == {"status": "partial", "chunks_needed": 2, "selected": 2,
+                      "error_type": "ValueError"}
+    assert not (tmp_path / STORE_DIR / RECEIPTS_FILE).exists()
+
+
+def test_run_pending_with_nothing_to_do_makes_no_requests(tmp_path: Path) -> None:
+    def unreachable(url: str, params: dict[str, Any]) -> Any:
+        raise AssertionError("no request expected")
+
+    result = run_pending(tmp_path, limit=10, max_seconds=60, get=unreachable, now=_at(W))
+    assert result["status"] == "succeeded" and result["chunks_needed"] == 0
+
+
+# ── Reading ──────────────────────────────────────────────────────────────────
+
+def test_load_entry_prices_respects_the_cutoff_and_the_price_range(tmp_path: Path) -> None:
+    fetched = _at(W + 2 * C)
+    later = fetched + timedelta(days=1)
+    rows = [
+        {"condition_id": "0xA", "outcome_index": 0, "event_time": _at(W + HOUR).isoformat(),
+         "observed_time": fetched.isoformat(), "price": 0.2},
+        {"condition_id": "0xa", "outcome_index": 0, "event_time": _at(W).isoformat(),
+         "observed_time": fetched.isoformat(), "price": 0.0},  # a real price, kept
+        {"condition_id": "0xa", "outcome_index": 0, "event_time": _at(W + HOUR).isoformat(),
+         "observed_time": later.isoformat(), "price": 0.25},  # refetch: latest row wins
+        {"condition_id": "0xa", "outcome_index": 1, "event_time": _at(W).isoformat(),
+         "observed_time": fetched.isoformat(), "price": 0.9},
+        {"condition_id": "0xa", "outcome_index": 0, "event_time": _at(W + 2 * HOUR).isoformat(),
+         "observed_time": fetched.isoformat(), "price": 1.2},
+    ]
+    tmp_path.joinpath(OBSERVATIONS_FILE).write_text(
+        "".join(json.dumps(row) + "\n" for row in rows) + '{"torn', encoding="utf-8")
+
+    assert load_entry_prices(tmp_path) == {"0xa": [(W, 0.0), (W + HOUR, 0.25)]}
+    assert load_entry_prices(tmp_path, observed_before=fetched) == {
+        "0xa": [(W, 0.0), (W + HOUR, 0.2)]}
+
+
+def test_price_after_takes_the_last_point_near_the_horizon() -> None:
+    series = [(W, 0.4), (W + HOUR, 0.5), (W + 5 * HOUR, 0.7)]
+    assert price_after(series, W - 1, HOUR + 1) == 0.5  # exactly on a point
+    assert price_after(series, W, 2 * HOUR) == 0.5  # between points: the one before
+    assert price_after(series, W, 4 * HOUR) is None  # three hours stale: a gap
+    assert price_after(series, W, 4 * HOUR, tolerance_seconds=3 * HOUR) == 0.5
+    assert price_after(series, W + HOUR, 30 * 60) is None  # nothing after the buy yet
+    assert price_after(series, W - 2 * HOUR, HOUR) is None  # before the series starts
+    assert price_after(series, W, 30 * HOUR) is None  # the market stopped publishing

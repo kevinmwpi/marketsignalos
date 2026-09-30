@@ -1,0 +1,335 @@
+"""
+Backfill hourly prices for the week after each tracked buy (post-entry CLV).
+
+Blueprint open decision 6 was settled on 2026-09-30: gate 13's reference price for a
+bet is the market's price a fixed time *after the buy*, not the last price before
+close, which was within 0.01 of the outcome for 38 of 40 probed markets. The horizon
+is not fixed yet; a diagnostic on pilot data picks it, anywhere up to
+``HORIZON_SECONDS`` (seven days). This module therefore stores every hourly point
+from each buy to seven days after it. Scoring does not read it yet.
+
+History is fetched in fixed chunks of ``CHUNK_SECONDS`` aligned to the Unix epoch and
+keyed by (condition id, chunk start):
+
+  - a chunk is fetched only after it has ended, so its prices can no longer change,
+    and a final chunk (``ok`` or ``empty``) is never fetched again;
+  - new buys only add the chunks they reach;
+  - the YES token is fetched, matching how CLV reads prices; NO is 1 - YES.
+
+A post-entry price is outcome-free only if the outcome was still unknown at the
+horizon. Markets that settle within it stop publishing points, and ``price_after``
+returns None for them; an outcome that is known before the market closes is not
+detected here. The horizon diagnostic has to measure how often the reference already
+sits within 0.01 of 0 or 1, as the closing-line check did.
+
+Rows use the ``price_observations`` contract (docs/handoff-blueprint.md section 8):
+each point keeps the time it was true and the time it was fetched, so a rescoring of a
+frozen snapshot can exclude anything fetched after it (``observed_before``). Both
+files are append-only; a torn final line from a crash is ignored.
+"""
+from __future__ import annotations
+
+import bisect
+import json
+import logging
+import time
+from collections.abc import Callable, Iterable
+from dataclasses import asdict, dataclass, field
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
+from typing import Any
+
+import httpx
+
+from .closing_lines import (
+    ACTIVITY_FILE,
+    CLOB_BASE_URL,
+    FIDELITY_MINUTES,
+    GAMMA_BATCH,
+    HEADERS,
+    GetJson,
+    PriceObservation,
+    _iso,
+    _parse_time,
+    _read_jsonl,
+    _utcnow_iso,
+    http_get_json,
+    parse_token_ids,
+)
+from .market_rules import GAMMA_BASE_URL
+
+log = logging.getLogger("marketsignalos.polymarket.entry_prices")
+
+STORE_DIR = "entry_prices"
+OBSERVATIONS_FILE = "price_observations.jsonl"
+RECEIPTS_FILE = "chunk_receipts.jsonl"
+HORIZON_SECONDS = 7 * 86400
+CHUNK_SECONDS = 7 * 86400
+# A chunk counts as ended this long after its last hour, so late points are in.
+SETTLE_SECONDS = 3600
+FINAL_STATUSES = frozenset({"ok", "empty"})
+RETRY_AFTER = timedelta(hours=24)
+
+# (condition id, chunk start in Unix seconds)
+ChunkKey = tuple[str, int]
+
+
+@dataclass(frozen=True, slots=True)
+class ChunkReceipt:
+    condition_id: str
+    chunk_start: str
+    chunk_end: str
+    status: str  # ok | empty | no_token | http_error
+    observed_time: str
+    token_id: str = ""
+    points: int = 0
+    fidelity_minutes: int = FIDELITY_MINUTES
+    error: str = ""
+
+
+@dataclass(slots=True)
+class BackfillSummary:
+    requested: int = 0
+    by_status: dict[str, int] = field(default_factory=dict)
+    observations_written: int = 0
+    stopped_early: bool = False
+
+
+def chunk_start(ts: int) -> int:
+    return ts - ts % CHUNK_SECONDS
+
+
+def needed_chunks(activity_path: Path, *, horizon_seconds: int = HORIZON_SECONDS) -> set[ChunkKey]:
+    """Every chunk reached by the window from a BUY to ``horizon_seconds`` after it.
+
+    Streams the activity store the way the ingestor does, skipping unparseable lines.
+    """
+    needed: set[ChunkKey] = set()
+    if not activity_path.exists():
+        return needed
+    with activity_path.open(encoding="utf-8") as handle:
+        for line in handle:
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(row, dict) or row.get("type") != "TRADE" or row.get("side") != "BUY":
+                continue
+            cid = str(row.get("condition_id", "")).strip().lower()
+            ts = row.get("timestamp")
+            if not cid or isinstance(ts, bool) or not isinstance(ts, int) or ts <= 0:
+                continue
+            for start in range(chunk_start(ts), ts + horizon_seconds + 1, CHUNK_SECONDS):
+                needed.add((cid, start))
+    return needed
+
+
+def latest_receipts(
+    store: Path, *, observed_before: datetime | None = None,
+) -> dict[ChunkKey, tuple[str, datetime]]:
+    """Latest (status, observed time) per chunk, optionally as of a cutoff."""
+    latest: dict[ChunkKey, tuple[str, datetime]] = {}
+    for row in _read_jsonl(store / RECEIPTS_FILE):
+        observed = _parse_time(row.get("observed_time"))
+        start = _parse_time(row.get("chunk_start"))
+        if observed is None or start is None:
+            continue
+        if observed_before is not None and observed > observed_before:
+            continue
+        cid = str(row.get("condition_id", "")).lower()
+        if cid:
+            latest[(cid, int(start.timestamp()))] = (str(row.get("status", "")), observed)
+    return latest
+
+
+def select_pending(
+    needed: Iterable[ChunkKey], receipts: dict[ChunkKey, tuple[str, datetime]], *,
+    now: datetime, limit: int, retry_after: timedelta = RETRY_AFTER,
+) -> list[ChunkKey]:
+    """Chunks to fetch next: ended and never tried first (newest first), then retries.
+
+    Chunks that have not ended yet wait, so every fetch is final. Final chunks are
+    skipped for good; a failed chunk waits ``retry_after`` before another attempt.
+    Newest first because recent markets have order-book history and matter most for
+    recent-edge scoring; 2021-2022 markets have none and come last.
+    """
+    cutoff = int(now.timestamp()) - SETTLE_SECONDS
+    fresh: list[ChunkKey] = []
+    retry: list[tuple[datetime, ChunkKey]] = []
+    for key in needed:
+        if key[1] + CHUNK_SECONDS > cutoff:
+            continue
+        receipt = receipts.get(key)
+        if receipt is None:
+            fresh.append(key)
+        elif receipt[0] not in FINAL_STATUSES and now - receipt[1] >= retry_after:
+            retry.append((receipt[1], key))
+    fresh.sort(key=lambda k: (-k[1], k[0]))
+    retry.sort()
+    return (fresh + [key for _, key in retry])[:max(0, limit)]
+
+
+def lookup_yes_tokens(condition_ids: list[str], get: GetJson) -> dict[str, str]:
+    """YES token per condition id. Gamma filters on ``closed``, so ask under both."""
+    tokens: dict[str, str] = {}
+    for closed in ("false", "true"):
+        remaining = [cid for cid in condition_ids if cid not in tokens]
+        for start in range(0, len(remaining), GAMMA_BATCH):
+            batch = remaining[start:start + GAMMA_BATCH]
+            rows = get(f"{GAMMA_BASE_URL}/markets",
+                       {"condition_ids": batch, "closed": closed, "limit": 100})
+            if not isinstance(rows, list):
+                raise ValueError(f"Gamma /markets: expected a list, saw {type(rows).__name__}")
+            wanted = set(batch)
+            for row in rows:
+                if not isinstance(row, dict):
+                    continue
+                cid = str(row.get("conditionId", "")).lower()
+                ids = parse_token_ids(row.get("clobTokenIds"))
+                if cid in wanted and ids:
+                    tokens[cid] = ids[0]
+    return tokens
+
+
+def fetch_chunk(token_id: str, start: int, get: GetJson) -> list[tuple[int, float]]:
+    """1-hour points in [start, start + CHUNK_SECONDS), sorted by time."""
+    payload = get(f"{CLOB_BASE_URL}/prices-history", {
+        "market": token_id, "startTs": start, "endTs": start + CHUNK_SECONDS,
+        "fidelity": FIDELITY_MINUTES,
+    })
+    rows = payload.get("history") if isinstance(payload, dict) else None
+    if not isinstance(rows, list):
+        raise ValueError("CLOB /prices-history: expected {'history': [...]}")
+    points = [(int(row["t"]), float(row["p"])) for row in rows
+              if isinstance(row, dict) and isinstance(row.get("t"), (int, float))
+              and isinstance(row.get("p"), (int, float))
+              and start <= row["t"] < start + CHUNK_SECONDS]
+    return sorted(points)
+
+
+def backfill(
+    chunks: list[ChunkKey], store: Path, *, get: GetJson,
+    deadline: float | None = None, clock: Callable[[], float] = time.monotonic,
+) -> BackfillSummary:
+    """Fetch the given chunks, writing each chunk's rows before its receipt.
+
+    No new chunk starts once ``deadline`` (on ``clock``) has passed; chunks left over
+    have no receipt and come back in the next selection.
+    """
+    summary = BackfillSummary(requested=len(chunks))
+    if not chunks:
+        return summary
+    store.mkdir(parents=True, exist_ok=True)
+    tokens = lookup_yes_tokens(sorted({cid for cid, _ in chunks}), get)
+    with (store / OBSERVATIONS_FILE).open("a", encoding="utf-8") as obs_out, \
+            (store / RECEIPTS_FILE).open("a", encoding="utf-8") as receipt_out:
+        for cid, start in chunks:
+            if deadline is not None and clock() >= deadline:
+                summary.stopped_early = True
+                break
+            observed = _utcnow_iso()
+            receipt = ChunkReceipt(cid, _iso(start), _iso(start + CHUNK_SECONDS), "",
+                                   observed, token_id=tokens.get(cid, ""))
+            observations: list[PriceObservation] = []
+            if not receipt.token_id:
+                receipt = _with(receipt, status="no_token")
+            else:
+                try:
+                    points = fetch_chunk(receipt.token_id, start, get)
+                except (httpx.HTTPError, ValueError, KeyError) as exc:
+                    receipt = _with(receipt, status="http_error", error=str(exc)[:200])
+                else:
+                    observations = [
+                        PriceObservation(cid, receipt.token_id, 0, _iso(t), observed, p,
+                                         FIDELITY_MINUTES) for t, p in points
+                    ]
+                    receipt = _with(receipt, status="ok" if points else "empty",
+                                    points=len(points))
+            for observation in observations:
+                obs_out.write(json.dumps(asdict(observation), separators=(",", ":")) + "\n")
+            obs_out.flush()
+            receipt_out.write(json.dumps(asdict(receipt), separators=(",", ":")) + "\n")
+            receipt_out.flush()
+            summary.observations_written += len(observations)
+            summary.by_status[receipt.status] = summary.by_status.get(receipt.status, 0) + 1
+    return summary
+
+
+def _with(receipt: ChunkReceipt, **changes: Any) -> ChunkReceipt:
+    return ChunkReceipt(**{**asdict(receipt), **changes})
+
+
+def run_pending(
+    data_dir: Path, *, limit: int, max_seconds: float, get: GetJson | None = None,
+    now: datetime | None = None, clock: Callable[[], float] = time.monotonic,
+) -> dict[str, Any]:
+    """One bounded pass for the chunks a data directory's buys reach (lean-pilot stage).
+
+    ``partial`` when the pass stopped early, a chunk failed, or the token lookup
+    failed. Exception details stay in the log, never the result.
+    """
+    store = data_dir / STORE_DIR
+    needed = needed_chunks(data_dir / ACTIVITY_FILE)
+    pending = select_pending(needed, latest_receipts(store),
+                             now=now or datetime.now(UTC), limit=limit)
+    result: dict[str, Any] = {"chunks_needed": len(needed), "selected": len(pending)}
+    if not pending:
+        return {"status": "succeeded", **result, "summary": asdict(BackfillSummary())}
+    deadline = clock() + max_seconds
+    try:
+        if get is None:
+            with httpx.Client(timeout=20.0, headers=HEADERS) as client:
+                summary = backfill(pending, store, get=http_get_json(client),
+                                   deadline=deadline, clock=clock)
+        else:
+            summary = backfill(pending, store, get=get, deadline=deadline, clock=clock)
+    except (httpx.HTTPError, ValueError) as exc:
+        log.warning("entry-price token lookup failed: %s", exc)
+        return {"status": "partial", **result, "error_type": type(exc).__name__}
+    failed = summary.by_status.get("http_error", 0) > 0
+    status = "partial" if summary.stopped_early or failed else "succeeded"
+    return {"status": status, **result, "summary": asdict(summary)}
+
+
+# ── Reading, for the horizon diagnostic and later scoring ────────────────────
+
+def load_entry_prices(
+    store: Path, *, observed_before: datetime | None = None,
+) -> dict[str, list[tuple[int, float]]]:
+    """Sorted hourly YES series per condition id, one point per timestamp.
+
+    With ``observed_before``, only rows fetched at or before it count, so a frozen
+    snapshot never sees prices fetched later.
+    """
+    by_market: dict[str, dict[int, float]] = {}
+    for row in _read_jsonl(store / OBSERVATIONS_FILE):
+        if row.get("outcome_index") != 0:
+            continue
+        observed = _parse_time(row.get("observed_time"))
+        event = _parse_time(row.get("event_time"))
+        price = row.get("price")
+        if (observed is None or event is None or isinstance(price, bool)
+                or not isinstance(price, (int, float)) or not 0.0 <= price <= 1.0):
+            continue
+        if observed_before is not None and observed > observed_before:
+            continue
+        cid = str(row.get("condition_id", "")).lower()
+        by_market.setdefault(cid, {})[int(event.timestamp())] = float(price)
+    return {cid: sorted(points.items()) for cid, points in by_market.items()}
+
+
+def price_after(
+    series: list[tuple[int, float]], buy_ts: int, horizon_seconds: int, *,
+    tolerance_seconds: int = 2 * 3600,
+) -> float | None:
+    """YES price ``horizon_seconds`` after a buy: the last point at or before that
+    moment, if it is within ``tolerance_seconds`` of it and after the buy. None when
+    the series has no such point (a gap, or the market had closed)."""
+    target = buy_ts + horizon_seconds
+    index = bisect.bisect_right(series, (target, float("inf"))) - 1
+    if index < 0:
+        return None
+    at, price = series[index]
+    if at <= buy_ts or target - at > tolerance_seconds:
+        return None
+    return price

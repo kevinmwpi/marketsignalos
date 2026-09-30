@@ -323,13 +323,14 @@ def test_worker_own_deadline_stops_it_without_a_supervisor(tmp_path: Path) -> No
     assert not response.exists()
 
 
-# ── Closing-line stage ────────────────────────────────────────────────────────
+# ── Price backfill stages ─────────────────────────────────────────────────────
 
-def test_closing_lines_stage_runs_between_collect_and_score_on_its_own_cadence(
+def test_backfill_stages_run_between_collect_and_score_on_their_own_cadence(
     tmp_path: Path,
 ) -> None:
     clock = Clock()
-    config = pilot.PilotConfig(closing_lines_every_seconds=6 * 3600)
+    config = pilot.PilotConfig(entry_prices_every_seconds=6 * 3600,
+                               closing_lines_every_seconds=12 * 3600)
     calls: list[str] = []
 
     def execute(stage: str, data: Path, cfg: pilot.PilotConfig, run: str) -> dict[str, Any]:
@@ -342,27 +343,33 @@ def test_closing_lines_stage_runs_between_collect_and_score_on_its_own_cadence(
                                now_fn=clock.now, monotonic=clock.monotonic)
 
     assert cycle("first")["status"] == "succeeded"
-    assert calls == ["collect", "closing_lines", "score"]  # score reads fresh closing lines
+    assert calls == ["collect", "entry_prices", "closing_lines", "score"]
     clock.advance(3600)
     cycle("hourly")
-    assert calls[3:] == ["collect"]  # closing lines wait for their own interval
+    assert calls[4:] == ["collect"]  # the backfills wait for their own intervals
     clock.advance(5 * 3600)
     cycle("sixhourly")
-    assert calls[4:] == ["collect", "closing_lines"]
-    assert state_at(tmp_path)["stages"]["closing_lines"]["last_status"] == "succeeded"
+    assert calls[5:] == ["collect", "entry_prices"]
+    clock.advance(6 * 3600)
+    cycle("twelvehourly")
+    assert calls[7:] == ["collect", "entry_prices", "closing_lines"]
+    stages = state_at(tmp_path)["stages"]
+    assert stages["entry_prices"]["last_status"] == "succeeded"
+    assert stages["closing_lines"]["last_status"] == "succeeded"
 
 
-def test_closing_lines_stage_is_off_unless_configured(tmp_path: Path) -> None:
+def test_backfill_stages_are_off_unless_configured(tmp_path: Path) -> None:
     planned = pilot.plan_cycle(tmp_path, pilot.PilotConfig(), now=Clock().now())
     assert planned["due"] == ["collect", "score"]
 
 
-def test_an_interrupted_closing_line_run_needs_no_recovery(tmp_path: Path) -> None:
+@pytest.mark.parametrize("stage", ["entry_prices", "closing_lines"])
+def test_an_interrupted_backfill_run_needs_no_recovery(tmp_path: Path, stage: str) -> None:
     clock = Clock()
-    config = pilot.PilotConfig(closing_lines_every_seconds=3600)
+    config = pilot.PilotConfig(**{f"{stage}_every_seconds": 3600})
 
-    def execute(stage: str, data: Path, cfg: pilot.PilotConfig, run: str) -> dict[str, Any]:
-        if stage == "closing_lines":
+    def execute(name: str, data: Path, cfg: pilot.PilotConfig, run: str) -> dict[str, Any]:
+        if name == stage:
             raise RuntimeError("upstream failure")
         return {"status": "succeeded"}
 
@@ -370,26 +377,42 @@ def test_an_interrupted_closing_line_run_needs_no_recovery(tmp_path: Path) -> No
                               now_fn=clock.now, monotonic=clock.monotonic)
     assert receipt["status"] == "failed"
     state = state_at(tmp_path)
-    assert state["stages"]["closing_lines"]["last_status"] == "failed"
+    assert state["stages"][stage]["last_status"] == "failed"
     assert state.get("recovery_required", False) is False  # append-only: nothing to reconcile
 
 
 @pytest.mark.parametrize("fields", [
-    {"closing_lines_every_seconds": 3600, "closing_lines_max_seconds": 1200},
+    {"closing_lines_every_seconds": 3600, "closing_lines_max_seconds": 601},
+    {"entry_prices_every_seconds": 3600, "entry_prices_max_seconds": 601},
+    # Each fits alone; together they would take more than half the cycle.
+    {"entry_prices_every_seconds": 3600, "entry_prices_max_seconds": 400,
+     "closing_lines_every_seconds": 3600, "closing_lines_max_seconds": 201},
     {"closing_lines_per_cycle": 0},
     {"closing_lines_max_seconds": 0},
     {"closing_lines_every_seconds": -1},
+    {"entry_prices_per_cycle": 0},
+    {"entry_prices_max_seconds": 0},
+    {"entry_prices_every_seconds": -1},
 ])
-def test_closing_line_limits_are_validated(fields: dict[str, int]) -> None:
+def test_backfill_limits_are_validated(fields: dict[str, int]) -> None:
     with pytest.raises(ValueError):
         pilot.PilotConfig(**fields)
 
 
-def test_the_deployed_config_is_valid_and_enables_closing_lines() -> None:
+def test_a_disabled_backfill_does_not_count_against_the_cycle() -> None:
+    config = pilot.PilotConfig(entry_prices_every_seconds=3600, entry_prices_max_seconds=600,
+                               closing_lines_max_seconds=600)
+    assert config.closing_lines_every_seconds == 0
+
+
+def test_the_deployed_config_is_valid_and_enables_both_backfills() -> None:
     path = Path(__file__).resolve().parents[3] / "deploy" / "lean-pilot.json"
     config = pilot.PilotConfig(**json.loads(path.read_text(encoding="utf-8")))
+    assert config.entry_prices_every_seconds > 0
     assert config.closing_lines_every_seconds > 0
-    # The stage shares the daily runtime allowance with hourly collection, so its
-    # worst case must stay a small part of it.
-    runs_per_day = 86400 // config.closing_lines_every_seconds
-    assert runs_per_day * config.closing_lines_max_seconds <= config.daily_runtime_seconds // 3
+    # The backfills share the daily runtime allowance with hourly collection, so
+    # their combined worst case must stay a small part of it.
+    worst_case = sum(86400 // every * max_seconds for every, max_seconds in (
+        (config.entry_prices_every_seconds, config.entry_prices_max_seconds),
+        (config.closing_lines_every_seconds, config.closing_lines_max_seconds)))
+    assert worst_case <= config.daily_runtime_seconds // 3
