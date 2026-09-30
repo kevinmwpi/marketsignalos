@@ -7,5 +7,8 @@
   "cycle_timeout_seconds": 1200,
   "daily_runtime_seconds": 3600,
   "rss_limit_mb": 4096,
-  "log_limit_mb": 8
+  "log_limit_mb": 8,
+  "closing_lines_every_seconds": 21600,
+  "closing_lines_per_cycle": 200,
+  "closing_lines_max_seconds": 240
 }

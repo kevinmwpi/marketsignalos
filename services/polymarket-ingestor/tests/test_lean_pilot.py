@@ -321,3 +321,75 @@ def test_worker_own_deadline_stops_it_without_a_supervisor(tmp_path: Path) -> No
                            capture_output=True, text=True, env=environment, timeout=15, check=False)
     assert child.returncode == 124, child.stderr
     assert not response.exists()
+
+
+# ── Closing-line stage ────────────────────────────────────────────────────────
+
+def test_closing_lines_stage_runs_between_collect_and_score_on_its_own_cadence(
+    tmp_path: Path,
+) -> None:
+    clock = Clock()
+    config = pilot.PilotConfig(closing_lines_every_seconds=6 * 3600)
+    calls: list[str] = []
+
+    def execute(stage: str, data: Path, cfg: pilot.PilotConfig, run: str) -> dict[str, Any]:
+        calls.append(stage)
+        clock.advance(1)
+        return {"status": "succeeded"}
+
+    def cycle(run: str) -> dict[str, Any]:
+        return pilot.run_cycle(tmp_path, config, run, execute=execute,
+                               now_fn=clock.now, monotonic=clock.monotonic)
+
+    assert cycle("first")["status"] == "succeeded"
+    assert calls == ["collect", "closing_lines", "score"]  # score reads fresh closing lines
+    clock.advance(3600)
+    cycle("hourly")
+    assert calls[3:] == ["collect"]  # closing lines wait for their own interval
+    clock.advance(5 * 3600)
+    cycle("sixhourly")
+    assert calls[4:] == ["collect", "closing_lines"]
+    assert state_at(tmp_path)["stages"]["closing_lines"]["last_status"] == "succeeded"
+
+
+def test_closing_lines_stage_is_off_unless_configured(tmp_path: Path) -> None:
+    planned = pilot.plan_cycle(tmp_path, pilot.PilotConfig(), now=Clock().now())
+    assert planned["due"] == ["collect", "score"]
+
+
+def test_an_interrupted_closing_line_run_needs_no_recovery(tmp_path: Path) -> None:
+    clock = Clock()
+    config = pilot.PilotConfig(closing_lines_every_seconds=3600)
+
+    def execute(stage: str, data: Path, cfg: pilot.PilotConfig, run: str) -> dict[str, Any]:
+        if stage == "closing_lines":
+            raise RuntimeError("upstream failure")
+        return {"status": "succeeded"}
+
+    receipt = pilot.run_cycle(tmp_path, config, "broken", execute=execute,
+                              now_fn=clock.now, monotonic=clock.monotonic)
+    assert receipt["status"] == "failed"
+    state = state_at(tmp_path)
+    assert state["stages"]["closing_lines"]["last_status"] == "failed"
+    assert state.get("recovery_required", False) is False  # append-only: nothing to reconcile
+
+
+@pytest.mark.parametrize("fields", [
+    {"closing_lines_every_seconds": 3600, "closing_lines_max_seconds": 1200},
+    {"closing_lines_per_cycle": 0},
+    {"closing_lines_max_seconds": 0},
+    {"closing_lines_every_seconds": -1},
+])
+def test_closing_line_limits_are_validated(fields: dict[str, int]) -> None:
+    with pytest.raises(ValueError):
+        pilot.PilotConfig(**fields)
+
+
+def test_the_deployed_config_is_valid_and_enables_closing_lines() -> None:
+    path = Path(__file__).resolve().parents[3] / "deploy" / "lean-pilot.json"
+    config = pilot.PilotConfig(**json.loads(path.read_text(encoding="utf-8")))
+    assert config.closing_lines_every_seconds > 0
+    # The stage shares the daily runtime allowance with hourly collection, so its
+    # worst case must stay a small part of it.
+    runs_per_day = 86400 // config.closing_lines_every_seconds
+    assert runs_per_day * config.closing_lines_max_seconds <= config.daily_runtime_seconds // 3

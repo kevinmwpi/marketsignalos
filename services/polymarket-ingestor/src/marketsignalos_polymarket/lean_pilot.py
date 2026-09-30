@@ -38,11 +38,22 @@ class PilotConfig:
     daily_runtime_seconds: int = 3600
     rss_limit_mb: int = 4096
     log_limit_mb: int = 8
+    # Closing-line backfill for CLV (closing_lines.py). 0 disables the stage; the
+    # deployed config turns it on. Each run fetches at most `per_cycle` markets
+    # and starts no new market after `max_seconds`.
+    closing_lines_every_seconds: int = 0
+    closing_lines_per_cycle: int = 150
+    closing_lines_max_seconds: int = 240
 
     def __post_init__(self) -> None:
         for name, value in asdict(self).items():
-            if type(value) is not int or value <= 0:
+            if type(value) is not int or value < 0:
+                raise ValueError(f"{name} must be a non-negative integer")
+            if value == 0 and name != "closing_lines_every_seconds":
                 raise ValueError(f"{name} must be a positive integer")
+        if (self.closing_lines_every_seconds
+                and self.closing_lines_max_seconds >= self.cycle_timeout_seconds):
+            raise ValueError("closing_lines_max_seconds must leave room in the cycle")
         if self.daily_runtime_seconds < self.cycle_timeout_seconds:
             raise ValueError("daily_runtime_seconds must cover one complete cycle reservation")
         if self.cycle_timeout_seconds > 3600:
@@ -128,7 +139,7 @@ def _read_state(path: Path) -> dict[str, Any]:
                 or not math.isfinite(seconds) or seconds < 0):
             raise ValueError("Invalid runtime accounting")
     for stage, row in stages.items():
-        if stage not in {"collect", "score"} or not isinstance(row, dict):
+        if stage not in STAGES or not isinstance(row, dict):
             raise ValueError("Invalid stage state")
         for key in ("last_attempt_at", "last_success_at"):
             if row.get(key) is not None:
@@ -144,6 +155,18 @@ def _read_state(path: Path) -> dict[str, Any]:
     return state
 
 
+# Run order within a cycle: collection first, then closing lines for what was
+# collected, then scoring, which reads both.
+STAGES = ("collect", "closing_lines", "score")
+
+
+def _stage_intervals(config: PilotConfig) -> list[tuple[str, int]]:
+    intervals = {"collect": config.collect_every_seconds,
+                 "closing_lines": config.closing_lines_every_seconds,
+                 "score": config.score_every_seconds}
+    return [(name, intervals[name]) for name in STAGES if intervals[name] > 0]
+
+
 def plan_cycle(data_dir: Path, config: PilotConfig, *,
                now: datetime | None = None) -> dict[str, Any]:
     """Read-only planning. Attempt cadence limits retries; success is separate."""
@@ -154,8 +177,7 @@ def plan_cycle(data_dir: Path, config: PilotConfig, *,
     state = _read_state(data_dir / ".lean-pilot" / "state.json")
     due = []
     stages: dict[str, Any] = {}
-    for name, interval in (("collect", config.collect_every_seconds),
-                           ("score", config.score_every_seconds)):
+    for name, interval in _stage_intervals(config):
         row = state["stages"].get(name, {})
         attempted = row.get("last_attempt_at")
         next_due = _timestamp(attempted) + timedelta(seconds=interval) if attempted else now
@@ -184,6 +206,12 @@ def _execute_stage(stage: str, data_dir: Path, config: PilotConfig,
     if stage == "score":
         from .score_snapshot import score_snapshot
         return score_snapshot(data_dir, data_dir / "score-snapshots", run_id)
+    if stage == "closing_lines":
+        # Append-only and safe to interrupt: unlike collection, a killed run
+        # leaves nothing to reconcile, so it never sets recovery_required.
+        from .closing_lines import run_pending
+        return run_pending(data_dir, limit=config.closing_lines_per_cycle,
+                           max_seconds=config.closing_lines_max_seconds)
     from .runner import run_pipeline
     result = run_pipeline(
         windows=["day"], leaderboard_limit=config.leaderboard_limit,
