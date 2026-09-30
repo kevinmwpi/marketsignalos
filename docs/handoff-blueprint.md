@@ -65,8 +65,12 @@ collection restarts in the cloud. Three findings change how Stages 0–1 read:
   38 of 40 resolved markets last traded within 0.01 of 0 or 1. CLV against that price
   mostly restates whether a bet won, which gates 8 and 9 already measure, so wiring
   it in would loosen gate 13 (invariant 1). The flaw was latent in forecast-v4 too.
-  Scoring does not read the backfill. The worker collects each traded market's
-  48-hour pre-close window so that open decision 6 (§12) can be settled on pilot data.
+  Scoring does not read the backfill.
+- **Gate 13 will measure CLV against the price a fixed time after entry** (open
+  decision 6, §12, decided 2026-09-30). The worker backfills every hourly price in the
+  week after each buy (`entry_prices.py`), so a diagnostic on pilot data can choose the
+  horizon. It also keeps collecting the pre-close windows at a lower cadence, as the
+  comparison that diagnostic needs.
 - **Polygon logs are complete but not cheaper, and the Goldsky subgraph is gone.** The
   [chain probe](benchmarks/2026-09-29-polygon-logs-probe.md) decoded 30 of 30 Data API
   trades exactly from V2 `OrderFilled` events. It also measured about 2.9 GB a day of
@@ -965,13 +969,18 @@ Answer these before Stage 1; each changes what gets built.
    generations. Nothing deletes anything today. Required before Stage 2 runs unattended
    for weeks.
 6. **What is the closing line for a resolved bet?** Not the last price before close:
-   that is the outcome (38 of 40 probed markets). Candidates:
+   that is the outcome (38 of 40 probed markets). Candidates were:
    - the last price at least *L* hours before close;
    - the price *h* hours after entry, which is also defined for open and exited bets.
 
-   Decide on pilot data with a diagnostic. It should report two things for each
-   candidate, then the gate 13 pass counts before and after:
-   - how often the reference sits within 0.01 of the outcome;
-   - how strongly CLV correlates with winning.
+   *Decided 2026-09-30: the price h hours after entry.* The worker collects the week
+   after each buy, so h can be anything up to seven days. The horizon is still open.
+   A diagnostic on pilot data picks it and must report, for each h:
+   - how often the reference sits within 0.01 of the outcome, compared with the
+     last pre-close price on the same bets;
+   - how strongly CLV correlates with winning;
+   - how many bets have no reference because the market closed first;
+   - the gate 13 pass counts before and after.
 
-   The winning definition becomes a new score version.
+   Choose h before looking at gate 13 counts for any wallet. The chosen definition
+   becomes a new score version.

@@ -9,8 +9,9 @@ it makes no API requests, and publishes it to GitHub Pages.
 ## Scheduled worker (lean pilot)
 
 One Railway service runs `marketsignalos_polymarket.lean_pilot` once an hour and
-exits. The worker decides what is due (collection hourly, closing-line backfill every
-six hours, scoring daily) and keeps its runtime allowance on its volume; see
+exits. The worker decides what is due (collection hourly, entry-price backfill every
+six hours, closing-line backfill every twelve, scoring daily) and keeps its runtime
+allowance on its volume; see
 [lean-pilot.md](lean-pilot.md).
 
 | Setting | Value |

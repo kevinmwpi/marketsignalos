@@ -27,6 +27,10 @@ log = logging.getLogger("marketsignalos.lean_pilot")
 SCHEMA_VERSION = 1
 
 
+_OPTIONAL_STAGE_INTERVALS = frozenset({"entry_prices_every_seconds",
+                                       "closing_lines_every_seconds"})
+
+
 @dataclass(frozen=True)
 class PilotConfig:
     collect_every_seconds: int = 3600
@@ -38,9 +42,14 @@ class PilotConfig:
     daily_runtime_seconds: int = 3600
     rss_limit_mb: int = 4096
     log_limit_mb: int = 8
-    # Closing-line backfill for CLV (closing_lines.py). 0 disables the stage; the
-    # deployed config turns it on. Each run fetches at most `per_cycle` markets
-    # and starts no new market after `max_seconds`.
+    # Price backfills for CLV research. 0 disables a stage; the deployed config
+    # turns them on. Each run fetches at most `per_cycle` items and starts none
+    # after `max_seconds`. Entry prices (entry_prices.py) hold the week after
+    # each buy, the gate-13 reference chosen on 2026-09-30; closing lines
+    # (closing_lines.py) hold each market's 48 hours before close.
+    entry_prices_every_seconds: int = 0
+    entry_prices_per_cycle: int = 200
+    entry_prices_max_seconds: int = 180
     closing_lines_every_seconds: int = 0
     closing_lines_per_cycle: int = 150
     closing_lines_max_seconds: int = 240
@@ -49,11 +58,13 @@ class PilotConfig:
         for name, value in asdict(self).items():
             if type(value) is not int or value < 0:
                 raise ValueError(f"{name} must be a non-negative integer")
-            if value == 0 and name != "closing_lines_every_seconds":
+            if value == 0 and name not in _OPTIONAL_STAGE_INTERVALS:
                 raise ValueError(f"{name} must be a positive integer")
-        if (self.closing_lines_every_seconds
-                and self.closing_lines_max_seconds >= self.cycle_timeout_seconds):
-            raise ValueError("closing_lines_max_seconds must leave room in the cycle")
+        backfill_seconds = (
+            (self.entry_prices_max_seconds if self.entry_prices_every_seconds else 0)
+            + (self.closing_lines_max_seconds if self.closing_lines_every_seconds else 0))
+        if backfill_seconds > self.cycle_timeout_seconds // 2:
+            raise ValueError("Enabled backfill stages may use at most half of a cycle")
         if self.daily_runtime_seconds < self.cycle_timeout_seconds:
             raise ValueError("daily_runtime_seconds must cover one complete cycle reservation")
         if self.cycle_timeout_seconds > 3600:
@@ -155,13 +166,14 @@ def _read_state(path: Path) -> dict[str, Any]:
     return state
 
 
-# Run order within a cycle: collection first, then closing lines for what was
-# collected, then scoring, which reads both.
-STAGES = ("collect", "closing_lines", "score")
+# Run order within a cycle: collection first, then the price backfills for what
+# was collected, then scoring.
+STAGES = ("collect", "entry_prices", "closing_lines", "score")
 
 
 def _stage_intervals(config: PilotConfig) -> list[tuple[str, int]]:
     intervals = {"collect": config.collect_every_seconds,
+                 "entry_prices": config.entry_prices_every_seconds,
                  "closing_lines": config.closing_lines_every_seconds,
                  "score": config.score_every_seconds}
     return [(name, intervals[name]) for name in STAGES if intervals[name] > 0]
@@ -206,12 +218,16 @@ def _execute_stage(stage: str, data_dir: Path, config: PilotConfig,
     if stage == "score":
         from .score_snapshot import score_snapshot
         return score_snapshot(data_dir, data_dir / "score-snapshots", run_id)
+    # The backfills are append-only and safe to interrupt: unlike collection, a
+    # killed run leaves nothing to reconcile, so they never set recovery_required.
+    if stage == "entry_prices":
+        from . import entry_prices
+        return entry_prices.run_pending(data_dir, limit=config.entry_prices_per_cycle,
+                                        max_seconds=config.entry_prices_max_seconds)
     if stage == "closing_lines":
-        # Append-only and safe to interrupt: unlike collection, a killed run
-        # leaves nothing to reconcile, so it never sets recovery_required.
-        from .closing_lines import run_pending
-        return run_pending(data_dir, limit=config.closing_lines_per_cycle,
-                           max_seconds=config.closing_lines_max_seconds)
+        from . import closing_lines
+        return closing_lines.run_pending(data_dir, limit=config.closing_lines_per_cycle,
+                                         max_seconds=config.closing_lines_max_seconds)
     from .runner import run_pipeline
     result = run_pipeline(
         windows=["day"], leaderboard_limit=config.leaderboard_limit,

@@ -92,9 +92,10 @@ independent evidence into a copy of the others, which amounts to loosening it
 (blueprint invariant 1). Scoring therefore does not read the backfill.
 
 A usable closing line has to come from before the outcome is known: a fixed lead
-before close, or the price a fixed time after entry. Choosing between them is a
-diagnostic for pilot data, which is why the worker collects each traded market's
-48-hour pre-close window. Reproduce the table with:
+before close, or the price a fixed time after entry. The post-entry price was chosen
+on 2026-09-30 (blueprint open decision 6). The worker collects the week after each
+buy (`entry_prices.py`) and keeps the 48-hour pre-close windows as the comparison.
+Reproduce the table with:
 
 ```python
 import json
