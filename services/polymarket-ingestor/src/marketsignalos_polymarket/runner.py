@@ -217,6 +217,21 @@ def parse_leaderboard_row(
     )
 
 
+def parse_ranked_leaderboard_row(
+    row: dict[str, Any], *, metric: str, window: str
+) -> PolymarketLeaderboardEntry:
+    """One row from data-api ``/v1/leaderboard``: proxyWallet, userName, vol, pnl."""
+    amount = _economic_value(row, "vol" if metric == "volume" else "pnl", "amount")
+    return PolymarketLeaderboardEntry(
+        proxy_wallet=str(row.get("proxyWallet", "")).lower(),
+        name=str(row.get("userName") or row.get("name") or ""),
+        pseudonym=str(row.get("pseudonym", "")),
+        amount_usdc=amount,
+        metric=metric,
+        window=window,
+    )
+
+
 def parse_activity_row(row: dict[str, Any]) -> PolymarketActivity:
     return PolymarketActivity(
         proxy_wallet=str(row.get("proxyWallet", "")).lower(),
@@ -2482,6 +2497,33 @@ class PipelineResult:
 # subcommand from the shell.
 
 _DEFAULT_WINDOWS: tuple[str, ...] = ("day", "week", "month", "all")
+# The seed reads the data API's ranked leaderboard. lb-api.polymarket.com, used
+# before, answers 400 for every window except "all"
+# (docs/polymarket-api-discovery.md), which left the day-window pilot with no
+# wallets at all.
+_SEED_PERIODS = {"day": "DAY", "week": "WEEK", "month": "MONTH", "all": "ALL"}
+_SEED_ORDERS = {"volume": "VOL", "profit": "PNL"}
+_SEED_PAGE_SIZE = 50  # /v1/leaderboard maximum
+
+
+def _fetch_seed_leaderboard(
+    client: PolymarketClient, *, metric: str, window: str, limit: int,
+) -> list[PolymarketLeaderboardEntry]:
+    """Top ``limit`` wallets for one window and metric, paging 50 at a time."""
+    period = _SEED_PERIODS.get(window)
+    if period is None:
+        raise ValueError(f"unsupported leaderboard window {window!r}")
+    rows: list[dict[str, Any]] = []
+    for offset in range(0, limit, _SEED_PAGE_SIZE):
+        page = client.get_trader_leaderboard_rankings(
+            category="OVERALL", time_period=period, order_by=_SEED_ORDERS[metric],
+            limit=min(_SEED_PAGE_SIZE, limit - offset), offset=offset,
+        )
+        rows.extend(page)
+        if len(page) < min(_SEED_PAGE_SIZE, limit - offset):
+            break
+    return [parse_ranked_leaderboard_row(row, metric=metric, window=window) for row in rows]
+
 
 
 @_tracked_run("shallow")
@@ -2507,7 +2549,7 @@ def run_pipeline(
     """End-to-end Polymarket pipeline:
 
         1. Seed the wallet watchlist by hitting the **volume** leaderboard
-           across each configured time window. The profit/PnL leaderboard is
+           (data API ``/v1/leaderboard``) across each configured time window. The profit/PnL leaderboard is
            intentionally excluded — it over-represents wallets that ranked via
            a single lucky win rather than a repeatable edge, biasing the review
            pool. Pass include_profit_leaderboard=True to opt back in. Recent
@@ -2572,6 +2614,7 @@ def run_pipeline(
         seeded: set[str] = set(existing)
         leaderboard_entries = 0
         succeeded: list[str] = []
+        seed_failures: list[str] = []
         for i, window in enumerate(attempts):
             _emit({
                 "stage": "seed_watchlist",
@@ -2582,8 +2625,8 @@ def run_pipeline(
             window_ok = False
             for metric in leaderboard_metrics:
                 try:
-                    raw = client.get_leaderboard(
-                        metric=metric, window=window, limit=leaderboard_limit
+                    entries = _fetch_seed_leaderboard(
+                        client, metric=metric, window=window, limit=leaderboard_limit,
                     )
                 except httpx.HTTPStatusError as exc:
                     log.warning(
@@ -2591,10 +2634,13 @@ def run_pipeline(
                         "(API rejected this window)",
                         window, metric, exc.response.status_code,
                     )
+                    seed_failures.append(
+                        f"{window}/{metric} HTTP {exc.response.status_code}")
                     continue
-                entries = [
-                    parse_leaderboard_row(r, metric=metric, window=window) for r in raw
-                ]
+                except ValueError as exc:
+                    log.warning("leaderboard skip window=%s metric=%s: %s", window, metric, exc)
+                    seed_failures.append(f"{window}/{metric} {type(exc).__name__}")
+                    continue
                 stores.leaderboard.write_leaderboard(entries)
                 leaderboard_entries += len(entries)
                 for e in entries:
@@ -2729,6 +2775,9 @@ def run_pipeline(
             hydration_wallets=quality["hydration_wallets"],
             backfill_complete_wallets=quality["backfill_complete_wallets"],
             metadata_complete_wallets=quality["metadata_complete_wallets"],
+            # Shown in the pilot's result line, which is all Railway logs show.
+            warning=("leaderboard failed: " + ", ".join(seed_failures)
+                     if seed_failures else None),
         )
         log.info("pipeline complete %s", result.to_dict())
         return result

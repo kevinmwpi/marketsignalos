@@ -781,18 +781,24 @@ def test_parse_position_row_falls_back_on_alt_field_names() -> None:
     assert p.current_value_usdc == 95.0
 
 
+def _is_ranked_leaderboard(request: httpx.Request) -> bool:
+    """A seed request; per-wallet economics lookups use the same path with ``user``."""
+    return (request.url.host == "data-api.polymarket.com"
+            and request.url.path == "/v1/leaderboard" and "user" not in request.url.params)
+
+
 def test_run_pipeline_skips_windows_the_api_rejects(
     tmp_path: Path, monkeypatch: Any,
 ) -> None:
-    """Polymarket's public leaderboard API silently 400s on some window
-    values. The orchestrator must catch those, log a warning, and still
-    complete the rest of the pipeline."""
+    """A rejected leaderboard window is skipped and the rest of the pipeline
+    completes, but the rejection is reported in the result's warning."""
 
     def handler(request: httpx.Request) -> httpx.Response:
-        # Leaderboard: accept 'all', reject everything else with 400.
         if "lb-api.polymarket.com" in str(request.url):
-            window = request.url.params.get("window")
-            if window == "all":
+            raise AssertionError("the seed must not use lb-api, which rejects day/week/month")
+        # Leaderboard: accept 'ALL', reject everything else with 400.
+        if _is_ranked_leaderboard(request):
+            if request.url.params.get("timePeriod") == "ALL":
                 return httpx.Response(200, json=[])
             return httpx.Response(400, json={"error": "invalid request"})
         # Gamma markets: return an empty page so run_markets exits cleanly.
@@ -815,6 +821,8 @@ def test_run_pipeline_skips_windows_the_api_rejects(
     # Only 'all' returned successfully; the other three were skipped.
     assert result.windows_attempted == ["day", "week", "month", "all"]
     assert result.windows_succeeded == ["all"]
+    assert result.warning == (
+        "leaderboard failed: day/volume HTTP 400, week/volume HTTP 400, month/volume HTTP 400")
     # Empty leaderboard => no wallets seeded, no activity pulled.
     assert result.wallets_seeded == 0
     assert result.leaderboard_entries == 0
@@ -826,20 +834,57 @@ def test_run_pipeline_skips_windows_the_api_rejects(
     assert result.market_links == 0
 
 
+def test_run_pipeline_seeds_the_day_window_from_the_ranked_leaderboard(
+    tmp_path: Path, monkeypatch: Any,
+) -> None:
+    """The lean pilot seeds from the day window; the 60-wallet limit spans two pages."""
+    requests: list[dict[str, str]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if _is_ranked_leaderboard(request):
+            params = dict(request.url.params)
+            requests.append(params)
+            offset, limit = int(params.get("offset", 0)), int(params["limit"])
+            return httpx.Response(200, json=[
+                {"rank": str(i + 1), "proxyWallet": f"0xW{i:03d}", "userName": f"user{i}",
+                 "vol": 1000.0 - i, "pnl": 5.0}
+                for i in range(offset, min(offset + limit, 60))
+            ])
+        return httpx.Response(200, json=[])
+
+    monkeypatch.setenv("POLYMARKET_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("POLYMARKET_WATCHLIST_PATH", str(tmp_path / "wl.txt"))
+    result = run_pipeline(
+        windows=["day"], leaderboard_limit=60, skip_kalshi=True, skip_enrichment=True,
+        refresh_reference=False, wallet_batch_size=1,
+        client=_client_with_handler(handler),
+    )
+
+    assert [(r["timePeriod"], r["orderBy"], r["limit"], r.get("offset", "0"))
+            for r in requests] == [("DAY", "VOL", "50", "0"), ("DAY", "VOL", "10", "50")]
+    assert result.windows_succeeded == ["day"] and result.warning is None
+    assert result.leaderboard_entries == 60 and result.wallets_seeded == 60
+    rows = [json.loads(line) for line in
+            (tmp_path / "polymarket_leaderboard.jsonl").read_text().splitlines()]
+    assert rows[0]["proxy_wallet"] == "0xw000" and rows[0]["name"] == "user0"
+    assert rows[0]["amount_usdc"] == 1000.0
+    assert (rows[0]["metric"], rows[0]["window"]) == ("volume", "day")
+
+
 def test_run_pipeline_seeds_volume_only_by_default(
     tmp_path: Path, monkeypatch: Any,
 ) -> None:
     """The shallow pipeline must drop the profit/PnL leaderboard (luck bias)
     and must NOT touch the subgraph — recent-trader discovery lives only in the
     deep pipeline, which can absorb an unbounded wallet set."""
-    metrics_called: list[str] = []
+    orders_called: list[str] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
         url = str(request.url)
-        if "lb-api.polymarket.com" in url:
-            metrics_called.append(request.url.path.lstrip("/"))
+        if _is_ranked_leaderboard(request):
+            orders_called.append(request.url.params["orderBy"])
             return httpx.Response(200, json=[
-                {"proxyWallet": "0xVol", "amount": 1.0, "pseudonym": "v", "name": "v"},
+                {"proxyWallet": "0xVol", "vol": 1.0, "userName": "v"},
             ])
         if "gamma-api.polymarket.com" in url:
             return httpx.Response(200, json=[])
@@ -853,19 +898,19 @@ def test_run_pipeline_seeds_volume_only_by_default(
         windows=["all"], leaderboard_limit=5, skip_kalshi=True,
         client=_client_with_handler(handler),
     )
-    assert metrics_called == ["volume"]  # profit never requested
+    assert orders_called == ["VOL"]  # profit never requested
     assert result.wallets_seeded == 1
 
 
 def test_run_pipeline_include_profit_reenables_profit(
     tmp_path: Path, monkeypatch: Any,
 ) -> None:
-    metrics_called: set[str] = set()
+    orders_called: set[str] = set()
 
     def handler(request: httpx.Request) -> httpx.Response:
         url = str(request.url)
-        if "lb-api.polymarket.com" in url:
-            metrics_called.add(request.url.path.lstrip("/"))
+        if _is_ranked_leaderboard(request):
+            orders_called.add(request.url.params["orderBy"])
             return httpx.Response(200, json=[])
         if "gamma-api.polymarket.com" in url:
             return httpx.Response(200, json=[])
@@ -877,7 +922,7 @@ def test_run_pipeline_include_profit_reenables_profit(
         windows=["all"], leaderboard_limit=5, skip_kalshi=True,
         include_profit_leaderboard=True, client=_client_with_handler(handler),
     )
-    assert metrics_called == {"profit", "volume"}
+    assert orders_called == {"PNL", "VOL"}
 
 
 def test_merge_skill_qualified_wallets_into_watchlist(tmp_path: Path) -> None:

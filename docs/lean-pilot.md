@@ -24,7 +24,7 @@ The default configuration is committed in `deploy/lean-pilot.json`:
 | Entry prices | Every 6 hours in `deploy/lean-pilot.json`; off in code | Backfill hourly prices for the week after each buy, in week-long chunks fetched once a chunk has ended; at most 200 chunks and 180 s per run. Gate 13's future reference price; scoring does not read it yet |
 | Closing lines | Every 12 hours in `deploy/lean-pilot.json`; off in code | Backfill each traded market's 48-hour pre-close price window, at most 200 markets and 180 s per run. Kept as the comparison for the entry-price horizon diagnostic |
 | Wallet batch | 20 | Oldest-polled first within the existing shallow cohort |
-| Leaderboard seed | 25, day/volume | Bounded discovery input; no profit leaderboard |
+| Leaderboard seed | 25, day/volume | Bounded discovery input from the data API's `/v1/leaderboard`; no profit leaderboard. A rejected request appears in the collection result's `warning` |
 | Activity budget | 10 calls/wallet | Shared across recent, historical, and boundary pagination |
 | Cycle deadline | 20 minutes | Collection plus scoring together, including subprocess startup |
 | Daily runtime allowance | 60 minutes | Local UTC-day accounting, with a full cycle reserved before work |

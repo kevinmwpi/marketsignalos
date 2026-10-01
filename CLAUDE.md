@@ -226,7 +226,7 @@ The pipeline runs JSONL-first. Postgres is opt-in via `DATABASE_URL` (`Dual*` st
 
 ### Implemented
 - FastAPI app: `/` (minimal HTML landing), `/health`, `/metrics`, `/ingestor/{run,status}`, `/signals/skilled-bets`, `/signals/polymarket-leaderboard`
-- **`run_pipeline()`** — single in-process orchestrator the web "Run ingest" button invokes. Seeds wallets across `day/week/month/all` windows (gracefully skipping any window the API rejects), pulls activity/positions/value, fetches Polymarket markets + Kalshi public markets, and runs the Polymarket→Kalshi market matcher. No env vars required.
+- **`run_pipeline()`** — single in-process orchestrator the web "Run ingest" button invokes. Seeds wallets from the data API's `/v1/leaderboard` across `day/week/month/all` windows (a rejected window is skipped and named in the result's `warning`), pulls activity/positions/value, fetches Polymarket markets + Kalshi public markets, and runs the Polymarket→Kalshi market matcher. No env vars required.
 - **`/signals/skilled-bets`** — still-held BUY entries from wallets with `skill_likelihood ≥ 0.8`, each row carrying the Kalshi mirror (ticker, title, deep link, live YES price, match confidence) when a match exists
 - **SkilledBetsPanel + PolymarketLeaderboardPanel + IngestButton** mounted on `/` (the dashboard root)
 - **Operator ingestion** — bearer-token protected HTTP controls; explicit local-only bypass and development buttons. Log capture surfaces a `log_tail` and counts summary to authorized operators.
