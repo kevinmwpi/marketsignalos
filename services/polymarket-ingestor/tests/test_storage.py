@@ -36,6 +36,7 @@ from marketsignalos_polymarket.storage import (
     JsonlWalletHydrationStore,
     JsonlWalletValueStore,
     JsonWalletCheckpointStore,
+    compact_position_snapshots,
 )
 
 
@@ -462,3 +463,61 @@ def test_dual_wallet_bet_rewrite_fans_out(tmp_path: Path) -> None:
             for line in (tmp_path / name).read_text(encoding="utf-8").splitlines()
         ]
         assert [r["proxy_wallet"] for r in rows] == ["0xa", "0xb"]
+
+
+# ── Position snapshot retention ──────────────────────────────────────────────
+
+def _position_rows(wallet: str, snapshot_id: str, snapshot_at: str, count: int) -> list[str]:
+    return [json.dumps({"proxy_wallet": wallet, "condition_id": f"0xc{i}", "outcome_index": 0,
+                        "size": 1.0, "snapshot_id": snapshot_id, "snapshot_at": snapshot_at})
+            for i in range(count)]
+
+
+def test_position_retention_keeps_each_wallets_newest_snapshots(tmp_path: Path) -> None:
+    path = tmp_path / "polymarket_positions.jsonl"
+    lines = (
+        _position_rows("0xA", "a1", "2026-10-01T01:00:00+00:00", 3)
+        + _position_rows("0xb", "b1", "2026-10-01T01:00:00+00:00", 2)
+        + _position_rows("0xa", "a2", "2026-10-01T02:00:00+00:00", 3)
+        + ['{"proxy_wallet": "0xa", "condition_id": "0xlegacy", "size": 1.0}', "not json"]
+        + _position_rows("0xa", "a3", "2026-10-01T03:00:00+00:00", 2)
+    )
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    result = compact_position_snapshots(path, keep=2)
+
+    rows = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
+    assert [row.get("snapshot_id") for row in rows] == [
+        "b1", "b1", "a2", "a2", "a2", None, "a3", "a3"]  # order kept; legacy row kept
+    assert result["rows_before"] == 11 and result["rows_after"] == 8  # "not json" dropped
+    assert result["bytes_after"] < result["bytes_before"]
+    assert not path.with_suffix(".jsonl.tmp").exists()
+
+
+def test_position_retention_keeps_protected_snapshots_and_skips_needless_rewrites(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "polymarket_positions.jsonl"
+    lines = [row for i in (1, 2, 3)
+             for row in _position_rows("0xa", f"a{i}", f"2026-10-01T0{i}:00:00+00:00", 1)]
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    compact_position_snapshots(path, keep=1, protected_ids=frozenset({"a1"}))
+    assert [json.loads(line)["snapshot_id"] for line in path.read_text().splitlines()] == [
+        "a1", "a3"]  # a1 is an exit-signal watermark
+
+    inode = path.stat().st_ino
+    unchanged = compact_position_snapshots(path, keep=2)
+    assert unchanged["rows_before"] == unchanged["rows_after"] == 2
+    assert path.stat().st_ino == inode  # nothing to drop: the file is not rewritten
+
+
+def test_position_retention_handles_a_missing_file_and_rejects_keep_zero(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "polymarket_positions.jsonl"
+    assert compact_position_snapshots(path, keep=2) == {
+        "rows_before": 0, "rows_after": 0, "bytes_before": 0, "bytes_after": 0}
+    assert not path.exists()
+    with pytest.raises(ValueError):
+        compact_position_snapshots(path, keep=0)

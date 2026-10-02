@@ -239,7 +239,33 @@ def _execute_stage(stage: str, data_dir: Path, config: PilotConfig,
         "partial" if not result["windows_succeeded"] or result.get("wallets_with_errors", 0)
         else "succeeded"
     )
+    result["positions_retention"] = _compact_positions(data_dir)
     return result
+
+
+# Each poll appends a full position snapshot per wallet (about 0.27 GB a day for
+# 13 wallets on 2026-10-02); readers only need the latest two.
+POSITION_SNAPSHOTS_KEPT = 2
+
+
+def _compact_positions(data_dir: Path) -> dict[str, Any]:
+    """Apply position retention. A failure is reported, never raised: a failed
+    collect stage would demand manual recovery for data that is already safe."""
+    from .storage import compact_position_snapshots
+
+    protected: frozenset[str] = frozenset()
+    try:
+        state = json.loads((data_dir / "exit_state.json").read_text(encoding="utf-8"))
+        if isinstance(state, dict):
+            protected = frozenset(str(value) for value in state.values() if value)
+    except (OSError, ValueError):
+        pass
+    try:
+        return compact_position_snapshots(data_dir / "polymarket_positions.jsonl",
+                                          keep=POSITION_SNAPSHOTS_KEPT, protected_ids=protected)
+    except OSError as exc:
+        log.warning("Position retention failed: %s", exc)
+        return {"error_type": type(exc).__name__}
 
 
 def run_cycle(data_dir: Path, config: PilotConfig, run_id: str, *,

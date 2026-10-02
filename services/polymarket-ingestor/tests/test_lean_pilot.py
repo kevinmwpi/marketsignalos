@@ -416,3 +416,34 @@ def test_the_deployed_config_is_valid_and_enables_both_backfills() -> None:
         (config.entry_prices_every_seconds, config.entry_prices_max_seconds),
         (config.closing_lines_every_seconds, config.closing_lines_max_seconds)))
     assert worst_case <= config.daily_runtime_seconds // 3
+
+
+# ── Position retention after collection ──────────────────────────────────────
+
+def test_collection_retention_keeps_two_snapshots_and_the_exit_watermark(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "polymarket_positions.jsonl"
+    path.write_text("".join(
+        json.dumps({"proxy_wallet": "0xa", "condition_id": "0xc", "size": 1.0,
+                    "snapshot_id": f"s{i}", "snapshot_at": f"2026-10-02T0{i}:00:00+00:00"}) + "\n"
+        for i in range(1, 5)), encoding="utf-8")
+    (tmp_path / "exit_state.json").write_text(json.dumps({"0xa": "s1"}), encoding="utf-8")
+
+    result = pilot._compact_positions(tmp_path)
+
+    assert (result["rows_before"], result["rows_after"]) == (4, 3)
+    kept = [json.loads(line)["snapshot_id"] for line in path.read_text().splitlines()]
+    assert kept == ["s1", "s3", "s4"]
+
+
+def test_collection_retention_failure_is_reported_not_raised(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from marketsignalos_polymarket import storage
+
+    def disk_full(*args: Any, **kwargs: Any) -> dict[str, int]:
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(storage, "compact_position_snapshots", disk_full)
+    assert pilot._compact_positions(tmp_path) == {"error_type": "OSError"}

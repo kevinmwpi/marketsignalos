@@ -230,6 +230,64 @@ class JsonlPositionStore:
         return len(positions)
 
 
+def compact_position_snapshots(
+    path: Path, *, keep: int, protected_ids: frozenset[str] = frozenset(),
+) -> dict[str, int]:
+    """Drop all but each wallet's ``keep`` newest position snapshots.
+
+    ``JsonlPositionStore`` appends a full snapshot per wallet per poll, and
+    readers only use the latest one (exit signals: the latest and the one last
+    diffed, passed as ``protected_ids``). Rows without a snapshot id are kept.
+    Streams the file twice and replaces it atomically, so an interruption
+    leaves the original in place.
+    """
+    if keep < 1:
+        raise ValueError("keep must be at least 1")
+    before = {"rows": 0, "bytes": path.stat().st_size if path.exists() else 0}
+    snapshots: dict[str, dict[str, str]] = {}  # wallet -> snapshot_id -> snapshot_at
+    for row in _iter_jsonl_rows(path):
+        before["rows"] += 1
+        snapshot_id = str(row.get("snapshot_id", "") or "")
+        if snapshot_id:
+            wallet = str(row.get("proxy_wallet", "")).lower()
+            seen = snapshots.setdefault(wallet, {})
+            seen[snapshot_id] = max(seen.get(snapshot_id, ""), str(row.get("snapshot_at", "")))
+    kept_ids = set(protected_ids)
+    for seen in snapshots.values():
+        newest = sorted(seen.items(), key=lambda item: (item[1], item[0]), reverse=True)
+        kept_ids.update(snapshot_id for snapshot_id, _ in newest[:keep])
+    if all(set(seen) <= kept_ids for seen in snapshots.values()):
+        return {"rows_before": before["rows"], "rows_after": before["rows"],
+                "bytes_before": before["bytes"], "bytes_after": before["bytes"]}
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    rows_after = 0
+    try:
+        with tmp.open("w", encoding="utf-8") as out:
+            for row in _iter_jsonl_rows(path):
+                snapshot_id = str(row.get("snapshot_id", "") or "")
+                if not snapshot_id or snapshot_id in kept_ids:
+                    out.write(json.dumps(row, separators=(",", ":")) + "\n")
+                    rows_after += 1
+        tmp.replace(path)
+    finally:
+        tmp.unlink(missing_ok=True)
+    return {"rows_before": before["rows"], "rows_after": rows_after,
+            "bytes_before": before["bytes"], "bytes_after": path.stat().st_size}
+
+
+def _iter_jsonl_rows(path: Path) -> Iterator[dict[str, Any]]:
+    if not path.exists():
+        return
+    with path.open(encoding="utf-8") as handle:
+        for line in handle:
+            try:
+                raw = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(raw, dict):
+                yield raw
+
+
 def _read_jsonl_rows(path: Path) -> list[dict[str, Any]]:
     if not path.exists():
         return []

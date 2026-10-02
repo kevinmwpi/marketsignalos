@@ -9,7 +9,7 @@
   "rss_limit_mb": 4096,
   "log_limit_mb": 8,
   "entry_prices_every_seconds": 21600,
-  "entry_prices_per_cycle": 200,
+  "entry_prices_per_cycle": 400,
   "entry_prices_max_seconds": 180,
   "closing_lines_every_seconds": 43200,
   "closing_lines_per_cycle": 200,

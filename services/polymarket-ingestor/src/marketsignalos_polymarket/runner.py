@@ -2451,6 +2451,9 @@ class PipelineResult:
     wallets_polled: int = 0
     wallets_with_errors: int = 0
     activity_budget_exhausted_wallets: int = 0
+    # Wallets per error label ("positions", "activity request budget reached").
+    # Labels only: exception text can carry URLs and stays in the logs.
+    wallet_error_kinds: dict[str, int] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -2468,6 +2471,7 @@ class PipelineResult:
             "wallets_polled": self.wallets_polled,
             "wallets_with_errors": self.wallets_with_errors,
             "activity_budget_exhausted_wallets": self.activity_budget_exhausted_wallets,
+            "wallet_error_kinds": dict(self.wallet_error_kinds),
             "kalshi_markets": self.kalshi_markets,
             "market_links": self.market_links,
             "trusted_wallets": self.trusted_wallets,
@@ -2504,6 +2508,15 @@ _DEFAULT_WINDOWS: tuple[str, ...] = ("day", "week", "month", "all")
 _SEED_PERIODS = {"day": "DAY", "week": "WEEK", "month": "MONTH", "all": "ALL"}
 _SEED_ORDERS = {"volume": "VOL", "profit": "PNL"}
 _SEED_PAGE_SIZE = 50  # /v1/leaderboard maximum
+
+
+def _error_kinds(wallet_errors: list[list[str]]) -> dict[str, int]:
+    """Wallets per error label: the text before ": ", or the whole fixed message."""
+    counts: dict[str, int] = {}
+    for errors in wallet_errors:
+        for kind in {error.split(": ", 1)[0] for error in errors}:
+            counts[kind] = counts.get(kind, 0) + 1
+    return dict(sorted(counts.items()))
 
 
 def _fetch_seed_leaderboard(
@@ -2671,8 +2684,16 @@ def run_pipeline(
         # (open positions, skilled/tailable, pinned) to keep steady-state cheap.
         wallet_targets = _select_shallow_wallet_targets(merged, stores=stores)
         if wallet_batch_size is not None:
+            # A wallet joins the hot cohort only once it has been hydrated (open
+            # positions, a score), so a bounded run also takes seeds that were
+            # never polled. Without them the cohort stays whatever the first run
+            # collected: 13 wallets on the 2026-10-01 pilot, while the seeded
+            # watchlist grew to 62.
+            hydrated = stores.hydration.load_hydration()
+            unpolled = {wallet.lower() for wallet in merged} - set(hydrated)
             wallet_targets = _oldest_polled_wallet_batch(
-                wallet_targets, stores=stores, batch_size=wallet_batch_size,
+                sorted(set(wallet_targets) | unpolled), stores=stores,
+                batch_size=wallet_batch_size,
             )
         log.info(
             "pipeline step=wallets watchlist=%d selected=%d",
@@ -2766,6 +2787,7 @@ def run_pipeline(
             activity_budget_exhausted_wallets=sum(
                 "activity request budget reached" in errors for errors in wallet_errors
             ),
+            wallet_error_kinds=_error_kinds(wallet_errors),
             kalshi_markets=kalshi_written,
             market_links=links_written,
             trusted_wallets=quality["trusted_wallets"],
