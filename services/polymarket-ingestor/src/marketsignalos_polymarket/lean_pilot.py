@@ -177,6 +177,15 @@ def _read_state(path: Path) -> dict[str, Any]:
     return state
 
 
+def _due_grace_seconds(interval: int) -> int:
+    """How early a stage may start. Railway's hourly cron fires anywhere from :07
+    to about :12, so with no grace a run that fires a few minutes earlier than the
+    last attempt skips the stage for an hour: about one hourly collection in three
+    was lost that way before 2026-10-02. A quarter of the interval, at most ten
+    minutes, absorbs that drift and can never make a stage run twice an hour."""
+    return min(600, interval // 4)
+
+
 # Exit nonzero so Railway marks the run failed and its notifications fire.
 _ALERTING_STATUSES = frozenset({"failed", "recovery_required", "disk_low"})
 
@@ -243,7 +252,7 @@ def plan_cycle(data_dir: Path, config: PilotConfig, *,
         row = state["stages"].get(name, {})
         attempted = row.get("last_attempt_at")
         next_due = _timestamp(attempted) + timedelta(seconds=interval) if attempted else now
-        if now >= next_due:
+        if now >= next_due - timedelta(seconds=_due_grace_seconds(interval)):
             due.append(name)
         stages[name] = {**row, "next_due_at": next_due.isoformat()}
     # Reserve in both days for a cycle that could cross UTC midnight. This is

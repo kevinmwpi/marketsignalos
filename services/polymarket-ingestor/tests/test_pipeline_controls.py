@@ -268,11 +268,14 @@ def test_error_kinds_count_wallets_per_label_without_exception_text() -> None:
          "positions: retry failed"],
         ["activity request budget reached", "value: timed out"],
         [],
-    ]) == {"activity request budget reached": 1, "positions": 1, "value": 1}
+    ]) == {"activity request budget reached": 1, "positions: 500 Server Error for url <url>": 1,
+           "positions: retry failed": 1, "value: timed out": 1}
 
 
 def test_error_kinds_keep_the_http_status_but_not_the_url() -> None:
     error = ("positions: Client error '400 Bad Request' for url "
              "'https://data-api.polymarket.com/positions?user=0x1&offset=10000'")
     assert runner._error_kinds([[error], ["positions: timed out"]]) == {
-        "positions": 1, "positions HTTP 400": 1}
+        "positions: timed out": 1, "positions HTTP 400": 1}
+    assert runner._error_kinds([["positions: positions pagination exceeded safety bound"]]) == {
+        "positions: positions pagination exceeded safety bound": 1}
