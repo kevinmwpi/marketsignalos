@@ -46,10 +46,11 @@ def _buy(wallet: str, cid: str, outcome: int, ts: int, price: float, usdc: float
             "outcomeIndex": outcome, "transactionHash": f"0xt{wallet}{cid}{outcome}{ts}{side}"}
 
 
-def _market(cid: str, closed: bool, prices: list[str]) -> dict[str, Any]:
-    """A Gamma /markets row, stored through the real parser and market store."""
+def _market(cid: str, closed: bool, prices: list[str], end: int = W + 60 * 86400) -> dict[str, Any]:
+    """A Gamma /markets row, stored through the real parser and market store. ``end``
+    is the scheduled end; by default two months after the fixture's buys."""
     return {"id": cid, "conditionId": cid, "closed": closed, "outcomes": '["Yes", "No"]',
-            "outcomePrices": json.dumps(prices)}
+            "outcomePrices": json.dumps(prices), "endDate": _iso(end)}
 
 
 def _series(cid: str, prices: list[float]) -> list[dict[str, Any]]:
@@ -69,6 +70,7 @@ def pilot_dir(tmp_path: Path) -> Path:
         _market("0xe", True, ["1", "0"]),
         _market("0xc", False, ["1", "0"]),
         _market("0xd", True, ["0.5", "0.5"]),
+        _market("0xf", True, ["1", "0"], end=W + 2 * 86400),  # ends two days after its buy
     )])
     activity = JsonlActivityStore(tmp_path / ACTIVITY_FILE)
     activity.write_activity([parse_activity_row(row) for row in (
@@ -80,6 +82,7 @@ def pilot_dir(tmp_path: Path) -> Path:
         _buy("0xw3", "0xe", 0, W + 1800, 0.20, 5.0),  # fetched, no prices
         _buy("0xw4", "0xc", 0, W + 1800, 0.20, 5.0),  # unresolved
         _buy("0xw4", "0xd", 0, W + 1800, 0.20, 5.0),  # unresolved
+        _buy("0xw4", "0xf", 0, W + 1800, 0.20, 5.0),  # resolved, but too close to its end
         _buy("0xw5", "0xa", 0, W + 1800, 0.40, 5.0, side="SELL"),
     )])
     activity.flush()
@@ -107,17 +110,19 @@ def pilot_dir(tmp_path: Path) -> Path:
 
 
 def test_resolved_winners_need_a_closed_market_with_one_clear_winner(pilot_dir: Path) -> None:
-    assert resolved_winners(pilot_dir / MARKETS_FILE) == {"0xa": 0, "0xb": 1, "0xe": 0}
+    assert resolved_winners(pilot_dir / MARKETS_FILE) == {"0xa": 0, "0xb": 1, "0xe": 0, "0xf": 0}
 
 
 def test_diagnose_reports_coverage_leakage_and_signal_per_horizon(pilot_dir: Path) -> None:
     report = diagnose(pilot_dir, horizons_hours=(1, 24))
 
-    assert (report["resolved_markets"], report["resolved_bets"], report["wallets"]) == (3, 5, 3)
-    # Eight BUY fills on five markets; C is open and D has no clear winner.
-    assert report["funnel"] == {"buy_fills": 8, "bought_markets": 5, "in_market_store": 5,
-                                "closed_in_store": 4, "resolved_in_store": 3,
-                                "closed_per_gamma_lookup": 1}
+    assert (report["resolved_markets"], report["resolved_bets"], report["wallets"]) == (4, 5, 3)
+    # Nine BUY fills on six markets; C is open and D has no clear winner. F resolved,
+    # but its only buy came two days before its scheduled end, inside the 7-day rule.
+    assert report["funnel"] == {"buy_fills": 9, "bought_markets": 6, "in_market_store": 6,
+                                "closed_in_store": 5, "resolved_in_store": 4,
+                                "closed_per_gamma_lookup": 1, "resolved_bets": 6,
+                                "bets_7d_before_scheduled_end": 5}
     one, day = report["horizons"]["1h"], report["horizons"]["24h"]
     # w3's bet on A waits on the backfill; its bet on E has a fetched, empty window.
     assert (one["pending"], one["no_reference"], one["referenced"]) == (1, 1, 3)
@@ -198,8 +203,9 @@ def test_the_rule_can_find_no_horizon() -> None:
                                (1, 24))
     assert selection["eligible"] is True and selection["horizon"] is None
     assert set(selection["rejected_longer"]) == {"24h", "1h"}
-    assert RULE == {"min_common_bets": 500, "min_common_wallets": 20, "max_near_outcome": 0.05,
-                    "min_coverage": 0.5, "min_clv_win_corr": 0.0}
+    assert RULE == {"min_hours_to_scheduled_end": 168, "min_common_bets": 500,
+                    "min_common_wallets": 20, "max_near_outcome": 0.05, "min_coverage": 0.5,
+                    "min_clv_win_corr": 0.0}
 
 
 def test_the_first_eligible_report_decides_and_is_never_replaced(

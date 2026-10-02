@@ -30,7 +30,9 @@ SCHEMA_VERSION = 1
 
 # Fields where 0 means "off" or "no limit".
 _ZERO_ALLOWED = frozenset({"entry_prices_every_seconds", "closing_lines_every_seconds",
-                           "horizon_every_seconds", "max_watchlist_wallets"})
+                           "horizon_every_seconds", "cohort_every_seconds",
+                           "max_watchlist_wallets"})
+_LEADERBOARD_WINDOWS = frozenset({"day", "week", "month", "all"})
 
 
 @dataclass(frozen=True)
@@ -66,12 +68,21 @@ class PilotConfig:
     # closed filters, so N conditions need 2 * ceil(N / 25) requests.
     metadata_conditions_per_cycle: int = 100
     metadata_requests_per_cycle: int = 8
+    # Cohort maintenance (cohort.py), run after scoring: wallets the scorer labels
+    # systematic are excluded for good and their data deleted. 0 disables it.
+    cohort_every_seconds: int = 0
+    # Volume leaderboard window that seeds the watchlist.
+    leaderboard_window: str = "day"
     # The volume cannot grow past 5 GB on Railway Hobby, and every wallet added
     # keeps its activity history, so the watchlist stops growing here. 0 = no cap.
     max_watchlist_wallets: int = 0
 
     def __post_init__(self) -> None:
+        if self.leaderboard_window not in _LEADERBOARD_WINDOWS:
+            raise ValueError(f"leaderboard_window must be one of {sorted(_LEADERBOARD_WINDOWS)}")
         for name, value in asdict(self).items():
+            if name == "leaderboard_window":
+                continue
             if type(value) is not int or value < 0:
                 raise ValueError(f"{name} must be a non-negative integer")
             if value == 0 and name not in _ZERO_ALLOWED:
@@ -233,8 +244,9 @@ def _storage_mb(data_dir: Path) -> dict[str, float]:
 
 
 # Run order within a cycle: collection first, then the price backfills for what
-# was collected, then the diagnostic that reads them, then scoring.
-STAGES = ("collect", "entry_prices", "closing_lines", "horizon", "score")
+# was collected, then the diagnostic that reads them, then scoring, then cohort
+# maintenance, which acts on the trading styles scoring has just labelled.
+STAGES = ("collect", "entry_prices", "closing_lines", "horizon", "score", "cohort")
 
 
 def _stage_intervals(config: PilotConfig) -> list[tuple[str, int]]:
@@ -242,7 +254,8 @@ def _stage_intervals(config: PilotConfig) -> list[tuple[str, int]]:
                  "entry_prices": config.entry_prices_every_seconds,
                  "closing_lines": config.closing_lines_every_seconds,
                  "horizon": config.horizon_every_seconds,
-                 "score": config.score_every_seconds}
+                 "score": config.score_every_seconds,
+                 "cohort": config.cohort_every_seconds}
     return [(name, intervals[name]) for name in STAGES if intervals[name] > 0]
 
 
@@ -294,6 +307,9 @@ def _execute_stage(stage: str, data_dir: Path, config: PilotConfig,
         from . import entry_prices
         return entry_prices.run_pending(data_dir, limit=config.entry_prices_per_cycle,
                                         max_seconds=config.entry_prices_max_seconds)
+    if stage == "cohort":  # after scoring, which labels each wallet's trading style
+        from . import cohort
+        return cohort.run(data_dir)
     if stage == "horizon":  # read-only apart from its own report
         from . import horizon_diagnostic
         return horizon_diagnostic.run(data_dir)
@@ -301,13 +317,15 @@ def _execute_stage(stage: str, data_dir: Path, config: PilotConfig,
         from . import closing_lines
         return closing_lines.run_pending(data_dir, limit=config.closing_lines_per_cycle,
                                          max_seconds=config.closing_lines_max_seconds)
+    from .cohort import excluded_wallets
     from .runner import run_pipeline
     result = run_pipeline(
-        windows=["day"], leaderboard_limit=config.leaderboard_limit,
+        windows=[config.leaderboard_window], leaderboard_limit=config.leaderboard_limit,
         wallet_batch_size=config.wallet_batch_size, skip_enrichment=True,
         max_pages_per_wallet=2, market_pages=1, refresh_reference=False,
         max_activity_requests_per_wallet=config.activity_requests_per_wallet,
         max_watchlist=config.max_watchlist_wallets or None,
+        exclude_wallets=excluded_wallets(data_dir),
     ).to_dict()
     result["status"] = (
         "partial" if not result["windows_succeeded"] or result.get("wallets_with_errors", 0)

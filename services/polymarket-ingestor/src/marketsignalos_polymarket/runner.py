@@ -2572,6 +2572,7 @@ def run_pipeline(
     skip_kalshi: bool = True,
     include_profit_leaderboard: bool = False,
     max_watchlist: int | None = None,
+    exclude_wallets: frozenset[str] = frozenset(),
     refresh_reference: bool | None = None,
     skip_enrichment: bool = False,
     wallet_batch_size: int | None = None,
@@ -2645,7 +2646,9 @@ def run_pipeline(
             attempts,
             leaderboard_metrics,
         )
-        existing = set(_load_watchlist(_watchlist_path()))
+        # Excluded wallets (cohort.py) leave the watchlist and are never re-seeded.
+        excluded = {wallet.lower() for wallet in exclude_wallets}
+        existing = set(_load_watchlist(_watchlist_path())) - excluded
         seeded: set[str] = set(existing)
         leaderboard_entries = 0
         succeeded: list[str] = []
@@ -2680,7 +2683,7 @@ def run_pipeline(
                 stores.leaderboard.write_leaderboard(entries)
                 leaderboard_entries += len(entries)
                 for e in entries:
-                    if not e.proxy_wallet or e.proxy_wallet in seeded:
+                    if not e.proxy_wallet or e.proxy_wallet in seeded or e.proxy_wallet in excluded:
                         continue
                     # A capped watchlist stops growing; nobody is ever removed.
                     if max_watchlist is not None and len(seeded) >= max_watchlist:

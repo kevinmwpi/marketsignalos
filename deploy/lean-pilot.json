@@ -18,5 +18,7 @@
   "max_watchlist_wallets": 64,
   "horizon_every_seconds": 3600,
   "metadata_conditions_per_cycle": 600,
-  "metadata_requests_per_cycle": 48
+  "metadata_requests_per_cycle": 48,
+  "cohort_every_seconds": 86400,
+  "leaderboard_window": "month"
 }

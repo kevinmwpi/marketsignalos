@@ -366,7 +366,8 @@ def test_backfill_stages_are_off_unless_configured(tmp_path: Path) -> None:
 @pytest.mark.parametrize("stage", ["entry_prices", "closing_lines", "horizon"])
 def test_an_interrupted_backfill_run_needs_no_recovery(tmp_path: Path, stage: str) -> None:
     clock = Clock()
-    config = pilot.PilotConfig(**{f"{stage}_every_seconds": 3600})
+    fields: dict[str, Any] = {f"{stage}_every_seconds": 3600}
+    config = pilot.PilotConfig(**fields)
 
     def execute(name: str, data: Path, cfg: pilot.PilotConfig, run: str) -> dict[str, Any]:
         if name == stage:
@@ -394,7 +395,7 @@ def test_an_interrupted_backfill_run_needs_no_recovery(tmp_path: Path, stage: st
     {"entry_prices_max_seconds": 0},
     {"entry_prices_every_seconds": -1},
 ])
-def test_backfill_limits_are_validated(fields: dict[str, int]) -> None:
+def test_backfill_limits_are_validated(fields: dict[str, Any]) -> None:
     with pytest.raises(ValueError):
         pilot.PilotConfig(**fields)
 
@@ -562,3 +563,36 @@ def test_the_worker_hands_its_metadata_limits_to_the_backfill(
     assert seen == {"conditions": "600", "requests": "48"}
     with pytest.raises(ValueError):
         pilot.PilotConfig(metadata_conditions_per_cycle=1001)
+
+
+def test_collection_uses_the_seed_window_and_skips_excluded_wallets(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from marketsignalos_polymarket import cohort, runner
+
+    seen: dict[str, Any] = {}
+
+    class Result:
+        def to_dict(self) -> dict[str, Any]:
+            return {"windows_succeeded": ["month"], "wallets_with_errors": 0}
+
+    def fake_pipeline(**kwargs: Any) -> Result:
+        seen.update(kwargs)
+        return Result()
+
+    monkeypatch.setattr(runner, "run_pipeline", fake_pipeline)
+    cohort.record_exclusions(tmp_path, {"0xbot": "systematic"},
+                             now=datetime(2026, 10, 3, tzinfo=UTC))
+    pilot._execute_stage("collect", tmp_path, pilot.PilotConfig(leaderboard_window="month"), "r")
+    assert seen["windows"] == ["month"] and seen["exclude_wallets"] == {"0xbot"}
+    with pytest.raises(ValueError):
+        pilot.PilotConfig(leaderboard_window="year")
+
+
+def test_cohort_maintenance_runs_right_after_scoring(tmp_path: Path) -> None:
+    config = pilot.PilotConfig(cohort_every_seconds=86400)
+    due = pilot.plan_cycle(tmp_path, config, now=Clock().now())["due"]
+    assert due[-2:] == ["score", "cohort"]
+    path = Path(__file__).resolve().parents[3] / "deploy" / "lean-pilot.json"
+    deployed = pilot.PilotConfig(**json.loads(path.read_text(encoding="utf-8")))
+    assert deployed.cohort_every_seconds == 86400 and deployed.leaderboard_window == "month"

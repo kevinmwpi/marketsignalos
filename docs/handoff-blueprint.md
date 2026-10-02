@@ -1011,3 +1011,22 @@ Answer these before Stage 1; each changes what gets built.
    replaced, so the decision is taken once, at the first sufficient sample, rather
    than whenever a later report looks preferable. Later reports keep showing the
    day's numbers beside the standing `decision`.
+
+   *Amendment, approved by the owner 2026-10-02 after the first report
+   (23:10 UTC), before any report was eligible:* only fills placed at least seven
+   days before the market's scheduled end count
+   (`RULE["min_hours_to_scheduled_end"] = 168`). The reason is feasibility, not the
+   numbers: the common set requires a price at every horizon up to seven days, and
+   almost no market in the cohort lived that long, so the sample could never reach
+   500 and the rule could never decide. The scheduled end is known at entry, so the
+   filter adds no leakage; it also keeps the bets a person has time to copy. For the
+   record, that report (1,132 resolved bets from 43 wallets, 4.5% of bought markets
+   with metadata) showed `near_outcome` 0.16 at 1 h, 0.42 at 6 h and 0.27 at 24 h,
+   with coverage falling from 0.88 at 1 h to 0 at 168 h.
+
+   *Cohort change, approved the same day:* the day-volume leaderboard had filled the
+   pilot with automation-shaped wallets on markets that close within hours. The
+   `cohort` stage (`cohort.py`) now excludes, for good, every wallet the scorer
+   labels `systematic` and deletes its data; the watchlist refills from the monthly
+   volume leaderboard. The diagnostic's population therefore changes; no decision
+   had been recorded before it did.
