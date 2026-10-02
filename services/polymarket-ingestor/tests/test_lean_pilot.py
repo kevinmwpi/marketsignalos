@@ -535,3 +535,30 @@ def test_a_stage_is_due_a_few_minutes_early_so_cron_drift_skips_no_hour(tmp_path
     too_soon = datetime(2026, 10, 2, 22, 0, 0, tzinfo=UTC)  # more than 10 minutes early
     assert pilot.plan_cycle(tmp_path, config, now=too_soon)["due"] == []
     assert pilot._due_grace_seconds(3600) == 600 and pilot._due_grace_seconds(600) == 150
+
+
+def test_the_worker_hands_its_metadata_limits_to_the_backfill(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    seen: dict[str, str] = {}
+
+    def fake_cycle(data_dir: Path, config: pilot.PilotConfig, run_id: str) -> dict[str, Any]:
+        seen["conditions"] = os.environ["METADATA_BACKFILL_MAX_CONDITIONS"]
+        seen["requests"] = os.environ["METADATA_BACKFILL_MAX_REQUESTS"]
+        return {"run_id": run_id, "status": "succeeded"}
+
+    for name in ("POLYMARKET_DATA_DIR", "POLYMARKET_WATCHLIST_PATH", "POLYMARKET_WALLET_CONCURRENCY",
+                 "POLYMARKET_API_RPS", "METADATA_BACKFILL_MAX_CONDITIONS",
+                 "METADATA_BACKFILL_MAX_REQUESTS"):
+        monkeypatch.setenv(name, "restored-after-the-test")
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.setattr(pilot, "run_cycle", fake_cycle)
+    request = tmp_path / "job.json"
+    request.write_text(json.dumps({"data_dir": str(tmp_path / "data"), "run_id": "limits", "config": {
+        "metadata_conditions_per_cycle": 600, "metadata_requests_per_cycle": 48}}),
+        encoding="utf-8")
+
+    assert pilot.main(["_worker", str(request), str(tmp_path / "result.json")]) == 0
+    assert seen == {"conditions": "600", "requests": "48"}
+    with pytest.raises(ValueError):
+        pilot.PilotConfig(metadata_conditions_per_cycle=1001)

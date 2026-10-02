@@ -30,6 +30,13 @@ EMPTY_RETRY_SECONDS = 86400
 RECEIPT_LIMIT = 10000
 
 
+# Ceilings per cycle. The defaults stay 100 conditions and 8 requests; the lean
+# pilot asks for more because on 2026-10-02 only 821 of the 18,169 markets its
+# wallets had bought were in the store, leaving 95% of bets unresolvable.
+MAX_CONDITIONS_CEILING = 1000
+MAX_REQUESTS_CEILING = 80
+
+
 @dataclass(frozen=True)
 class BackfillConfig:
     max_conditions: int = 100
@@ -37,7 +44,8 @@ class BackfillConfig:
     batch_size: int = 25
 
     def __post_init__(self) -> None:
-        for key, ceiling in (("max_conditions", 100), ("max_requests", 8), ("batch_size", 25)):
+        for key, ceiling in (("max_conditions", MAX_CONDITIONS_CEILING),
+                             ("max_requests", MAX_REQUESTS_CEILING), ("batch_size", 25)):
             value = getattr(self, key)
             if type(value) is not int or not 1 <= value <= ceiling:
                 raise ValueError(f"{key} must be an integer between 1 and {ceiling}")
