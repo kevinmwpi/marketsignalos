@@ -521,3 +521,17 @@ def test_the_horizon_stage_writes_a_report_from_an_empty_directory(tmp_path: Pat
     result = pilot._execute_stage("horizon", tmp_path, pilot.PilotConfig(), "r1")
     assert result["status"] == "succeeded" and result["resolved_bets"] == 0
     assert list((tmp_path / "diagnostics" / "horizon").glob("*.json"))
+
+
+def test_a_stage_is_due_a_few_minutes_early_so_cron_drift_skips_no_hour(tmp_path: Path) -> None:
+    """Railway fired at 22:10:24 after an attempt at 21:12:46; without grace the
+    hourly stage waited until 23:10."""
+    clock = Clock(datetime(2026, 10, 2, 21, 12, 46, tzinfo=UTC))
+    pilot.run_cycle(tmp_path, pilot.PilotConfig(), "first", execute=lambda *a: {},
+                    now_fn=clock.now, monotonic=clock.monotonic)
+    config = pilot.PilotConfig()
+    early = datetime(2026, 10, 2, 22, 10, 24, tzinfo=UTC)
+    assert "collect" in pilot.plan_cycle(tmp_path, config, now=early)["due"]
+    too_soon = datetime(2026, 10, 2, 22, 0, 0, tzinfo=UTC)  # more than 10 minutes early
+    assert pilot.plan_cycle(tmp_path, config, now=too_soon)["due"] == []
+    assert pilot._due_grace_seconds(3600) == 600 and pilot._due_grace_seconds(600) == 150

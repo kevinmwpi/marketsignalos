@@ -2514,18 +2514,25 @@ _SEED_PAGE_SIZE = 50  # /v1/leaderboard maximum
 
 
 _HTTP_STATUS = re.compile(r"'([1-5]\d\d) ")  # httpx: "Client error '400 Bad Request' ..."
+_URL = re.compile(r"\S+://\S+")
 
 
 def _error_kinds(wallet_errors: list[list[str]]) -> dict[str, int]:
-    """Wallets per error label: the text before ": ", or the whole fixed message,
-    plus the HTTP status when the error carries one."""
+    """Wallets per error kind: the label before ": " with the HTTP status when the
+    error carries one, otherwise with the first 60 characters of its message, URLs
+    removed (a URL can carry a wallet address or a credential)."""
     counts: dict[str, int] = {}
     for errors in wallet_errors:
         kinds = set()
         for error in errors:
             label, _, detail = error.partition(": ")
             status = _HTTP_STATUS.search(detail)
-            kinds.add(f"{label} HTTP {status.group(1)}" if status else label)
+            if status:
+                kinds.add(f"{label} HTTP {status.group(1)}")
+            elif detail:
+                kinds.add(f"{label}: {' '.join(_URL.sub('<url>', detail).split())[:60]}")
+            else:
+                kinds.add(label)
         for kind in kinds:
             counts[kind] = counts.get(kind, 0) + 1
     return dict(sorted(counts.items()))
