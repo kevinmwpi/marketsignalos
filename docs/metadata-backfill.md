@@ -8,8 +8,8 @@ thresholds, coverage semantics, and scoring code are unchanged. Stage 1 is in pr
 
 | Control | Default / ceiling | Behavior |
 |---|---:|---|
-| Conditions per cycle | 100 | Oldest or never-attempted conditions first |
-| Actual HTTP attempts | 8 | Errors count; no internal retries or redirect following |
+| Conditions per cycle | 100 (ceiling 1,000) | Oldest or never-attempted conditions first |
+| Actual HTTP attempts | 8 (ceiling 80) | Errors count; no internal retries or redirect following |
 | Conditions per request | 25 | Separate `closed=true` and `closed=false` filters |
 | Response row limit | 100 | A full page is inconclusive, not evidence of absence |
 | Retry after returned rows or errors | 1 hour | State survives process restarts |
@@ -18,8 +18,12 @@ thresholds, coverage semantics, and scoring code are unchanged. Stage 1 is in pr
 | Request receipt retention | 10,000 | Latest condition state survives receipt pruning |
 | Inactive condition state | 90 days | Expire only after its recorded cooldown ends |
 
-`METADATA_BACKFILL_MAX_CONDITIONS` and `METADATA_BACKFILL_MAX_REQUESTS` can lower
-the defaults. Values outside 1–100 and 1–8 respectively fail validation. A small
+`METADATA_BACKFILL_MAX_CONDITIONS` and `METADATA_BACKFILL_MAX_REQUESTS` override
+the defaults; values outside 1–1,000 and 1–80 respectively fail validation. The
+ceilings were 100 and 8 until 2026-10-02, when the lean pilot's store held 821 of
+the 18,169 markets its wallets had bought, so 95% of their bets could not be
+resolved. The pilot now sets 600 conditions and 48 requests per collection
+(`deploy/lean-pilot.json`); the defaults are unchanged. A small
 budget prioritizes an untouched open filter ahead of retrying the closed filter.
 Endpoint cooldowns respect numeric and HTTP-date `Retry-After` headers, with a
 one-hour minimum and a one-year sanity ceiling. The worker never sleeps through

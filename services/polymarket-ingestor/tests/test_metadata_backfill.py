@@ -255,7 +255,7 @@ def test_runner_uses_budget_and_persists_partial_receipt(tmp_path: Path) -> None
 
 
 @pytest.mark.parametrize("settings", [
-    {"max_requests": 0}, {"max_requests": 9}, {"max_conditions": 101},
+    {"max_requests": 0}, {"max_requests": 81}, {"max_conditions": 1001},
     {"batch_size": 26}, {"max_requests": True},
 ])
 def test_config_rejects_excess_budget(settings: dict[str, int]) -> None:

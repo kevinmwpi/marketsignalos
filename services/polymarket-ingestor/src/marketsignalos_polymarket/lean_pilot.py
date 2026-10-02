@@ -61,6 +61,11 @@ class PilotConfig:
     # Gate-13 horizon diagnostic (horizon_diagnostic.py): reads the stores and
     # writes one small report a day. 0 disables it.
     horizon_every_seconds: int = 0
+    # Market metadata fetched per collection (metadata_backfill.py): conditions
+    # and Gamma requests. Each request covers 25 conditions under one of the two
+    # closed filters, so N conditions need 2 * ceil(N / 25) requests.
+    metadata_conditions_per_cycle: int = 100
+    metadata_requests_per_cycle: int = 8
     # The volume cannot grow past 5 GB on Railway Hobby, and every wallet added
     # keeps its activity history, so the watchlist stops growing here. 0 = no cap.
     max_watchlist_wallets: int = 0
@@ -76,6 +81,9 @@ class PilotConfig:
             + (self.closing_lines_max_seconds if self.closing_lines_every_seconds else 0))
         if backfill_seconds > self.cycle_timeout_seconds // 2:
             raise ValueError("Enabled backfill stages may use at most half of a cycle")
+        if (self.metadata_conditions_per_cycle > 1000
+                or self.metadata_requests_per_cycle > 80):
+            raise ValueError("metadata backfill limits exceed metadata_backfill's ceilings")
         if self.daily_runtime_seconds < self.cycle_timeout_seconds:
             raise ValueError("daily_runtime_seconds must cover one complete cycle reservation")
         if self.cycle_timeout_seconds > 3600:
@@ -507,6 +515,8 @@ def main(argv: list[str] | None = None) -> int:
         if os.getenv("DATABASE_URL", "").strip():
             raise ValueError("Lean pilot currently requires JSONL-only storage; unset DATABASE_URL")
         config = PilotConfig(**job["config"])
+        os.environ["METADATA_BACKFILL_MAX_CONDITIONS"] = str(config.metadata_conditions_per_cycle)
+        os.environ["METADATA_BACKFILL_MAX_REQUESTS"] = str(config.metadata_requests_per_cycle)
         # Second deadline lives inside the worker: a dead supervisor must not
         # leave an orphan consuming resources indefinitely. The worker uses
         # threads only. Abrupt exit intentionally retains its reservation.
