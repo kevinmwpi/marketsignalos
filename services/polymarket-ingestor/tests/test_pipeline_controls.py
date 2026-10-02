@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
@@ -100,7 +101,49 @@ def test_bounded_pipeline_rotates_oldest_polled_wallets_and_reports_errors(
         assert result.wallets_polled == 1
         assert result.wallets_with_errors == 1
         assert result.activity_budget_exhausted_wallets == 1
+        assert result.to_dict()["wallet_error_kinds"] == {"activity request budget reached": 1}
     assert calls == [["0xc"], ["0xb"], ["0xa"]]
+
+
+def test_bounded_pipeline_also_polls_seeds_that_were_never_hydrated(
+    pilot_data: Path, empty_client: PolymarketClient, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Only hydrated wallets can become hot, so a bounded run must take unpolled
+    seeds too; otherwise the pilot keeps polling its first batch forever."""
+    (pilot_data / "watchlist.txt").write_text("0xa\n0xB\n0xc\n", encoding="utf-8")
+    (pilot_data / "polymarket_position_snapshots.jsonl").write_text(json.dumps(
+        {"proxy_wallet": "0xa", "snapshot_id": "s1", "complete": True}) + "\n", encoding="utf-8")
+    (pilot_data / "polymarket_positions.jsonl").write_text(json.dumps(
+        {"proxy_wallet": "0xa", "condition_id": "0xm", "outcome_index": 0, "size": 5.0,
+         "snapshot_id": "s1", "snapshot_at": "2026-10-01T00:00:00+00:00"}) + "\n",
+        encoding="utf-8")
+    stores = runner._build_stores(pilot_data)
+    stores.hydration.upsert_hydration([
+        PolymarketWalletHydration(proxy_wallet="0xa", last_refreshed_at="2026-10-01T00:00:00Z"),
+    ])
+    calls: list[list[str]] = []
+
+    def collect(client: PolymarketClient, stores: runner._Stores, **kwargs: Any) -> tuple[int, int, int]:
+        calls.append(kwargs["addresses"])
+        stores.hydration.upsert_hydration([
+            PolymarketWalletHydration(proxy_wallet=wallet, last_refreshed_at="2026-10-02T00:00:00Z")
+            for wallet in kwargs["addresses"]
+        ])
+        return 0, 0, 0
+
+    monkeypatch.setattr(runner, "run_wallets", collect)
+
+    def run(**kwargs: Any) -> None:
+        runner.run_pipeline(client=empty_client, windows=["all"], skip_enrichment=True,
+                            refresh_reference=False, **kwargs)
+
+    run(wallet_batch_size=2)
+    run(wallet_batch_size=2)
+    # Never-polled seeds go first; once polled, a wallet without open positions
+    # or a score leaves the cohort again, as in the unbounded path.
+    assert calls == [["0xb", "0xc"], ["0xa"]]
+    run()
+    assert calls[-1] == ["0xa"]  # the API's unbounded path still polls only hot wallets
 
 
 @pytest.mark.parametrize("kwargs", [
@@ -217,3 +260,12 @@ def test_pipeline_cli_parses_collection_controls() -> None:
     assert args.wallet_batch_size == 5
     assert args.max_pages_per_wallet == 2
     assert args.max_activity_requests_per_wallet == 3
+
+
+def test_error_kinds_count_wallets_per_label_without_exception_text() -> None:
+    assert runner._error_kinds([
+        ["positions: 500 Server Error for url https://data-api.polymarket.com/positions?user=0x1",
+         "positions: retry failed"],
+        ["activity request budget reached", "value: timed out"],
+        [],
+    ]) == {"activity request budget reached": 1, "positions": 1, "value": 1}
