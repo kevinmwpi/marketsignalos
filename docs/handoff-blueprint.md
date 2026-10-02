@@ -991,15 +991,23 @@ Answer these before Stage 1; each changes what gets built.
    bets referenced at every horizon (the common set). It never computes gate
    counts.
 
-   *Proposed selection rule, recorded 2026-10-02 before any report existed;
-   needs owner sign-off, and any later change must be justified in writing:*
+   *Selection rule, recorded 2026-10-02 before any report existed and approved
+   by the owner the same day; any later change must be justified in writing:*
    wait for at least 500 bets from at least 20 wallets in the common set. Then
    take the longest horizon whose common-set `near_outcome` share is at most
    0.05, provided at least half of the resolved bets whose window has been
-   fetched have a reference at it and its CLV-win correlation is positive.
+   fetched have a reference at it (`coverage`, per horizon) and its common-set
+   CLV-win correlation is positive.
    Longer horizons give the market more time to agree with a good entry, so they
    carry more signal; the leakage bound stops that turning into the outcome. The
    correlation is a floor, not a target: picking the horizon that best predicts
    winning would rebuild the circularity this decision removes. If no horizon
    qualifies, post-entry CLV cannot be measured without leakage on this data, and
    gate 13 is redesigned or dropped, with that recorded here.
+
+   The rule is code, not judgement: `horizon_diagnostic.RULE` and
+   `select_horizon` apply it to every report (`selection`). The first report whose
+   sample meets it is written to `diagnostics/horizon/decision.json` and never
+   replaced, so the decision is taken once, at the first sufficient sample, rather
+   than whenever a later report looks preferable. Later reports keep showing the
+   day's numbers beside the standing `decision`.
