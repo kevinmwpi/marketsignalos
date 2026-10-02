@@ -10,8 +10,6 @@ import pytest
 
 from marketsignalos_polymarket import closing_lines, entry_prices
 from marketsignalos_polymarket.closing_lines import ACTIVITY_FILE
-from marketsignalos_polymarket.runner import parse_activity_row, parse_market_row
-from marketsignalos_polymarket.storage import JsonlActivityStore, JsonlMarketStore
 from marketsignalos_polymarket.horizon_diagnostic import (
     MARKETS_FILE,
     REPORT_DIR,
@@ -21,6 +19,8 @@ from marketsignalos_polymarket.horizon_diagnostic import (
     run,
     select_horizon,
 )
+from marketsignalos_polymarket.runner import parse_activity_row, parse_market_row
+from marketsignalos_polymarket.storage import JsonlActivityStore, JsonlMarketStore
 
 C = entry_prices.CHUNK_SECONDS
 W = 2870 * C  # 2025-01-02T00:00:00Z, a chunk boundary
