@@ -22,7 +22,7 @@ The default configuration is committed in `deploy/lean-pilot.json`:
 | Collection | Every hour | Refresh a rotating subset of eligible wallets |
 | Scoring | Every 24 hours | Recompute derived scores into a new local generation |
 | Entry prices | Every 6 hours in `deploy/lean-pilot.json`; off in code | Backfill hourly prices for the week after each buy, in week-long chunks fetched once a chunk has ended; at most 400 chunks and 180 s per run. Gate 13's future reference price; scoring does not read it yet |
-| Horizon diagnostic | Daily in `deploy/lean-pilot.json`; off in code | Reads the stores and writes `diagnostics/horizon/<date>.json`: per post-entry horizon, coverage, the share of references already at the outcome, and the CLV-win correlation. No gate counts (blueprint decision 6) |
+| Horizon diagnostic | Hourly in `deploy/lean-pilot.json` (daily once the bought-market funnel is understood); off in code | Reads the stores and writes `diagnostics/horizon/<date>.json`, with a `funnel` showing where bought markets drop out before scoring: per post-entry horizon, coverage, the share of references already at the outcome, and the CLV-win correlation. No gate counts (blueprint decision 6) |
 | Closing lines | Every 12 hours in `deploy/lean-pilot.json`; off in code | Backfill each traded market's 48-hour pre-close price window, at most 200 markets and 180 s per run. Kept as the comparison for the entry-price horizon diagnostic |
 | Wallet batch | 20 | Oldest-polled first within the shallow cohort plus seeds never polled, which go first |
 | Position snapshots | Latest 2 per wallet | Older snapshots are dropped after each collection; the exit-signal watermark is kept |

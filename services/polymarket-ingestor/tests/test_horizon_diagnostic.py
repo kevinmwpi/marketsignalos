@@ -76,6 +76,10 @@ def pilot_dir(tmp_path: Path) -> Path:
          "status": status, "observed_time": FETCHED}
         for cid, status in (("0xa", "ok"), ("0xb", "ok"), ("0xe", "empty"))
     ])
+    _jsonl(tmp_path / closing_lines.STORE_DIR / closing_lines.RECEIPTS_FILE, [
+        {"condition_id": "0xa", "status": "ok", "observed_time": FETCHED},
+        {"condition_id": "0xc", "status": "not_closed", "observed_time": FETCHED},
+    ])
     _jsonl(tmp_path / closing_lines.STORE_DIR / closing_lines.OBSERVATIONS_FILE, [
         {"condition_id": "0xa", "outcome_index": 0, "event_time": _iso(W + 49 * HOUR),
          "observed_time": FETCHED, "price": 0.995},
@@ -93,6 +97,10 @@ def test_diagnose_reports_coverage_leakage_and_signal_per_horizon(pilot_dir: Pat
     report = diagnose(pilot_dir, horizons_hours=(1, 24))
 
     assert (report["resolved_markets"], report["resolved_bets"], report["wallets"]) == (3, 5, 3)
+    # Eight BUY fills on five markets; C is open and D has no clear winner.
+    assert report["funnel"] == {"buy_fills": 8, "bought_markets": 5, "in_market_store": 5,
+                                "closed_in_store": 4, "resolved_in_store": 3,
+                                "closed_per_gamma_lookup": 1}
     one, day = report["horizons"]["1h"], report["horizons"]["24h"]
     # w3's bet on A waits on the backfill; its bet on E has a fetched, empty window.
     assert (one["pending"], one["no_reference"], one["referenced"]) == (1, 1, 3)
