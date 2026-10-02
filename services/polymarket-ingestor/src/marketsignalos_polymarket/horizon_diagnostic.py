@@ -25,7 +25,8 @@ circularity decision 6 exists to avoid.
 
 A bet is one (wallet, condition, outcome). Its CLV at *h* is the USDC-weighted mean,
 over its BUY fills whose window has been fetched, of (reference - fill price), where
-the reference is the outcome's price *h* after that fill. Prices are hourly series
+the reference is the outcome's price *h* after that fill and the fill price is USDC
+divided by size (the activity store does not keep price). Prices are hourly series
 values, so *h* = 1 hour means the first hourly point after the fill.
 """
 from __future__ import annotations
@@ -132,16 +133,18 @@ def resolved_bets(
         wallet = str(row.get("proxy_wallet", "")).lower()
         outcome = row.get("outcome_index")
         ts = row.get("timestamp")
-        price = _float(row.get("price"))
+        # The activity store keeps size and USDC, not price
+        # (storage._ACTIVITY_JSONL_FIELDS), so the fill price is USDC / size.
+        size = _float(row.get("size"))
+        usdc = _float(row.get("usdc_size"))
         if (cid not in winners or not wallet or outcome not in (0, 1)
                 or isinstance(ts, bool) or not isinstance(ts, int)
-                or price is None or not 0.0 < price < 1.0):
+                or size is None or usdc is None or size <= 0 or usdc <= 0):
             continue
-        usdc = _float(row.get("usdc_size"))
-        size = _float(row.get("size"))
-        weight = usdc if usdc is not None and usdc > 0 else (
-            size * price if size is not None and size > 0 else 1.0)
-        bets[(wallet, cid, int(outcome))].append(_Fill(ts, price, weight))
+        price = usdc / size
+        if not 0.0 < price < 1.0:
+            continue
+        bets[(wallet, cid, int(outcome))].append(_Fill(ts, price, usdc))
     return bets
 
 

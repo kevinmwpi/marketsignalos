@@ -10,6 +10,8 @@ import pytest
 
 from marketsignalos_polymarket import closing_lines, entry_prices
 from marketsignalos_polymarket.closing_lines import ACTIVITY_FILE
+from marketsignalos_polymarket.runner import parse_activity_row, parse_market_row
+from marketsignalos_polymarket.storage import JsonlActivityStore, JsonlMarketStore
 from marketsignalos_polymarket.horizon_diagnostic import (
     MARKETS_FILE,
     REPORT_DIR,
@@ -35,9 +37,19 @@ def _jsonl(path: Path, rows: list[dict[str, Any]]) -> None:
     path.write_text("".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8")
 
 
-def _buy(wallet: str, cid: str, outcome: int, ts: int, price: float, usdc: float) -> dict[str, Any]:
-    return {"type": "TRADE", "side": "BUY", "proxy_wallet": wallet, "condition_id": cid,
-            "outcome_index": outcome, "timestamp": ts, "price": price, "usdc_size": usdc}
+def _buy(wallet: str, cid: str, outcome: int, ts: int, price: float, usdc: float,
+         side: str = "BUY") -> dict[str, Any]:
+    """A Data API /activity row. It goes through the real parser and store, which
+    keep size and USDC but drop price, as on the pilot's volume."""
+    return {"proxyWallet": wallet, "timestamp": ts, "conditionId": cid, "type": "TRADE",
+            "side": side, "size": usdc / price, "usdcSize": usdc, "price": price,
+            "outcomeIndex": outcome, "transactionHash": f"0xt{wallet}{cid}{outcome}{ts}{side}"}
+
+
+def _market(cid: str, closed: bool, prices: list[str]) -> dict[str, Any]:
+    """A Gamma /markets row, stored through the real parser and market store."""
+    return {"id": cid, "conditionId": cid, "closed": closed, "outcomes": '["Yes", "No"]',
+            "outcomePrices": json.dumps(prices)}
 
 
 def _series(cid: str, prices: list[float]) -> list[dict[str, Any]]:
@@ -49,15 +61,17 @@ def _series(cid: str, prices: list[float]) -> list[dict[str, Any]]:
 def pilot_dir(tmp_path: Path) -> Path:
     """Market A resolves YES and its price converges at hour 10; market B resolves NO
     and never moves; E resolves but has no price history; C is open; D is ambiguous."""
-    _jsonl(tmp_path / MARKETS_FILE, [
-        {"condition_id": "0xa", "closed": True, "outcome_prices": [0.6, 0.4]},  # superseded
-        {"condition_id": "0xA", "closed": True, "outcome_prices": [1.0, 0.0]},
-        {"condition_id": "0xb", "closed": True, "outcome_prices": ["0", "1"]},
-        {"condition_id": "0xe", "closed": True, "outcome_prices": [1.0, 0.0]},
-        {"condition_id": "0xc", "closed": False, "outcome_prices": [1.0, 0.0]},
-        {"condition_id": "0xd", "closed": True, "outcome_prices": [0.5, 0.5]},
-    ])
-    _jsonl(tmp_path / ACTIVITY_FILE, [
+    markets = JsonlMarketStore(tmp_path / MARKETS_FILE)
+    markets.write_markets([parse_market_row(_market("0xa", False, ["0.5", "0.5"]))])
+    markets.write_markets([parse_market_row(row) for row in (
+        _market("0xa", True, ["1", "0"]),  # replaces the open row above
+        _market("0xb", True, ["0", "1"]),
+        _market("0xe", True, ["1", "0"]),
+        _market("0xc", False, ["1", "0"]),
+        _market("0xd", True, ["0.5", "0.5"]),
+    )])
+    activity = JsonlActivityStore(tmp_path / ACTIVITY_FILE)
+    activity.write_activity([parse_activity_row(row) for row in (
         _buy("0xw1", "0xa", 0, W + 1800, 0.40, 10.0),
         _buy("0xw1", "0xa", 0, W + 5400, 0.50, 30.0),
         _buy("0xw2", "0xb", 0, W + 1800, 0.30, 5.0),  # loses
@@ -66,8 +80,11 @@ def pilot_dir(tmp_path: Path) -> Path:
         _buy("0xw3", "0xe", 0, W + 1800, 0.20, 5.0),  # fetched, no prices
         _buy("0xw4", "0xc", 0, W + 1800, 0.20, 5.0),  # unresolved
         _buy("0xw4", "0xd", 0, W + 1800, 0.20, 5.0),  # unresolved
-        {**_buy("0xw5", "0xa", 0, W + 1800, 0.40, 5.0), "side": "SELL"},
-    ])
+        _buy("0xw5", "0xa", 0, W + 1800, 0.40, 5.0, side="SELL"),
+    )])
+    activity.flush()
+    stored = json.loads((tmp_path / ACTIVITY_FILE).read_text().splitlines()[0])
+    assert "price" not in stored  # the case that hid a bug: fills carry no price
     store = tmp_path / entry_prices.STORE_DIR
     _jsonl(store / entry_prices.OBSERVATIONS_FILE,
            _series("0xa", [0.45] * 10 + [0.995] * 40) + _series("0xb", [0.3] * 50))
