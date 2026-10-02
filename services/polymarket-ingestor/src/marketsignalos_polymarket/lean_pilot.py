@@ -28,8 +28,9 @@ log = logging.getLogger("marketsignalos.lean_pilot")
 SCHEMA_VERSION = 1
 
 
-_OPTIONAL_STAGE_INTERVALS = frozenset({"entry_prices_every_seconds",
-                                       "closing_lines_every_seconds"})
+# Fields where 0 means "off" or "no limit".
+_ZERO_ALLOWED = frozenset({"entry_prices_every_seconds", "closing_lines_every_seconds",
+                           "max_watchlist_wallets"})
 
 
 @dataclass(frozen=True)
@@ -57,12 +58,15 @@ class PilotConfig:
     # No cycle starts with less free space than this on the data volume. A write
     # that fails mid-collection leaves recovery_required set; skipping is safe.
     min_free_disk_mb: int = 512
+    # The volume cannot grow past 5 GB on Railway Hobby, and every wallet added
+    # keeps its activity history, so the watchlist stops growing here. 0 = no cap.
+    max_watchlist_wallets: int = 0
 
     def __post_init__(self) -> None:
         for name, value in asdict(self).items():
             if type(value) is not int or value < 0:
                 raise ValueError(f"{name} must be a non-negative integer")
-            if value == 0 and name not in _OPTIONAL_STAGE_INTERVALS:
+            if value == 0 and name not in _ZERO_ALLOWED:
                 raise ValueError(f"{name} must be a positive integer")
         backfill_seconds = (
             (self.entry_prices_max_seconds if self.entry_prices_every_seconds else 0)
@@ -279,6 +283,7 @@ def _execute_stage(stage: str, data_dir: Path, config: PilotConfig,
         wallet_batch_size=config.wallet_batch_size, skip_enrichment=True,
         max_pages_per_wallet=2, market_pages=1, refresh_reference=False,
         max_activity_requests_per_wallet=config.activity_requests_per_wallet,
+        max_watchlist=config.max_watchlist_wallets or None,
     ).to_dict()
     result["status"] = (
         "partial" if not result["windows_succeeded"] or result.get("wallets_with_errors", 0)

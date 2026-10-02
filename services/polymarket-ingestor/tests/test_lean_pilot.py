@@ -481,3 +481,27 @@ def test_storage_report_sizes_each_store(tmp_path: Path) -> None:
     report = pilot._storage_mb(tmp_path)
     assert report["activity"] == 3.0 and report["entry_prices"] == 1.0
     assert report["positions"] == 0.0 and report["total"] == 4.0
+
+
+def test_the_watchlist_cap_reaches_the_pipeline(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from marketsignalos_polymarket import runner
+
+    seen: dict[str, Any] = {}
+
+    class Result:
+        def to_dict(self) -> dict[str, Any]:
+            return {"windows_succeeded": ["day"], "wallets_with_errors": 0}
+
+    def fake_pipeline(**kwargs: Any) -> Result:
+        seen.update(kwargs)
+        return Result()
+
+    monkeypatch.setattr(runner, "run_pipeline", fake_pipeline)
+    pilot._execute_stage("collect", tmp_path, pilot.PilotConfig(max_watchlist_wallets=64), "r1")
+    assert seen["max_watchlist"] == 64
+    pilot._execute_stage("collect", tmp_path, pilot.PilotConfig(), "r2")
+    assert seen["max_watchlist"] is None  # 0 means no cap
+    with pytest.raises(ValueError):
+        pilot.PilotConfig(max_watchlist_wallets=-1)

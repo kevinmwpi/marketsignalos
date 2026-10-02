@@ -1084,3 +1084,33 @@ def test_shard_activity_by_wallet_partitions_and_preserves_order(tmp_path: Path)
     # File order preserved within each wallet.
     for stamps in timestamps_by_wallet.values():
         assert stamps == sorted(stamps)
+
+
+def test_a_capped_watchlist_stops_growing_but_keeps_everyone(
+    tmp_path: Path, monkeypatch: Any,
+) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if _is_ranked_leaderboard(request):
+            return httpx.Response(200, json=[
+                {"proxyWallet": f"0xNEW{i}", "vol": 1.0} for i in range(3)])
+        return httpx.Response(200, json=[])
+
+    watchlist = tmp_path / "wl.txt"
+    watchlist.write_text("0xold1\n0xold2\n", encoding="utf-8")
+    monkeypatch.setenv("POLYMARKET_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("POLYMARKET_WATCHLIST_PATH", str(watchlist))
+
+    def run(cap: int) -> Any:
+        return run_pipeline(windows=["day"], leaderboard_limit=3, skip_kalshi=True,
+                            skip_enrichment=True, refresh_reference=False, wallet_batch_size=1,
+                            max_watchlist=cap, client=_client_with_handler(handler))
+
+    first = run(3)
+    assert first.wallets_seeded == 3 and first.seeds_over_cap == 2
+    assert first.to_dict()["seeds_over_cap"] == 2
+    second = run(1)  # below the current size: nobody is removed, nobody added
+    assert second.wallets_seeded == 3 and second.seeds_over_cap == 2
+    lines = [line for line in watchlist.read_text().splitlines() if not line.startswith("#")]
+    assert sorted(lines) == ["0xnew0", "0xold1", "0xold2"]
+    with pytest.raises(ValueError):
+        run(0)

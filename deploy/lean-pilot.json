@@ -14,5 +14,6 @@
   "closing_lines_every_seconds": 43200,
   "closing_lines_per_cycle": 200,
   "closing_lines_max_seconds": 180,
-  "min_free_disk_mb": 512
+  "min_free_disk_mb": 512,
+  "max_watchlist_wallets": 64
 }
