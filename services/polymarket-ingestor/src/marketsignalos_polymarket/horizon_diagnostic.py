@@ -25,7 +25,8 @@ circularity decision 6 exists to avoid.
 
 A bet is one (wallet, condition, outcome). Its CLV at *h* is the USDC-weighted mean,
 over its BUY fills whose window has been fetched, of (reference - fill price), where
-the reference is the outcome's price *h* after that fill. Prices are hourly series
+the reference is the outcome's price *h* after that fill and the fill price is USDC
+divided by size (the activity store does not keep price). Prices are hourly series
 values, so *h* = 1 hour means the first hourly point after the fill.
 """
 from __future__ import annotations
@@ -80,50 +81,70 @@ class _HorizonTally:
     wallets: list[str] = field(default_factory=list)
 
 
-def resolved_winners(markets_path: Path) -> dict[str, int]:
-    """Winning outcome per resolved binary market: Gamma says closed and exactly
-    one of two outcome prices is at least 0.99 (the scorer's rule). The latest row
-    per condition wins."""
+@dataclass(slots=True)
+class _BuyScan:
+    fills: int = 0
+    markets: set[str] = field(default_factory=set)
+
+
+def market_states(markets_path: Path) -> dict[str, tuple[bool, int | None]]:
+    """(closed, winning outcome) per market in the store, the latest row winning.
+    The winner follows the scorer's rule: Gamma says closed and exactly one of two
+    outcome prices is at least 0.99; otherwise it is None."""
     latest: dict[str, dict[str, Any]] = {}
     for row in _rows(markets_path):
         cid = str(row.get("condition_id", "")).lower()
         if cid:
             latest[cid] = row
-    winners: dict[str, int] = {}
+    states: dict[str, tuple[bool, int | None]] = {}
     for cid, row in latest.items():
+        closed = row.get("closed") is True
         prices = row.get("outcome_prices")
-        if row.get("closed") is not True or not isinstance(prices, list) or len(prices) != 2:
-            continue
-        try:
-            values = [float(price) for price in prices]
-        except (TypeError, ValueError):
-            continue
-        won = [index for index, value in enumerate(values) if value >= 0.99]
-        if len(won) == 1:
-            winners[cid] = won[0]
-    return winners
+        winner = None
+        if closed and isinstance(prices, list) and len(prices) == 2:
+            try:
+                won = [i for i, price in enumerate(prices) if float(price) >= 0.99]
+            except (TypeError, ValueError):
+                won = []
+            winner = won[0] if len(won) == 1 else None
+        states[cid] = (closed, winner)
+    return states
 
 
-def resolved_bets(activity_path: Path, winners: dict[str, int]) -> dict[BetKey, list[_Fill]]:
-    """BUY fills per bet, for bets on markets in ``winners``."""
+def resolved_winners(markets_path: Path) -> dict[str, int]:
+    """Winning outcome per resolved binary market in the store."""
+    return {cid: winner for cid, (_, winner) in market_states(markets_path).items()
+            if winner is not None}
+
+
+def resolved_bets(
+    activity_path: Path, winners: dict[str, int], scan: _BuyScan | None = None,
+) -> dict[BetKey, list[_Fill]]:
+    """BUY fills per bet, for bets on markets in ``winners``. ``scan`` collects every
+    BUY fill and bought market, resolved or not, for the coverage funnel."""
     bets: dict[BetKey, list[_Fill]] = defaultdict(list)
     for row in _rows(activity_path):
         if row.get("type") != "TRADE" or row.get("side") != "BUY":
             continue
         cid = str(row.get("condition_id", "")).strip().lower()
+        if scan is not None and cid:
+            scan.fills += 1
+            scan.markets.add(cid)
         wallet = str(row.get("proxy_wallet", "")).lower()
         outcome = row.get("outcome_index")
         ts = row.get("timestamp")
-        price = _float(row.get("price"))
+        # The activity store keeps size and USDC, not price
+        # (storage._ACTIVITY_JSONL_FIELDS), so the fill price is USDC / size.
+        size = _float(row.get("size"))
+        usdc = _float(row.get("usdc_size"))
         if (cid not in winners or not wallet or outcome not in (0, 1)
                 or isinstance(ts, bool) or not isinstance(ts, int)
-                or price is None or not 0.0 < price < 1.0):
+                or size is None or usdc is None or size <= 0 or usdc <= 0):
             continue
-        usdc = _float(row.get("usdc_size"))
-        size = _float(row.get("size"))
-        weight = usdc if usdc is not None and usdc > 0 else (
-            size * price if size is not None and size > 0 else 1.0)
-        bets[(wallet, cid, int(outcome))].append(_Fill(ts, price, weight))
+        price = usdc / size
+        if not 0.0 < price < 1.0:
+            continue
+        bets[(wallet, cid, int(outcome))].append(_Fill(ts, price, usdc))
     return bets
 
 
@@ -134,8 +155,10 @@ def diagnose(
     """The full report for a pilot data directory. Reads only; writes nothing."""
     now = now or datetime.now(UTC)
     horizons = tuple(horizons_hours)
-    winners = resolved_winners(data_dir / MARKETS_FILE)
-    bets = resolved_bets(data_dir / ACTIVITY_FILE, winners)
+    states = market_states(data_dir / MARKETS_FILE)
+    winners = {cid: winner for cid, (_, winner) in states.items() if winner is not None}
+    scan = _BuyScan()
+    bets = resolved_bets(data_dir / ACTIVITY_FILE, winners, scan)
     entry_store = data_dir / entry_prices.STORE_DIR
     series = entry_prices.load_entry_prices(entry_store)
     receipts = entry_prices.latest_receipts(entry_store)
@@ -179,6 +202,7 @@ def diagnose(
         "generated_at": now.isoformat(),
         "near_outcome_threshold": NEAR_OUTCOME,
         "resolved_markets": len(winners),
+        "funnel": _funnel(scan, states, data_dir / closing_lines.STORE_DIR),
         "resolved_bets": len(bets),
         "wallets": len({wallet for wallet, _, _ in bets}),
         "horizons": {f"{h}h": _summary(tallies[h], with_coverage=True) for h in horizons},
@@ -250,6 +274,25 @@ def _write_json(path: Path, payload: dict[str, Any]) -> None:
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
+
+def _funnel(scan: _BuyScan, states: dict[str, tuple[bool, int | None]],
+            closing_store: Path) -> dict[str, int]:
+    """Where bought markets drop out before a bet can be scored: missing from the
+    market store, stored but open, closed without a clear winner. The closing-line
+    backfill asks Gamma for closed markets directly, so its receipts show how many
+    bought markets Gamma already reports closed, independent of the store."""
+    gamma_closed = {cid for cid, (status, _) in closing_lines.latest_receipts(closing_store)
+                    .items() if status in ("ok", "no_history")}
+    bought = scan.markets
+    return {
+        "buy_fills": scan.fills,
+        "bought_markets": len(bought),
+        "in_market_store": sum(cid in states for cid in bought),
+        "closed_in_store": sum(states[cid][0] for cid in bought if cid in states),
+        "resolved_in_store": sum(states[cid][1] is not None for cid in bought if cid in states),
+        "closed_per_gamma_lookup": len(bought & gamma_closed),
+    }
+
 
 def _window_fetched(cid: str, buy_ts: int, seconds: int, final: set[tuple[str, int]]) -> bool:
     """Every chunk from the buy to ``seconds`` after it has a final receipt."""

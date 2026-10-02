@@ -985,7 +985,7 @@ Answer these before Stage 1; each changes what gets built.
    Choose h before looking at gate 13 counts for any wallet. The chosen definition
    becomes a new score version.
 
-   The diagnostic is `horizon_diagnostic.py`, run daily by the pilot worker. It
+   The diagnostic is `horizon_diagnostic.py`, run by the pilot worker. It
    writes `diagnostics/horizon/<date>.json` and prints the same numbers in the
    Railway log line, for h = 1, 6, 24, 72 and 168 hours, per horizon and on the
    bets referenced at every horizon (the common set). It never computes gate
