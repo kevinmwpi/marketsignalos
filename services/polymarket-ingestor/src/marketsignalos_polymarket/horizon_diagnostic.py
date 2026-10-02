@@ -47,6 +47,17 @@ HORIZONS_HOURS = (1, 6, 24, 72, 168)
 NEAR_OUTCOME = 0.01
 MARKETS_FILE = "polymarket_markets.jsonl"
 REPORT_DIR = "diagnostics/horizon"
+DECISION_FILE = "decision.json"
+
+# The selection rule, approved by the owner on 2026-10-02 before any report existed
+# (blueprint decision 6). Changing any of these needs a written justification there.
+RULE = {
+    "min_common_bets": 500,
+    "min_common_wallets": 20,
+    "max_near_outcome": 0.05,
+    "min_coverage": 0.5,
+    "min_clv_win_corr": 0.0,  # strictly greater than
+}
 
 BetKey = tuple[str, str, int]  # (wallet, condition id, outcome index)
 
@@ -176,19 +187,66 @@ def diagnose(
             **{f"{h}h": _summary(common[h], with_coverage=False) for h in horizons},
         },
     }
+    report["selection"] = select_horizon(report, horizons)
     return report
 
 
+def select_horizon(report: dict[str, Any], horizons: Iterable[int]) -> dict[str, Any]:
+    """Apply ``RULE`` to a report: the longest horizon whose common-set leakage is
+    at most ``max_near_outcome``, whose coverage (referenced over fetched, per
+    horizon) is at least ``min_coverage`` and whose common-set CLV-win correlation
+    is positive. Not ``eligible`` until the common set reaches the sample size."""
+    common = report["common"]
+    order = sorted(horizons, reverse=True)
+    wallets = common[f"{order[0]}h"]["wallets"] if order else 0
+    if common["bets"] < RULE["min_common_bets"] or wallets < RULE["min_common_wallets"]:
+        return {"eligible": False,
+                "reason": f"common set has {common['bets']} bets from {wallets} wallets; "
+                          f"the rule needs {RULE['min_common_bets']} from "
+                          f"{RULE['min_common_wallets']}"}
+    failures: dict[str, str] = {}
+    for h in order:
+        key = f"{h}h"
+        near = common[key]["near_outcome"]
+        corr = common[key]["clv_win_corr"]
+        coverage = report["horizons"][key]["coverage"]
+        if near is None or near > RULE["max_near_outcome"]:
+            failures[key] = f"near_outcome {near}"
+        elif coverage is None or coverage < RULE["min_coverage"]:
+            failures[key] = f"coverage {coverage}"
+        elif corr is None or corr <= RULE["min_clv_win_corr"]:
+            failures[key] = f"clv_win_corr {corr}"
+        else:
+            return {"eligible": True, "horizon": key, "rejected_longer": failures}
+    return {"eligible": True, "horizon": None, "rejected_longer": failures}
+
+
 def run(data_dir: Path, *, now: datetime | None = None) -> dict[str, Any]:
-    """Lean-pilot stage: write the day's report and return it as the stage result."""
+    """Lean-pilot stage: write the day's report and return it as the stage result.
+
+    The first report whose selection is eligible is also written to
+    ``decision.json`` and never replaced: the rule decides once, at the first
+    sufficient sample, so later reports cannot be waited on for a preferred answer.
+    """
     report = diagnose(data_dir, now=now)
     out = data_dir / REPORT_DIR
     out.mkdir(parents=True, exist_ok=True)
-    day = report["generated_at"][:10]
-    tmp = out / f"{day}.json.tmp"
-    tmp.write_text(json.dumps(report, indent=2, sort_keys=True), encoding="utf-8")
-    tmp.replace(out / f"{day}.json")
-    return {"status": "succeeded", **report}
+    _write_json(out / f"{report['generated_at'][:10]}.json", report)
+    decision_path = out / DECISION_FILE
+    if not decision_path.exists() and report["selection"]["eligible"]:
+        _write_json(decision_path, {"decided_at": report["generated_at"], "rule": RULE,
+                                    "selection": report["selection"], "report": report})
+    decision = json.loads(decision_path.read_text(encoding="utf-8")) \
+        if decision_path.exists() else None
+    return {"status": "succeeded", **report,
+            "decision": None if decision is None else {
+                "decided_at": decision["decided_at"], **decision["selection"]}}
+
+
+def _write_json(path: Path, payload: dict[str, Any]) -> None:
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+    tmp.replace(path)
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
@@ -232,7 +290,9 @@ def _summary(tally: _HorizonTally, *, with_coverage: bool) -> dict[str, Any]:
         "top_wallet_share": _round(max(counts.values()) / n if n else None),
     }
     if with_coverage:
-        summary = {"pending": tally.pending, "no_reference": tally.no_reference, **summary}
+        fetched = n + tally.no_reference
+        summary = {"pending": tally.pending, "no_reference": tally.no_reference,
+                   "coverage": _round(n / fetched if fetched else None), **summary}
     return summary
 
 

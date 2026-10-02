@@ -13,9 +13,11 @@ from marketsignalos_polymarket.closing_lines import ACTIVITY_FILE
 from marketsignalos_polymarket.horizon_diagnostic import (
     MARKETS_FILE,
     REPORT_DIR,
+    RULE,
     diagnose,
     resolved_winners,
     run,
+    select_horizon,
 )
 
 C = entry_prices.CHUNK_SECONDS
@@ -112,6 +114,8 @@ def test_diagnose_reports_coverage_leakage_and_signal_per_horizon(pilot_dir: Pat
     assert report["common"]["bets"] == 3
     assert report["common"]["24h"]["near_outcome"] == pytest.approx(1 / 3, abs=1e-4)
     assert "pending" not in report["common"]["24h"]
+    assert one["coverage"] == 0.75  # 3 referenced of 4 fetched; the pending bet is excluded
+    assert report["selection"]["eligible"] is False  # 3 bets is far below the rule's 500
 
 
 def test_diagnose_has_no_gate_counts(pilot_dir: Path) -> None:
@@ -132,3 +136,71 @@ def test_run_writes_the_days_report(pilot_dir: Path) -> None:
     assert result["status"] == "succeeded"
     saved = json.loads((pilot_dir / REPORT_DIR / "2026-10-03.json").read_text())
     assert saved["horizons"] == result["horizons"]
+
+
+# ── The approved selection rule ──────────────────────────────────────────────
+
+def _report(per_h: dict[str, tuple[float, float, float]], bets: int = 600,
+            wallets: int = 25) -> dict[str, Any]:
+    """A report with (near_outcome, coverage, clv_win_corr) per horizon."""
+    common: dict[str, Any] = {"bets": bets}
+    horizons: dict[str, Any] = {}
+    for key, (near, coverage, corr) in per_h.items():
+        common[key] = {"near_outcome": near, "clv_win_corr": corr, "wallets": wallets}
+        horizons[key] = {"coverage": coverage}
+    return {"common": common, "horizons": horizons}
+
+
+GOOD = (0.01, 0.9, 0.2)
+
+
+@pytest.mark.parametrize(("bets", "wallets"), [(499, 25), (600, 19)])
+def test_the_rule_waits_for_500_bets_from_20_wallets(bets: int, wallets: int) -> None:
+    selection = select_horizon(_report({"24h": GOOD}, bets, wallets), (24,))
+    assert selection["eligible"] is False and "needs 500 from 20" in selection["reason"]
+
+
+def test_the_rule_takes_the_longest_horizon_that_passes_every_condition() -> None:
+    report = _report({"168h": (0.20, 0.9, 0.3), "72h": (0.02, 0.4, 0.3),
+                      "24h": (0.03, 0.8, 0.0), "6h": (0.05, 0.5, 0.01), "1h": GOOD})
+    selection = select_horizon(report, (1, 6, 24, 72, 168))
+    assert selection == {"eligible": True, "horizon": "6h", "rejected_longer": {
+        "168h": "near_outcome 0.2", "72h": "coverage 0.4", "24h": "clv_win_corr 0.0"}}
+
+
+def test_the_rule_can_find_no_horizon() -> None:
+    selection = select_horizon(_report({"24h": (0.5, 0.9, 0.3), "1h": (0.0, 0.9, -0.1)}),
+                               (1, 24))
+    assert selection["eligible"] is True and selection["horizon"] is None
+    assert set(selection["rejected_longer"]) == {"24h", "1h"}
+    assert RULE == {"min_common_bets": 500, "min_common_wallets": 20, "max_near_outcome": 0.05,
+                    "min_coverage": 0.5, "min_clv_win_corr": 0.0}
+
+
+def test_the_first_eligible_report_decides_and_is_never_replaced(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from marketsignalos_polymarket import horizon_diagnostic
+
+    selections = iter([
+        {"eligible": False, "reason": "too few"},
+        {"eligible": True, "horizon": "24h", "rejected_longer": {}},
+        {"eligible": True, "horizon": "6h", "rejected_longer": {}},
+    ])
+
+    def fake_diagnose(data_dir: Path, *, now: datetime | None = None) -> dict[str, Any]:
+        assert now is not None
+        return {"generated_at": now.isoformat(), "selection": next(selections)}
+
+    monkeypatch.setattr(horizon_diagnostic, "diagnose", fake_diagnose)
+    decision = tmp_path / REPORT_DIR / "decision.json"
+
+    assert run(tmp_path, now=datetime(2026, 10, 3, tzinfo=UTC))["decision"] is None
+    assert not decision.exists()
+    second = run(tmp_path, now=datetime(2026, 10, 4, tzinfo=UTC))
+    assert second["decision"] == {"decided_at": "2026-10-04T00:00:00+00:00", "eligible": True,
+                                  "horizon": "24h", "rejected_longer": {}}
+    third = run(tmp_path, now=datetime(2026, 10, 5, tzinfo=UTC))
+    assert third["selection"]["horizon"] == "6h"  # today's numbers still reported
+    assert third["decision"]["horizon"] == "24h"  # but the decision stands
+    assert json.loads(decision.read_text())["rule"] == RULE
