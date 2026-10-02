@@ -23,6 +23,12 @@ before anyone sees how many wallets a horizon would qualify; the CLV-win correla
 is a sanity floor, not a target, because maximising agreement with winning is the
 circularity decision 6 exists to avoid.
 
+Only fills placed at least seven days before the market's scheduled end count
+(``RULE["min_hours_to_scheduled_end"]``): the end date is known at entry, so the
+filter adds no leakage, every horizon is defined for every remaining bet, and these
+are the bets a person has time to copy. The funnel reports how many resolved bets
+the filter keeps.
+
 A bet is one (wallet, condition, outcome). Its CLV at *h* is the USDC-weighted mean,
 over its BUY fills whose window has been fetched, of (reference - fill price), where
 the reference is the outcome's price *h* after that fill and the fill price is USDC
@@ -38,7 +44,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 
 from . import closing_lines, entry_prices
 from .closing_lines import ACTIVITY_FILE
@@ -52,7 +58,12 @@ DECISION_FILE = "decision.json"
 
 # The selection rule, approved by the owner on 2026-10-02 before any report existed
 # (blueprint decision 6). Changing any of these needs a written justification there.
+# min_hours_to_scheduled_end was added the same day, after the first report showed
+# the common set could not fill: almost no market in the cohort lived seven days.
+# Only fills placed at least that long before the market's scheduled end (known at
+# entry, so no leakage) count, which also keeps the bets a person could copy.
 RULE = {
+    "min_hours_to_scheduled_end": 168,
     "min_common_bets": 500,
     "min_common_wallets": 20,
     "max_near_outcome": 0.05,
@@ -61,6 +72,12 @@ RULE = {
 }
 
 BetKey = tuple[str, str, int]  # (wallet, condition id, outcome index)
+
+
+class MarketState(NamedTuple):
+    closed: bool
+    winner: int | None  # winning outcome index, when resolved
+    scheduled_end: int | None  # Gamma's endDate, Unix seconds
 
 
 @dataclass(slots=True)
@@ -85,18 +102,19 @@ class _HorizonTally:
 class _BuyScan:
     fills: int = 0
     markets: set[str] = field(default_factory=set)
+    resolved_bets: set[BetKey] = field(default_factory=set)  # before the end-date filter
 
 
-def market_states(markets_path: Path) -> dict[str, tuple[bool, int | None]]:
-    """(closed, winning outcome) per market in the store, the latest row winning.
-    The winner follows the scorer's rule: Gamma says closed and exactly one of two
-    outcome prices is at least 0.99; otherwise it is None."""
+def market_states(markets_path: Path) -> dict[str, MarketState]:
+    """State per market in the store, the latest row winning. The winner follows
+    the scorer's rule: Gamma says closed and exactly one of two outcome prices is at
+    least 0.99; otherwise it is None."""
     latest: dict[str, dict[str, Any]] = {}
     for row in _rows(markets_path):
         cid = str(row.get("condition_id", "")).lower()
         if cid:
             latest[cid] = row
-    states: dict[str, tuple[bool, int | None]] = {}
+    states: dict[str, MarketState] = {}
     for cid, row in latest.items():
         closed = row.get("closed") is True
         prices = row.get("outcome_prices")
@@ -107,21 +125,25 @@ def market_states(markets_path: Path) -> dict[str, tuple[bool, int | None]]:
             except (TypeError, ValueError):
                 won = []
             winner = won[0] if len(won) == 1 else None
-        states[cid] = (closed, winner)
+        end = closing_lines._parse_time(row.get("end_date"))
+        states[cid] = MarketState(closed, winner, None if end is None else int(end.timestamp()))
     return states
 
 
 def resolved_winners(markets_path: Path) -> dict[str, int]:
     """Winning outcome per resolved binary market in the store."""
-    return {cid: winner for cid, (_, winner) in market_states(markets_path).items()
-            if winner is not None}
+    return {cid: state.winner for cid, state in market_states(markets_path).items()
+            if state.winner is not None}
 
 
 def resolved_bets(
-    activity_path: Path, winners: dict[str, int], scan: _BuyScan | None = None,
+    activity_path: Path, winners: dict[str, int], scan: _BuyScan | None = None, *,
+    scheduled_ends: dict[str, int] | None = None, min_seconds_to_end: int = 0,
 ) -> dict[BetKey, list[_Fill]]:
-    """BUY fills per bet, for bets on markets in ``winners``. ``scan`` collects every
-    BUY fill and bought market, resolved or not, for the coverage funnel."""
+    """BUY fills per bet, for bets on markets in ``winners``. With
+    ``min_seconds_to_end``, only fills at least that long before the market's
+    scheduled end count; a market without one is left out. ``scan`` collects every
+    BUY fill, bought market and resolved bet for the coverage funnel."""
     bets: dict[BetKey, list[_Fill]] = defaultdict(list)
     for row in _rows(activity_path):
         if row.get("type") != "TRADE" or row.get("side") != "BUY":
@@ -144,7 +166,14 @@ def resolved_bets(
         price = usdc / size
         if not 0.0 < price < 1.0:
             continue
-        bets[(wallet, cid, int(outcome))].append(_Fill(ts, price, usdc))
+        key = (wallet, cid, int(outcome))
+        if scan is not None:
+            scan.resolved_bets.add(key)
+        if min_seconds_to_end:
+            end = (scheduled_ends or {}).get(cid)
+            if end is None or end - ts < min_seconds_to_end:
+                continue
+        bets[key].append(_Fill(ts, price, usdc))
     return bets
 
 
@@ -156,9 +185,12 @@ def diagnose(
     now = now or datetime.now(UTC)
     horizons = tuple(horizons_hours)
     states = market_states(data_dir / MARKETS_FILE)
-    winners = {cid: winner for cid, (_, winner) in states.items() if winner is not None}
+    winners = {cid: state.winner for cid, state in states.items() if state.winner is not None}
+    ends = {cid: state.scheduled_end for cid, state in states.items()
+            if state.scheduled_end is not None}
     scan = _BuyScan()
-    bets = resolved_bets(data_dir / ACTIVITY_FILE, winners, scan)
+    bets = resolved_bets(data_dir / ACTIVITY_FILE, winners, scan, scheduled_ends=ends,
+                         min_seconds_to_end=int(RULE["min_hours_to_scheduled_end"]) * 3600)
     entry_store = data_dir / entry_prices.STORE_DIR
     series = entry_prices.load_entry_prices(entry_store)
     receipts = entry_prices.latest_receipts(entry_store)
@@ -202,7 +234,7 @@ def diagnose(
         "generated_at": now.isoformat(),
         "near_outcome_threshold": NEAR_OUTCOME,
         "resolved_markets": len(winners),
-        "funnel": _funnel(scan, states, data_dir / closing_lines.STORE_DIR),
+        "funnel": _funnel(scan, states, data_dir / closing_lines.STORE_DIR, len(bets)),
         "resolved_bets": len(bets),
         "wallets": len({wallet for wallet, _, _ in bets}),
         "horizons": {f"{h}h": _summary(tallies[h], with_coverage=True) for h in horizons},
@@ -275,8 +307,8 @@ def _write_json(path: Path, payload: dict[str, Any]) -> None:
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
-def _funnel(scan: _BuyScan, states: dict[str, tuple[bool, int | None]],
-            closing_store: Path) -> dict[str, int]:
+def _funnel(scan: _BuyScan, states: dict[str, MarketState],
+            closing_store: Path, eligible_bets: int) -> dict[str, int]:
     """Where bought markets drop out before a bet can be scored: missing from the
     market store, stored but open, closed without a clear winner. The closing-line
     backfill asks Gamma for closed markets directly, so its receipts show how many
@@ -288,9 +320,11 @@ def _funnel(scan: _BuyScan, states: dict[str, tuple[bool, int | None]],
         "buy_fills": scan.fills,
         "bought_markets": len(bought),
         "in_market_store": sum(cid in states for cid in bought),
-        "closed_in_store": sum(states[cid][0] for cid in bought if cid in states),
-        "resolved_in_store": sum(states[cid][1] is not None for cid in bought if cid in states),
+        "closed_in_store": sum(states[cid].closed for cid in bought if cid in states),
+        "resolved_in_store": sum(states[cid].winner is not None for cid in bought if cid in states),
         "closed_per_gamma_lookup": len(bought & gamma_closed),
+        "resolved_bets": len(scan.resolved_bets),
+        "bets_7d_before_scheduled_end": eligible_bets,
     }
 
 

@@ -1114,3 +1114,26 @@ def test_a_capped_watchlist_stops_growing_but_keeps_everyone(
     assert sorted(lines) == ["0xnew0", "0xold1", "0xold2"]
     with pytest.raises(ValueError):
         run(0)
+
+
+def test_excluded_wallets_leave_the_watchlist_and_are_never_reseeded(
+    tmp_path: Path, monkeypatch: Any,
+) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if _is_ranked_leaderboard(request):
+            return httpx.Response(200, json=[
+                {"proxyWallet": "0xBOT", "vol": 9.0}, {"proxyWallet": "0xnew", "vol": 1.0}])
+        return httpx.Response(200, json=[])
+
+    watchlist = tmp_path / "wl.txt"
+    watchlist.write_text("0xold\n0xbot\n", encoding="utf-8")
+    monkeypatch.setenv("POLYMARKET_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("POLYMARKET_WATCHLIST_PATH", str(watchlist))
+    result = run_pipeline(
+        windows=["month"], leaderboard_limit=2, skip_kalshi=True, skip_enrichment=True,
+        refresh_reference=False, wallet_batch_size=5, max_watchlist=2,
+        exclude_wallets=frozenset({"0xBot"}), client=_client_with_handler(handler),
+    )
+    lines = [line for line in watchlist.read_text().splitlines() if not line.startswith("#")]
+    assert sorted(lines) == ["0xnew", "0xold"]  # the freed slot went to the next seed
+    assert result.wallets_seeded == 2 and result.seeds_over_cap == 0
