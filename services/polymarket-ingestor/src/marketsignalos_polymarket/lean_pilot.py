@@ -11,6 +11,7 @@ import json
 import logging
 import math
 import os
+import shutil
 import subprocess
 import sys
 import threading
@@ -53,6 +54,9 @@ class PilotConfig:
     closing_lines_every_seconds: int = 0
     closing_lines_per_cycle: int = 150
     closing_lines_max_seconds: int = 240
+    # No cycle starts with less free space than this on the data volume. A write
+    # that fails mid-collection leaves recovery_required set; skipping is safe.
+    min_free_disk_mb: int = 512
 
     def __post_init__(self) -> None:
         for name, value in asdict(self).items():
@@ -166,6 +170,44 @@ def _read_state(path: Path) -> dict[str, Any]:
     return state
 
 
+# Exit nonzero so Railway marks the run failed and its notifications fire.
+_ALERTING_STATUSES = frozenset({"failed", "recovery_required", "disk_low"})
+
+
+def _disk_free_mb(data_dir: Path) -> int:
+    """Free space on the volume holding ``data_dir`` (or its nearest existing parent)."""
+    path = data_dir.resolve()
+    while not path.exists() and path != path.parent:
+        path = path.parent
+    return shutil.disk_usage(path).free // (1024 * 1024)
+
+
+# Disk use per store, reported after each collection so growth is visible in
+# the Railway log line without access to the volume.
+_STORAGE_AREAS = {
+    "activity": ("polymarket_activity.jsonl",),
+    "positions": ("polymarket_positions.jsonl",),
+    "entry_prices": ("entry_prices",),
+    "closing_lines": ("closing_lines",),
+    "score_snapshots": ("score-snapshots",),
+    "run_logs": (".lean-pilot",),
+}
+
+
+def _storage_mb(data_dir: Path) -> dict[str, float]:
+    def size(path: Path) -> int:
+        if path.is_file():
+            return path.stat().st_size
+        if path.is_dir():
+            return sum(item.stat().st_size for item in path.rglob("*") if item.is_file())
+        return 0
+
+    sizes = {area: sum(size(data_dir / name) for name in names)
+             for area, names in _STORAGE_AREAS.items()}
+    sizes["total"] = size(data_dir)
+    return {area: round(value / (1024 * 1024), 1) for area, value in sizes.items()}
+
+
 # Run order within a cycle: collection first, then the price backfills for what
 # was collected, then scoring.
 STAGES = ("collect", "entry_prices", "closing_lines", "score")
@@ -201,12 +243,15 @@ def plan_cycle(data_dir: Path, config: PilotConfig, *,
     days = sorted({now.date().isoformat(),
                    (now + timedelta(seconds=config.cycle_timeout_seconds)).date().isoformat()})
     remaining = min(config.daily_runtime_seconds - state["days"].get(day, 0) for day in days)
+    disk_free_mb = _disk_free_mb(data_dir)
     return {"schema_version": SCHEMA_VERSION, "budget_target_usd_month": 15,
             "budget_is_billing_cap": False, "config": asdict(config), "due": due,
             "stages": stages, "reservation_days": days,
             "runtime_remaining_seconds": max(0, remaining),
+            "disk_free_mb": disk_free_mb,
             "recovery_required": state.get("recovery_required", False),
             "can_run": bool(due) and remaining >= config.cycle_timeout_seconds
+            and disk_free_mb >= config.min_free_disk_mb
             and not state.get("recovery_required", False)}
 
 
@@ -240,6 +285,10 @@ def _execute_stage(stage: str, data_dir: Path, config: PilotConfig,
         else "succeeded"
     )
     result["positions_retention"] = _compact_positions(data_dir)
+    try:
+        result["storage_mb"] = _storage_mb(data_dir)
+    except OSError as exc:  # a file vanishing mid-walk must not fail collection
+        result["storage_mb"] = {"error_type": type(exc).__name__}
     return result
 
 
@@ -299,7 +348,9 @@ def run_cycle(data_dir: Path, config: PilotConfig, run_id: str, *,
         plan = plan_cycle(data_dir, config, now=now)
         if not plan["can_run"]:
             status = "recovery_required" if plan["recovery_required"] else (
-                "not_due" if not plan["due"] else "budget_exhausted")
+                "not_due" if not plan["due"] else
+                "disk_low" if plan["disk_free_mb"] < config.min_free_disk_mb
+                else "budget_exhausted")
             return {"run_id": run_id, "status": status,
                     "plan": plan}
         receipt: dict[str, Any] = {"run_id": run_id, "status": "running",
@@ -449,7 +500,7 @@ def main(argv: list[str] | None = None) -> int:
         finally:
             deadline.cancel()
         _atomic_json(Path(args[2]), result)
-        return int(result["status"] in {"failed", "recovery_required"})
+        return int(result["status"] in _ALERTING_STATUSES)
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--data-dir", type=Path, required=True)
     parser.add_argument("--config", type=Path, help="JSON override of PilotConfig defaults")
@@ -473,7 +524,7 @@ def main(argv: list[str] | None = None) -> int:
     _atomic_json(directory / "resources.json", report)
     result = json.loads(response.read_text()) if response.exists() else report
     log.info("Pilot result %s; resource report=%s", json.dumps(result), directory / "resources.json")
-    return int(report["status"] == "failed" or result["status"] in {"failed", "recovery_required"})
+    return int(report["status"] == "failed" or result["status"] in _ALERTING_STATUSES)
 
 
 if __name__ == "__main__":

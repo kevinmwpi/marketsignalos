@@ -447,3 +447,37 @@ def test_collection_retention_failure_is_reported_not_raised(
 
     monkeypatch.setattr(storage, "compact_position_snapshots", disk_full)
     assert pilot._compact_positions(tmp_path) == {"error_type": "OSError"}
+
+
+# ── Disk guard and storage report ────────────────────────────────────────────
+
+def test_a_cycle_does_not_start_on_a_nearly_full_volume(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    clock = Clock()
+    monkeypatch.setattr(pilot, "_disk_free_mb", lambda data_dir: 300)
+
+    def execute(stage: str, data: Path, cfg: pilot.PilotConfig, run: str) -> dict[str, Any]:
+        raise AssertionError("no stage may run on a nearly full volume")
+
+    receipt = pilot.run_cycle(tmp_path, pilot.PilotConfig(min_free_disk_mb=512), "full",
+                              execute=execute, now_fn=clock.now, monotonic=clock.monotonic)
+
+    assert receipt["status"] == "disk_low"
+    assert receipt["plan"]["disk_free_mb"] == 300 and receipt["plan"]["can_run"] is False
+    assert "disk_low" in pilot._ALERTING_STATUSES  # Railway sees a failed run
+    state_file = tmp_path / ".lean-pilot" / "state.json"
+    assert not state_file.exists() or state_at(tmp_path)["days"] == {}  # nothing charged
+
+
+def test_disk_free_walks_up_to_an_existing_parent(tmp_path: Path) -> None:
+    assert pilot._disk_free_mb(tmp_path / "not" / "created" / "yet") > 0
+
+
+def test_storage_report_sizes_each_store(tmp_path: Path) -> None:
+    (tmp_path / "polymarket_activity.jsonl").write_bytes(b"x" * 3 * 1024 * 1024)
+    (tmp_path / "entry_prices").mkdir()
+    (tmp_path / "entry_prices" / "price_observations.jsonl").write_bytes(b"x" * 1024 * 1024)
+    report = pilot._storage_mb(tmp_path)
+    assert report["activity"] == 3.0 and report["entry_prices"] == 1.0
+    assert report["positions"] == 0.0 and report["total"] == 4.0

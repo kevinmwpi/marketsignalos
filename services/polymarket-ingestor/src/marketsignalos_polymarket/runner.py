@@ -2510,11 +2510,20 @@ _SEED_ORDERS = {"volume": "VOL", "profit": "PNL"}
 _SEED_PAGE_SIZE = 50  # /v1/leaderboard maximum
 
 
+_HTTP_STATUS = re.compile(r"'([1-5]\d\d) ")  # httpx: "Client error '400 Bad Request' ..."
+
+
 def _error_kinds(wallet_errors: list[list[str]]) -> dict[str, int]:
-    """Wallets per error label: the text before ": ", or the whole fixed message."""
+    """Wallets per error label: the text before ": ", or the whole fixed message,
+    plus the HTTP status when the error carries one."""
     counts: dict[str, int] = {}
     for errors in wallet_errors:
-        for kind in {error.split(": ", 1)[0] for error in errors}:
+        kinds = set()
+        for error in errors:
+            label, _, detail = error.partition(": ")
+            status = _HTTP_STATUS.search(detail)
+            kinds.add(f"{label} HTTP {status.group(1)}" if status else label)
+        for kind in kinds:
             counts[kind] = counts.get(kind, 0) + 1
     return dict(sorted(counts.items()))
 

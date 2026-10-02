@@ -29,6 +29,7 @@ The default configuration is committed in `deploy/lean-pilot.json`:
 | Activity budget | 10 calls/wallet | Shared across recent, historical, and boundary pagination |
 | Cycle deadline | 20 minutes | Collection plus scoring together, including subprocess startup |
 | Daily runtime allowance | 60 minutes | Local UTC-day accounting, with a full cycle reserved before work |
+| Disk guard | 512 MiB free | No cycle starts below this; the run exits nonzero as `disk_low` so Railway marks it failed. Every plan reports `disk_free_mb`, and each collection reports `storage_mb` per store |
 | Worker RSS guard | 4,096 MiB | Sampled process-tree memory; separate container limit still needed |
 | Worker log guard | 8 MiB/run | Stop a noisy child before its log grows indefinitely |
 
