@@ -25,10 +25,12 @@ The default configuration is committed in `deploy/lean-pilot.json`:
 | Closing lines | Every 12 hours in `deploy/lean-pilot.json`; off in code | Backfill each traded market's 48-hour pre-close price window, at most 200 markets and 180 s per run. Kept as the comparison for the entry-price horizon diagnostic |
 | Wallet batch | 20 | Oldest-polled first within the shallow cohort plus seeds never polled, which go first |
 | Position snapshots | Latest 2 per wallet | Older snapshots are dropped after each collection; the exit-signal watermark is kept |
+| Watchlist cap | 64 wallets | The Railway Hobby volume is capped at 5 GB and every wallet keeps its activity history, so seeding stops adding wallets at the cap (`seeds_over_cap` counts the ones skipped). Nobody is removed. Raise it only with `storage_mb` evidence |
 | Leaderboard seed | 25, day/volume | Bounded discovery input from the data API's `/v1/leaderboard`; no profit leaderboard. A rejected request appears in the collection result's `warning` |
 | Activity budget | 10 calls/wallet | Shared across recent, historical, and boundary pagination |
 | Cycle deadline | 20 minutes | Collection plus scoring together, including subprocess startup |
 | Daily runtime allowance | 60 minutes | Local UTC-day accounting, with a full cycle reserved before work |
+| Disk guard | 512 MiB free | No cycle starts below this; the run exits nonzero as `disk_low` so Railway marks it failed. Every plan reports `disk_free_mb`, and each collection reports `storage_mb` per store |
 | Worker RSS guard | 4,096 MiB | Sampled process-tree memory; separate container limit still needed |
 | Worker log guard | 8 MiB/run | Stop a noisy child before its log grows indefinitely |
 

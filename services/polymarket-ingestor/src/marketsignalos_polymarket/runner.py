@@ -2454,6 +2454,8 @@ class PipelineResult:
     # Wallets per error label ("positions", "activity request budget reached").
     # Labels only: exception text can carry URLs and stays in the logs.
     wallet_error_kinds: dict[str, int] = field(default_factory=dict)
+    # Leaderboard wallets not added because the watchlist was at max_watchlist.
+    seeds_over_cap: int = 0
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -2472,6 +2474,7 @@ class PipelineResult:
             "wallets_with_errors": self.wallets_with_errors,
             "activity_budget_exhausted_wallets": self.activity_budget_exhausted_wallets,
             "wallet_error_kinds": dict(self.wallet_error_kinds),
+            "seeds_over_cap": self.seeds_over_cap,
             "kalshi_markets": self.kalshi_markets,
             "market_links": self.market_links,
             "trusted_wallets": self.trusted_wallets,
@@ -2510,11 +2513,20 @@ _SEED_ORDERS = {"volume": "VOL", "profit": "PNL"}
 _SEED_PAGE_SIZE = 50  # /v1/leaderboard maximum
 
 
+_HTTP_STATUS = re.compile(r"'([1-5]\d\d) ")  # httpx: "Client error '400 Bad Request' ..."
+
+
 def _error_kinds(wallet_errors: list[list[str]]) -> dict[str, int]:
-    """Wallets per error label: the text before ": ", or the whole fixed message."""
+    """Wallets per error label: the text before ": ", or the whole fixed message,
+    plus the HTTP status when the error carries one."""
     counts: dict[str, int] = {}
     for errors in wallet_errors:
-        for kind in {error.split(": ", 1)[0] for error in errors}:
+        kinds = set()
+        for error in errors:
+            label, _, detail = error.partition(": ")
+            status = _HTTP_STATUS.search(detail)
+            kinds.add(f"{label} HTTP {status.group(1)}" if status else label)
+        for kind in kinds:
             counts[kind] = counts.get(kind, 0) + 1
     return dict(sorted(counts.items()))
 
@@ -2552,6 +2564,7 @@ def run_pipeline(
     kalshi_max_pages: int = 25,
     skip_kalshi: bool = True,
     include_profit_leaderboard: bool = False,
+    max_watchlist: int | None = None,
     refresh_reference: bool | None = None,
     skip_enrichment: bool = False,
     wallet_batch_size: int | None = None,
@@ -2594,6 +2607,8 @@ def run_pipeline(
         raise ValueError("max_activity_requests_per_wallet must be positive")
     if max_pages_per_wallet < 1:
         raise ValueError("max_pages_per_wallet must be positive")
+    if max_watchlist is not None and max_watchlist < 1:
+        raise ValueError("max_watchlist must be positive")
     attempts = list(windows or _DEFAULT_WINDOWS)
     stores = _build_stores(_data_dir())
     owns_client = client is None
@@ -2628,6 +2643,7 @@ def run_pipeline(
         leaderboard_entries = 0
         succeeded: list[str] = []
         seed_failures: list[str] = []
+        seeds_over_cap: set[str] = set()
         for i, window in enumerate(attempts):
             _emit({
                 "stage": "seed_watchlist",
@@ -2657,7 +2673,12 @@ def run_pipeline(
                 stores.leaderboard.write_leaderboard(entries)
                 leaderboard_entries += len(entries)
                 for e in entries:
-                    if e.proxy_wallet:
+                    if not e.proxy_wallet or e.proxy_wallet in seeded:
+                        continue
+                    # A capped watchlist stops growing; nobody is ever removed.
+                    if max_watchlist is not None and len(seeded) >= max_watchlist:
+                        seeds_over_cap.add(e.proxy_wallet)
+                    else:
                         seeded.add(e.proxy_wallet)
                 window_ok = True
             if window_ok:
@@ -2788,6 +2809,7 @@ def run_pipeline(
                 "activity request budget reached" in errors for errors in wallet_errors
             ),
             wallet_error_kinds=_error_kinds(wallet_errors),
+            seeds_over_cap=len(seeds_over_cap),
             kalshi_markets=kalshi_written,
             market_links=links_written,
             trusted_wallets=quality["trusted_wallets"],

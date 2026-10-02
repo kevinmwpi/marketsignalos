@@ -269,3 +269,10 @@ def test_error_kinds_count_wallets_per_label_without_exception_text() -> None:
         ["activity request budget reached", "value: timed out"],
         [],
     ]) == {"activity request budget reached": 1, "positions": 1, "value": 1}
+
+
+def test_error_kinds_keep_the_http_status_but_not_the_url() -> None:
+    error = ("positions: Client error '400 Bad Request' for url "
+             "'https://data-api.polymarket.com/positions?user=0x1&offset=10000'")
+    assert runner._error_kinds([[error], ["positions: timed out"]]) == {
+        "positions": 1, "positions HTTP 400": 1}
