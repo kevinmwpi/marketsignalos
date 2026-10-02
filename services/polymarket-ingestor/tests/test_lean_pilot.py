@@ -363,7 +363,7 @@ def test_backfill_stages_are_off_unless_configured(tmp_path: Path) -> None:
     assert planned["due"] == ["collect", "score"]
 
 
-@pytest.mark.parametrize("stage", ["entry_prices", "closing_lines"])
+@pytest.mark.parametrize("stage", ["entry_prices", "closing_lines", "horizon"])
 def test_an_interrupted_backfill_run_needs_no_recovery(tmp_path: Path, stage: str) -> None:
     clock = Clock()
     config = pilot.PilotConfig(**{f"{stage}_every_seconds": 3600})
@@ -410,6 +410,7 @@ def test_the_deployed_config_is_valid_and_enables_both_backfills() -> None:
     config = pilot.PilotConfig(**json.loads(path.read_text(encoding="utf-8")))
     assert config.entry_prices_every_seconds > 0
     assert config.closing_lines_every_seconds > 0
+    assert config.horizon_every_seconds == 86400
     # The backfills share the daily runtime allowance with hourly collection, so
     # their combined worst case must stay a small part of it.
     worst_case = sum(86400 // every * max_seconds for every, max_seconds in (
@@ -505,3 +506,18 @@ def test_the_watchlist_cap_reaches_the_pipeline(
     assert seen["max_watchlist"] is None  # 0 means no cap
     with pytest.raises(ValueError):
         pilot.PilotConfig(max_watchlist_wallets=-1)
+
+
+def test_the_horizon_diagnostic_runs_after_the_backfills_and_before_scoring(
+    tmp_path: Path,
+) -> None:
+    config = pilot.PilotConfig(entry_prices_every_seconds=3600, closing_lines_every_seconds=3600,
+                               horizon_every_seconds=86400)
+    assert pilot.plan_cycle(tmp_path, config, now=Clock().now())["due"] == [
+        "collect", "entry_prices", "closing_lines", "horizon", "score"]
+
+
+def test_the_horizon_stage_writes_a_report_from_an_empty_directory(tmp_path: Path) -> None:
+    result = pilot._execute_stage("horizon", tmp_path, pilot.PilotConfig(), "r1")
+    assert result["status"] == "succeeded" and result["resolved_bets"] == 0
+    assert list((tmp_path / "diagnostics" / "horizon").glob("*.json"))

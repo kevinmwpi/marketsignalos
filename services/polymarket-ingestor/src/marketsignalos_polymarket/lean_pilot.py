@@ -30,7 +30,7 @@ SCHEMA_VERSION = 1
 
 # Fields where 0 means "off" or "no limit".
 _ZERO_ALLOWED = frozenset({"entry_prices_every_seconds", "closing_lines_every_seconds",
-                           "max_watchlist_wallets"})
+                           "horizon_every_seconds", "max_watchlist_wallets"})
 
 
 @dataclass(frozen=True)
@@ -58,6 +58,9 @@ class PilotConfig:
     # No cycle starts with less free space than this on the data volume. A write
     # that fails mid-collection leaves recovery_required set; skipping is safe.
     min_free_disk_mb: int = 512
+    # Gate-13 horizon diagnostic (horizon_diagnostic.py): reads the stores and
+    # writes one small report a day. 0 disables it.
+    horizon_every_seconds: int = 0
     # The volume cannot grow past 5 GB on Railway Hobby, and every wallet added
     # keeps its activity history, so the watchlist stops growing here. 0 = no cap.
     max_watchlist_wallets: int = 0
@@ -213,14 +216,15 @@ def _storage_mb(data_dir: Path) -> dict[str, float]:
 
 
 # Run order within a cycle: collection first, then the price backfills for what
-# was collected, then scoring.
-STAGES = ("collect", "entry_prices", "closing_lines", "score")
+# was collected, then the diagnostic that reads them, then scoring.
+STAGES = ("collect", "entry_prices", "closing_lines", "horizon", "score")
 
 
 def _stage_intervals(config: PilotConfig) -> list[tuple[str, int]]:
     intervals = {"collect": config.collect_every_seconds,
                  "entry_prices": config.entry_prices_every_seconds,
                  "closing_lines": config.closing_lines_every_seconds,
+                 "horizon": config.horizon_every_seconds,
                  "score": config.score_every_seconds}
     return [(name, intervals[name]) for name in STAGES if intervals[name] > 0]
 
@@ -273,6 +277,9 @@ def _execute_stage(stage: str, data_dir: Path, config: PilotConfig,
         from . import entry_prices
         return entry_prices.run_pending(data_dir, limit=config.entry_prices_per_cycle,
                                         max_seconds=config.entry_prices_max_seconds)
+    if stage == "horizon":  # read-only apart from its own report
+        from . import horizon_diagnostic
+        return horizon_diagnostic.run(data_dir)
     if stage == "closing_lines":
         from . import closing_lines
         return closing_lines.run_pending(data_dir, limit=config.closing_lines_per_cycle,
