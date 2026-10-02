@@ -984,3 +984,22 @@ Answer these before Stage 1; each changes what gets built.
 
    Choose h before looking at gate 13 counts for any wallet. The chosen definition
    becomes a new score version.
+
+   The diagnostic is `horizon_diagnostic.py`, run daily by the pilot worker. It
+   writes `diagnostics/horizon/<date>.json` and prints the same numbers in the
+   Railway log line, for h = 1, 6, 24, 72 and 168 hours, per horizon and on the
+   bets referenced at every horizon (the common set). It never computes gate
+   counts.
+
+   *Proposed selection rule, recorded 2026-10-02 before any report existed;
+   needs owner sign-off, and any later change must be justified in writing:*
+   wait for at least 500 bets from at least 20 wallets in the common set. Then
+   take the longest horizon whose common-set `near_outcome` share is at most
+   0.05, provided at least half of the resolved bets whose window has been
+   fetched have a reference at it and its CLV-win correlation is positive.
+   Longer horizons give the market more time to agree with a good entry, so they
+   carry more signal; the leakage bound stops that turning into the outcome. The
+   correlation is a floor, not a target: picking the horizon that best predicts
+   winning would rebuild the circularity this decision removes. If no horizon
+   qualifies, post-entry CLV cannot be measured without leakage on this data, and
+   gate 13 is redesigned or dropped, with that recorded here.
