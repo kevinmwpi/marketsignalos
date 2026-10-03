@@ -33,6 +33,8 @@ _ZERO_ALLOWED = frozenset({"entry_prices_every_seconds", "closing_lines_every_se
                            "horizon_every_seconds", "cohort_every_seconds",
                            "max_watchlist_wallets"})
 _LEADERBOARD_WINDOWS = frozenset({"day", "week", "month", "all"})
+_LEADERBOARD_METRICS = frozenset({"volume", "profit"})
+_TEXT_FIELDS = frozenset({"leaderboard_window", "leaderboard_metric"})
 
 
 @dataclass(frozen=True)
@@ -73,8 +75,11 @@ class PilotConfig:
     # every cycle that scores, and in the first cycle after a score it has not
     # acted on yet. 0 disables it.
     cohort_every_seconds: int = 0
-    # Volume leaderboard window that seeds the watchlist.
+    # Leaderboard window and ranking that seed the watchlist. Profit ranking selects
+    # wallets on recent winning, so backward-looking results from a profit-seeded
+    # cohort are not evidence (blueprint decision 6, 2026-10-03).
     leaderboard_window: str = "day"
+    leaderboard_metric: str = "volume"
     # The volume cannot grow past 5 GB on Railway Hobby, and every wallet added
     # keeps its activity history, so the watchlist stops growing here. 0 = no cap.
     max_watchlist_wallets: int = 0
@@ -82,8 +87,10 @@ class PilotConfig:
     def __post_init__(self) -> None:
         if self.leaderboard_window not in _LEADERBOARD_WINDOWS:
             raise ValueError(f"leaderboard_window must be one of {sorted(_LEADERBOARD_WINDOWS)}")
+        if self.leaderboard_metric not in _LEADERBOARD_METRICS:
+            raise ValueError(f"leaderboard_metric must be one of {sorted(_LEADERBOARD_METRICS)}")
         for name, value in asdict(self).items():
-            if name == "leaderboard_window":
+            if name in _TEXT_FIELDS:
                 continue
             if type(value) is not int or value < 0:
                 raise ValueError(f"{name} must be a non-negative integer")
@@ -331,6 +338,7 @@ def _execute_stage(stage: str, data_dir: Path, config: PilotConfig,
     from .runner import run_pipeline
     result = run_pipeline(
         windows=[config.leaderboard_window], leaderboard_limit=config.leaderboard_limit,
+        seed_metrics=(config.leaderboard_metric,),
         wallet_batch_size=config.wallet_batch_size, skip_enrichment=True,
         max_pages_per_wallet=2, market_pages=1, refresh_reference=False,
         max_activity_requests_per_wallet=config.activity_requests_per_wallet,

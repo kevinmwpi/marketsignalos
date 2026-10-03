@@ -583,10 +583,16 @@ def test_collection_uses_the_seed_window_and_skips_excluded_wallets(
     monkeypatch.setattr(runner, "run_pipeline", fake_pipeline)
     cohort.record_exclusions(tmp_path, {"0xbot": "systematic"},
                              now=datetime(2026, 10, 3, tzinfo=UTC))
-    pilot._execute_stage("collect", tmp_path, pilot.PilotConfig(leaderboard_window="month"), "r")
+    config = pilot.PilotConfig(leaderboard_window="month", leaderboard_metric="profit")
+    pilot._execute_stage("collect", tmp_path, config, "r")
     assert seen["windows"] == ["month"] and seen["exclude_wallets"] == {"0xbot"}
+    assert seen["seed_metrics"] == ("profit",)
+    pilot._execute_stage("collect", tmp_path, pilot.PilotConfig(), "r")
+    assert seen["seed_metrics"] == ("volume",)  # the default, as before
     with pytest.raises(ValueError):
         pilot.PilotConfig(leaderboard_window="year")
+    with pytest.raises(ValueError):
+        pilot.PilotConfig(leaderboard_metric="roi")
 
 
 def test_cohort_maintenance_runs_right_after_scoring(tmp_path: Path) -> None:
@@ -615,3 +621,4 @@ def test_cohort_maintenance_runs_right_after_scoring(tmp_path: Path) -> None:
     path = Path(__file__).resolve().parents[3] / "deploy" / "lean-pilot.json"
     deployed = pilot.PilotConfig(**json.loads(path.read_text(encoding="utf-8")))
     assert deployed.cohort_every_seconds == 86400 and deployed.leaderboard_window == "month"
+    assert deployed.leaderboard_metric == "profit"  # since 2026-10-03

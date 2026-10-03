@@ -220,13 +220,16 @@ def test_run_writes_the_days_report(pilot_dir: Path) -> None:
 # ── The approved selection rule ──────────────────────────────────────────────
 
 def _report(per_h: dict[str, tuple[float, float, float]], bets: int = 600,
-            wallets: int = 25) -> dict[str, Any]:
-    """A report with (near_outcome, coverage, clv_win_corr) per horizon."""
+            wallets: int = 25, near_all: dict[str, float | None] | None = None,
+            ) -> dict[str, Any]:
+    """A report with (near_outcome, coverage, clv_win_corr) per horizon. Leakage on
+    every referenced bet equals the common set's unless ``near_all`` says otherwise."""
     common: dict[str, Any] = {"bets": bets}
     horizons: dict[str, Any] = {}
     for key, (near, coverage, corr) in per_h.items():
         common[key] = {"near_outcome": near, "clv_win_corr": corr, "wallets": wallets}
-        horizons[key] = {"coverage": coverage}
+        horizons[key] = {"coverage": coverage,
+                         "near_outcome": (near_all or {}).get(key, near)}
     return {"common": common, "horizons": horizons}
 
 
@@ -245,6 +248,20 @@ def test_the_rule_takes_the_longest_horizon_that_passes_every_condition() -> Non
     selection = select_horizon(report, (1, 6, 24, 72, 168))
     assert selection == {"eligible": True, "horizon": "6h", "rejected_longer": {
         "168h": "near_outcome 0.2", "72h": "coverage 0.4", "24h": "clv_win_corr 0.0"}}
+
+
+def test_the_bound_holds_on_every_scored_bet_not_only_the_common_set() -> None:
+    """2026-10-03 12:15 UTC: 1 h leaked 0.017 on the common set (bets still open 6 h
+    later) but 0.0595 on all 245 bets referenced at 1 h, the bets it would score."""
+    report = _report({"6h": (0.25, 0.55, 0.51), "1h": (0.017, 0.98, 0.23)},
+                     near_all={"1h": 0.0595})
+    assert select_horizon(report, (1, 6)) == {"eligible": True, "horizon": None,
+                                              "rejected_longer": {
+        "6h": "near_outcome 0.25", "1h": "near_outcome 0.0595 on all referenced bets"}}
+    report["horizons"]["1h"]["near_outcome"] = 0.04
+    assert select_horizon(report, (1, 6))["horizon"] == "1h"
+    report["horizons"]["1h"]["near_outcome"] = None
+    assert select_horizon(report, (1, 6))["horizon"] is None
 
 
 def test_the_rule_can_find_no_horizon() -> None:
@@ -288,3 +305,4 @@ def test_the_first_eligible_report_decides_and_is_never_replaced(
     assert third["decision"]["horizon"] == "24h"  # but the decision stands
     saved = json.loads(decision.read_text())
     assert saved["rule"] == RULE and saved["horizons_hours"] == [1, 6]
+    assert saved["near_outcome_bound_on"] == ["common", "horizons"]

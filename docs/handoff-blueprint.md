@@ -997,7 +997,7 @@ Answer these before Stage 1; each changes what gets built.
    by the owner the same day; any later change must be justified in writing:*
    wait for at least 500 bets from at least 20 wallets in the common set. Then
    take the longest horizon whose common-set `near_outcome` share is at most
-   0.05, provided at least half of the resolved bets whose window has been
+   0.05 (and, since the third amendment, also on every bet referenced at it), provided at least half of the resolved bets whose window has been
    fetched have a reference at it (`coverage`, per horizon) and its common-set
    CLV-win correlation is positive.
    Longer horizons give the market more time to agree with a good entry, so they
@@ -1033,6 +1033,20 @@ Answer these before Stage 1; each changes what gets built.
    volume leaderboard. The diagnostic's population therefore changes; no decision
    had been recorded before it did.
 
+   *Seeding change, approved by the owner 2026-10-03 (12:40 UTC):* the monthly
+   volume leaderboard was no better. Of the 57 wallets the 08:12 score labelled,
+   31 were `systematic` (about 31 of 49 new seeds, 63%), and their rows were
+   218,620 of the activity store's. The pilot now seeds from the monthly
+   **profit** leaderboard (`leaderboard_metric: profit`). Ranking by profit
+   selects wallets *because their recent bets won*, and favours one-large-win
+   wallets that `run_pipeline`'s default excludes for that reason. The cohort is
+   therefore outcome-selected: backward-looking results from it (win rate, skill
+   likelihood or CLV on bets already settled) are not evidence of skill, and any
+   report built on it must say so. Prospective results (bets placed after a
+   wallet entered the cohort) and the horizon diagnostic, which measures market
+   convergence rather than wallet skill, are not affected. The 26 volume-seeded
+   wallets that survived the purges stay in the watchlist.
+
    *A scheduled end is not a close (2026-10-03).* The 03:08 UTC report kept 110 bets
    and found no reference for 11 of 12 fetched bets at 24 h and 8 of 8 at 72 h:
    either markets resolving long before their scheduled end, or gaps in thin
@@ -1061,3 +1075,16 @@ Answer these before Stage 1; each changes what gets built.
    500 common bets from 20 wallets. Filtering on the actual close instead was
    rejected: it uses information from after entry, keeps about 5% of bets, and
    favours markets that resolve at their deadline.
+
+   *Third amendment, approved by the owner 2026-10-03 (12:30 UTC), before any
+   report was eligible:* the leakage bound must hold on every bet referenced at a
+   horizon as well as on the common set (`select_horizon`). The common set holds
+   only bets whose market was still open at the longest horizon, and that
+   condition is itself information from after entry: it removes the markets about
+   to resolve, so the common set is cleaner than the bets a chosen horizon would
+   score. This tightens the rule; nothing was relaxed. It was made after numbers
+   had been seen, recorded here: the 12:15 UTC report had 136 common bets from 17
+   wallets, with `near_outcome` at 1 h of 0.017 on the common set and 0.0595 on
+   all 245 bets referenced at 1 h. Under the second amendment alone the rule would
+   have been on course to choose 1 h; under this one 1 h fails on today's numbers,
+   and the decision is still taken at 500 common bets from 20 wallets.

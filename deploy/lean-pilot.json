@@ -20,5 +20,6 @@
   "metadata_conditions_per_cycle": 600,
   "metadata_requests_per_cycle": 48,
   "cohort_every_seconds": 86400,
-  "leaderboard_window": "month"
+  "leaderboard_window": "month",
+  "leaderboard_metric": "profit"
 }
