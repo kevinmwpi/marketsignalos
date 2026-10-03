@@ -14,11 +14,13 @@ from marketsignalos_polymarket.entry_prices import (
     OBSERVATIONS_FILE,
     RECEIPTS_FILE,
     STORE_DIR,
+    MarketLookup,
     backfill,
     chunk_start,
+    close_times,
     latest_receipts,
     load_entry_prices,
-    lookup_yes_tokens,
+    lookup_markets,
     needed_chunks,
     price_after,
     run_pending,
@@ -28,6 +30,7 @@ from marketsignalos_polymarket.entry_prices import (
 C = CHUNK_SECONDS
 W = 2870 * C  # 2025-01-02T00:00:00Z, a chunk boundary
 HOUR = 3600
+CLOSED_AT = "2025-01-20 06:30:00+00"  # Gamma's closedTime format
 
 
 def _at(ts: int) -> datetime:
@@ -38,7 +41,8 @@ class FakeApi:
     """Gamma + CLOB stand-in. Gamma honours the ``closed`` filter, as the real one does.
 
     ``markets`` maps condition id to (YES token, closed); ``history`` maps token id to
-    (t, p) points or an error.
+    (t, p) points or an error. Every market has a scheduled end; closed ones also have
+    a ``closedTime``.
     """
 
     def __init__(self, markets: dict[str, tuple[str, bool]],
@@ -51,7 +55,9 @@ class FakeApi:
         self.calls.append((url, dict(params)))
         if url.endswith("/markets"):
             closed = params["closed"] == "true"
-            return [{"conditionId": cid, "clobTokenIds": json.dumps([token, token + "-no"])}
+            return [{"conditionId": cid, "clobTokenIds": json.dumps([token, token + "-no"]),
+                     "endDate": "2025-03-01T00:00:00Z",
+                     **({"closedTime": CLOSED_AT} if is_closed else {})}
                     for cid in params["condition_ids"]
                     for token, is_closed in [self.markets.get(cid, ("", not closed))]
                     if token and is_closed == closed]
@@ -124,6 +130,12 @@ def test_select_pending_waits_for_ended_chunks_and_skips_final_ones() -> None:
         ("0xe", W + C), ("0xa", W), ("0xd", W)]
     assert select_pending(needed, receipts, now=now, limit=2) == [("0xe", W + C), ("0xa", W)]
     assert select_pending(needed, receipts, now=now, limit=0) == []
+    # Priority chunks jump the queue, retries included, keeping the order among them.
+    priority = {("0xa", W), ("0xd", W), ("0xb", W), ("0xa", W + 2 * C), ("0xz", W)}
+    assert select_pending(needed, receipts, now=now, limit=10, priority=priority) == [
+        ("0xa", W), ("0xd", W), ("0xe", W + C)]
+    assert select_pending(needed, receipts, now=now, limit=1, priority=priority) == [
+        ("0xa", W)]
     receipts[("0xa", W)] = ("empty", now)  # empty is final: no order-book history
     assert ("0xa", W) not in select_pending(needed, receipts, now=now, limit=10)
 
@@ -141,7 +153,9 @@ def test_latest_receipts_apply_the_observed_before_cutoff(tmp_path: Path) -> Non
 
 def test_token_lookup_asks_for_open_markets_then_closed_ones() -> None:
     api = FakeApi({"0xa": ("tok-a", False), "0xb": ("tok-b", True)}, {})
-    assert lookup_yes_tokens(["0xa", "0xb", "0xc"], api) == {"0xa": "tok-a", "0xb": "tok-b"}
+    # Only an actual close counts, never the scheduled end date.
+    assert lookup_markets(["0xa", "0xb", "0xc"], api) == {
+        "0xa": MarketLookup("tok-a", ""), "0xb": MarketLookup("tok-b", "2025-01-20T06:30:00Z")}
     asked = [(params["closed"], params["condition_ids"]) for _, params in api.calls]
     assert asked == [("false", ["0xa", "0xb", "0xc"]), ("true", ["0xb", "0xc"])]
 
@@ -162,6 +176,8 @@ def test_backfill_records_every_outcome_and_keeps_points_inside_the_chunk(
     assert summary.observations_written == 2 and not summary.stopped_early
     receipts = {row["condition_id"]: row for row in _rows(store / RECEIPTS_FILE)}
     assert receipts["0xa"]["points"] == 2 and receipts["0xa"]["token_id"] == "tok-a"
+    assert receipts["0xa"]["market_closed_time"] == "2025-01-20T06:30:00Z"
+    assert receipts["0xd"]["market_closed_time"] == ""  # still open
     assert receipts["0xa"]["chunk_end"] == _at(W + C).isoformat().replace("+00:00", "Z")
     assert receipts["0xd"]["error"] == "boom"
     observations = _rows(store / OBSERVATIONS_FILE)
@@ -220,8 +236,39 @@ def test_run_pending_is_partial_without_details_when_the_lookup_fails(tmp_path: 
 
     result = run_pending(tmp_path, limit=10, max_seconds=60, get=broken, now=_at(W + 3 * C))
     assert result == {"status": "partial", "chunks_needed": 2, "selected": 2,
+                      "priority_open": 0, "priority_selected": 0,
                       "error_type": "ValueError"}
     assert not (tmp_path / STORE_DIR / RECEIPTS_FILE).exists()
+
+
+def test_run_pending_fetches_priority_chunks_first_and_counts_them(tmp_path: Path) -> None:
+    _write_activity(tmp_path, [_buy("0xold", W), _buy("0xnew", W + C)])
+    api = FakeApi({"0xold": ("tok-o", True), "0xnew": ("tok-n", True)},
+                  {"tok-o": [(W, 0.5)], "tok-n": [(W + C, 0.5)]})
+    now = _at(W + 3 * C + 2 * HOUR)
+    priority = {("0xold", W), ("0xold", W + C), ("0xmissing", W)}
+
+    first = run_pending(tmp_path, limit=1, max_seconds=60, get=api, now=now,
+                        priority=priority)
+    assert (first["priority_open"], first["priority_selected"]) == (2, 1)
+    assert [row["condition_id"] for row in _rows(tmp_path / STORE_DIR / RECEIPTS_FILE)] == [
+        "0xold"]  # newest-first alone would have picked 0xnew
+    second = run_pending(tmp_path, limit=10, max_seconds=60, get=api, now=now,
+                         priority=priority)
+    assert (second["priority_open"], second["priority_selected"]) == (1, 1)
+    assert run_pending(tmp_path, limit=10, max_seconds=60, get=api, now=now,
+                       priority=priority)["priority_open"] == 0
+
+
+def test_close_times_come_from_the_latest_receipt_that_has_one(tmp_path: Path) -> None:
+    observed = _at(W + 2 * C)
+    _write_receipts(tmp_path, [
+        {**_receipt("0xA", W, "ok", observed), "market_closed_time": "2025-01-20T06:30:00Z"},
+        _receipt("0xa", W + C, "ok", observed),  # written before close times were kept
+        {**_receipt("0xb", W, "ok", observed), "market_closed_time": ""},
+    ])
+    assert close_times(tmp_path) == {"0xa": int(datetime(2025, 1, 20, 6, 30, tzinfo=UTC)
+                                                .timestamp())}
 
 
 def test_run_pending_with_nothing_to_do_makes_no_requests(tmp_path: Path) -> None:

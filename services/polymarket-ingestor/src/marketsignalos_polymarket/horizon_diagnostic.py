@@ -6,8 +6,11 @@ each buy; this diagnostic supplies the evidence for choosing *h*. For every cand
 horizon it reports, over bets on resolved binary markets:
 
   - coverage: bets with a reference price, bets still waiting on the backfill
-    (``pending``), and bets with none because the market had stopped publishing
-    prices by then (``no_reference``, usually because it closed first);
+    (``pending``), and bets with none (``no_reference``), split by reason: the
+    market had closed by the horizon (``closed``, from Gamma's ``closedTime``), its
+    fetched series stops before the horizon with no close time to explain it
+    (``ended``), or the series continues past the horizon with no point within
+    ``price_after``'s tolerance before it (``gap``);
   - leakage: the share of referenced bets whose reference already sits within 0.01
     of the bet's final value, beside the same share for the last pre-close price on
     the same bets (the reference rejected on 2026-09-30);
@@ -27,7 +30,13 @@ Only fills placed at least seven days before the market's scheduled end count
 (``RULE["min_hours_to_scheduled_end"]``): the end date is known at entry, so the
 filter adds no leakage, every horizon is defined for every remaining bet, and these
 are the bets a person has time to copy. The funnel reports how many resolved bets
-the filter keeps.
+the filter keeps, and how many of those, among markets whose actual close time is
+known, closed within seven days of the bet anyway (an early resolution the scheduled
+end did not predict).
+
+``priority_chunks`` lists the entry-price chunks these bets reach and
+``priority_markets`` their markets; the lean pilot's entry-price and closing-line
+stages fetch them before any other.
 
 A bet is one (wallet, condition, outcome). Its CLV at *h* is the USDC-weighted mean,
 over its BUY fills whose window has been fetched, of (reference - fill price), where
@@ -48,7 +57,7 @@ from typing import Any, NamedTuple
 
 from . import closing_lines, entry_prices
 from .closing_lines import ACTIVITY_FILE
-from .entry_prices import CHUNK_SECONDS, FINAL_STATUSES, chunk_start, price_after
+from .entry_prices import CHUNK_SECONDS, FINAL_STATUSES, ChunkKey, chunk_start, price_after
 
 HORIZONS_HOURS = (1, 6, 24, 72, 168)
 NEAR_OUTCOME = 0.01
@@ -96,6 +105,7 @@ class _HorizonTally:
     near: list[float] = field(default_factory=list)
     near_preclose: list[float] = field(default_factory=list)
     wallets: list[str] = field(default_factory=list)
+    missing: defaultdict[str, int] = field(default_factory=lambda: defaultdict(int))
 
 
 @dataclass(slots=True)
@@ -184,18 +194,15 @@ def diagnose(
     """The full report for a pilot data directory. Reads only; writes nothing."""
     now = now or datetime.now(UTC)
     horizons = tuple(horizons_hours)
-    states = market_states(data_dir / MARKETS_FILE)
-    winners = {cid: state.winner for cid, state in states.items() if state.winner is not None}
-    ends = {cid: state.scheduled_end for cid, state in states.items()
-            if state.scheduled_end is not None}
     scan = _BuyScan()
-    bets = resolved_bets(data_dir / ACTIVITY_FILE, winners, scan, scheduled_ends=ends,
-                         min_seconds_to_end=int(RULE["min_hours_to_scheduled_end"]) * 3600)
+    states, winners, bets = _eligible_bets(data_dir, scan)
     entry_store = data_dir / entry_prices.STORE_DIR
     series = entry_prices.load_entry_prices(entry_store)
     receipts = entry_prices.latest_receipts(entry_store)
     final_chunks = {key for key, (status, _) in receipts.items() if status in FINAL_STATUSES}
-    preclose = closing_lines.load_closing_lines(data_dir / closing_lines.STORE_DIR).points
+    closing_store = data_dir / closing_lines.STORE_DIR
+    preclose = closing_lines.load_closing_lines(closing_store).points
+    closes = {**closing_lines.close_times(closing_store), **entry_prices.close_times(entry_store)}
 
     tallies = {h: _HorizonTally() for h in horizons}
     common: dict[int, _HorizonTally] = {h: _HorizonTally() for h in horizons}
@@ -219,6 +226,9 @@ def diagnose(
                     referenced.append((fill, _outcome_price(yes, outcome)))
             if not referenced:
                 tallies[h].no_reference += 1
+                first = min(fill.timestamp for fill in ready)
+                tallies[h].missing[_missing_reason(series.get(cid, []), first, seconds,
+                                                   closes.get(cid))] += 1
                 continue
             total = sum(fill.weight for fill, _ in referenced)
             clv = sum(fill.weight * (ref - fill.price) for fill, ref in referenced) / total
@@ -234,7 +244,7 @@ def diagnose(
         "generated_at": now.isoformat(),
         "near_outcome_threshold": NEAR_OUTCOME,
         "resolved_markets": len(winners),
-        "funnel": _funnel(scan, states, data_dir / closing_lines.STORE_DIR, len(bets)),
+        "funnel": _funnel(scan, states, closing_store, bets, closes),
         "resolved_bets": len(bets),
         "wallets": len({wallet for wallet, _, _ in bets}),
         "horizons": {f"{h}h": _summary(tallies[h], with_coverage=True) for h in horizons},
@@ -277,6 +287,23 @@ def select_horizon(report: dict[str, Any], horizons: Iterable[int]) -> dict[str,
     return {"eligible": True, "horizon": None, "rejected_longer": failures}
 
 
+def priority_chunks(data_dir: Path) -> set[ChunkKey]:
+    """Every entry-price chunk the diagnostic's bets reach, from each fill to the
+    longest horizon after it: the chunks the decision is waiting on."""
+    _, _, bets = _eligible_bets(data_dir)
+    longest = max(HORIZONS_HOURS) * 3600
+    return {(cid, start) for (_, cid, _), fills in bets.items() for fill in fills
+            for start in range(chunk_start(fill.timestamp), fill.timestamp + longest + 1,
+                               CHUNK_SECONDS)}
+
+
+def priority_markets(data_dir: Path) -> set[str]:
+    """The markets of the diagnostic's bets: the closing-line backfill fetches them
+    first, which also records their actual close times."""
+    _, _, bets = _eligible_bets(data_dir)
+    return {cid for _, cid, _ in bets}
+
+
 def run(data_dir: Path, *, now: datetime | None = None) -> dict[str, Any]:
     """Lean-pilot stage: write the day's report and return it as the stage result.
 
@@ -307,15 +334,45 @@ def _write_json(path: Path, payload: dict[str, Any]) -> None:
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
-def _funnel(scan: _BuyScan, states: dict[str, MarketState],
-            closing_store: Path, eligible_bets: int) -> dict[str, int]:
+def _eligible_bets(
+    data_dir: Path, scan: _BuyScan | None = None,
+) -> tuple[dict[str, MarketState], dict[str, int], dict[BetKey, list[_Fill]]]:
+    """Market states, resolved winners and the bets the rule counts: fills placed at
+    least ``min_hours_to_scheduled_end`` before the market's scheduled end."""
+    states = market_states(data_dir / MARKETS_FILE)
+    winners = {cid: state.winner for cid, state in states.items() if state.winner is not None}
+    ends = {cid: state.scheduled_end for cid, state in states.items()
+            if state.scheduled_end is not None}
+    bets = resolved_bets(data_dir / ACTIVITY_FILE, winners, scan, scheduled_ends=ends,
+                         min_seconds_to_end=int(RULE["min_hours_to_scheduled_end"]) * 3600)
+    return states, winners, bets
+
+
+def _missing_reason(series: list[tuple[int, float]], buy_ts: int, seconds: int,
+                    closed_at: int | None) -> str:
+    """Why ``price_after`` found no reference for a fill (see the module docstring)."""
+    target = buy_ts + seconds
+    if closed_at is not None and closed_at <= target:
+        return "closed"
+    if series and series[-1][0] > target:
+        return "gap"
+    return "ended"
+
+
+def _funnel(scan: _BuyScan, states: dict[str, MarketState], closing_store: Path,
+            bets: dict[BetKey, list[_Fill]], closes: dict[str, int]) -> dict[str, int]:
     """Where bought markets drop out before a bet can be scored: missing from the
     market store, stored but open, closed without a clear winner. The closing-line
     backfill asks Gamma for closed markets directly, so its receipts show how many
-    bought markets Gamma already reports closed, independent of the store."""
+    bought markets Gamma already reports closed, independent of the store.
+
+    The last two counts check the scheduled-end filter: among kept bets whose
+    market's actual close is known, those it closed within seven days of the bet's
+    first fill."""
     gamma_closed = {cid for cid, (status, _) in closing_lines.latest_receipts(closing_store)
                     .items() if status in ("ok", "no_history")}
     bought = scan.markets
+    window = int(RULE["min_hours_to_scheduled_end"]) * 3600
     return {
         "buy_fills": scan.fills,
         "bought_markets": len(bought),
@@ -324,7 +381,11 @@ def _funnel(scan: _BuyScan, states: dict[str, MarketState],
         "resolved_in_store": sum(states[cid].winner is not None for cid in bought if cid in states),
         "closed_per_gamma_lookup": len(bought & gamma_closed),
         "resolved_bets": len(scan.resolved_bets),
-        "bets_7d_before_scheduled_end": eligible_bets,
+        "bets_7d_before_scheduled_end": len(bets),
+        "bets_7d_close_known": sum(cid in closes for _, cid, _ in bets),
+        "bets_7d_closed_within_7d": sum(
+            closes[cid] - min(fill.timestamp for fill in fills) < window
+            for (_, cid, _), fills in bets.items() if cid in closes),
     }
 
 
@@ -369,6 +430,7 @@ def _summary(tally: _HorizonTally, *, with_coverage: bool) -> dict[str, Any]:
     if with_coverage:
         fetched = n + tally.no_reference
         summary = {"pending": tally.pending, "no_reference": tally.no_reference,
+                   "no_reference_reasons": dict(sorted(tally.missing.items())),
                    "coverage": _round(n / fetched if fetched else None), **summary}
     return summary
 

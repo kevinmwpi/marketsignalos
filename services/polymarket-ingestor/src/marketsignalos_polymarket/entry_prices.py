@@ -14,7 +14,10 @@ keyed by (condition id, chunk start):
   - a chunk is fetched only after it has ended, so its prices can no longer change,
     and a final chunk (``ok`` or ``empty``) is never fetched again;
   - new buys only add the chunks they reach;
-  - the YES token is fetched, matching how CLV reads prices; NO is 1 - YES.
+  - the YES token is fetched, matching how CLV reads prices; NO is 1 - YES;
+  - each receipt keeps the market's actual close time (Gamma ``closedTime``) when the
+    token lookup saw one, so the horizon diagnostic can tell a market that closed
+    before a horizon from a gap in its series.
 
 A post-entry price is outcome-free only if the outcome was still unknown at the
 horizon. Markets that settle within it stop publishing points, and ``price_after``
@@ -34,10 +37,11 @@ import json
 import logging
 import time
 from collections.abc import Callable, Iterable
+from collections.abc import Set as AbstractSet
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 
 import httpx
 
@@ -54,6 +58,7 @@ from .closing_lines import (
     _read_jsonl,
     _utcnow_iso,
     http_get_json,
+    parse_close,
     parse_token_ids,
 )
 from .market_rules import GAMMA_BASE_URL
@@ -74,6 +79,11 @@ RETRY_AFTER = timedelta(hours=24)
 ChunkKey = tuple[str, int]
 
 
+class MarketLookup(NamedTuple):
+    yes_token: str
+    closed_time: str  # Gamma closedTime as ISO-8601 UTC; empty while open or unknown
+
+
 @dataclass(frozen=True, slots=True)
 class ChunkReceipt:
     condition_id: str
@@ -85,6 +95,7 @@ class ChunkReceipt:
     points: int = 0
     fidelity_minutes: int = FIDELITY_MINUTES
     error: str = ""
+    market_closed_time: str = ""
 
 
 @dataclass(slots=True)
@@ -142,16 +153,32 @@ def latest_receipts(
     return latest
 
 
+def close_times(store: Path) -> dict[str, int]:
+    """Actual close time (Unix seconds) per market, from the latest receipt that
+    recorded one. Receipts written before 2026-10-03 never do."""
+    found: dict[str, int] = {}
+    for row in _read_jsonl(store / RECEIPTS_FILE):
+        closed = _parse_time(row.get("market_closed_time"))
+        cid = str(row.get("condition_id", "")).lower()
+        if cid and closed is not None:
+            found[cid] = int(closed.timestamp())
+    return found
+
+
 def select_pending(
     needed: Iterable[ChunkKey], receipts: dict[ChunkKey, tuple[str, datetime]], *,
     now: datetime, limit: int, retry_after: timedelta = RETRY_AFTER,
+    priority: AbstractSet[ChunkKey] = frozenset(),
 ) -> list[ChunkKey]:
-    """Chunks to fetch next: ended and never tried first (newest first), then retries.
+    """Chunks to fetch next: ended and never tried first (newest first), then retries,
+    with every ``priority`` chunk ahead of every other one in the same order.
 
     Chunks that have not ended yet wait, so every fetch is final. Final chunks are
     skipped for good; a failed chunk waits ``retry_after`` before another attempt.
     Newest first because recent markets have order-book history and matter most for
-    recent-edge scoring; 2021-2022 markets have none and come last.
+    recent-edge scoring; 2021-2022 markets have none and come last. ``priority`` holds
+    the chunks a pending decision is waiting on (the horizon diagnostic's bets), which
+    would otherwise queue behind every newer buy.
     """
     cutoff = int(now.timestamp()) - SETTLE_SECONDS
     fresh: list[ChunkKey] = []
@@ -166,14 +193,18 @@ def select_pending(
             retry.append((receipt[1], key))
     fresh.sort(key=lambda k: (-k[1], k[0]))
     retry.sort()
-    return (fresh + [key for _, key in retry])[:max(0, limit)]
+    ordered = fresh + [key for _, key in retry]
+    ordered = ([key for key in ordered if key in priority]
+               + [key for key in ordered if key not in priority])
+    return ordered[:max(0, limit)]
 
 
-def lookup_yes_tokens(condition_ids: list[str], get: GetJson) -> dict[str, str]:
-    """YES token per condition id. Gamma filters on ``closed``, so ask under both."""
-    tokens: dict[str, str] = {}
+def lookup_markets(condition_ids: list[str], get: GetJson) -> dict[str, MarketLookup]:
+    """YES token and actual close time per condition id. Gamma filters on ``closed``,
+    so ask under both."""
+    found: dict[str, MarketLookup] = {}
     for closed in ("false", "true"):
-        remaining = [cid for cid in condition_ids if cid not in tokens]
+        remaining = [cid for cid in condition_ids if cid not in found]
         for start in range(0, len(remaining), GAMMA_BATCH):
             batch = remaining[start:start + GAMMA_BATCH]
             rows = get(f"{GAMMA_BASE_URL}/markets",
@@ -187,8 +218,11 @@ def lookup_yes_tokens(condition_ids: list[str], get: GetJson) -> dict[str, str]:
                 cid = str(row.get("conditionId", "")).lower()
                 ids = parse_token_ids(row.get("clobTokenIds"))
                 if cid in wanted and ids:
-                    tokens[cid] = ids[0]
-    return tokens
+                    close_ts, close_field = parse_close(row)
+                    found[cid] = MarketLookup(
+                        ids[0], _iso(close_ts) if close_ts is not None
+                        and close_field == "closedTime" else "")
+    return found
 
 
 def fetch_chunk(token_id: str, start: int, get: GetJson) -> list[tuple[int, float]]:
@@ -220,7 +254,7 @@ def backfill(
     if not chunks:
         return summary
     store.mkdir(parents=True, exist_ok=True)
-    tokens = lookup_yes_tokens(sorted({cid for cid, _ in chunks}), get)
+    markets = lookup_markets(sorted({cid for cid, _ in chunks}), get)
     with (store / OBSERVATIONS_FILE).open("a", encoding="utf-8") as obs_out, \
             (store / RECEIPTS_FILE).open("a", encoding="utf-8") as receipt_out:
         for cid, start in chunks:
@@ -228,8 +262,10 @@ def backfill(
                 summary.stopped_early = True
                 break
             observed = _utcnow_iso()
+            market = markets.get(cid, MarketLookup("", ""))
             receipt = ChunkReceipt(cid, _iso(start), _iso(start + CHUNK_SECONDS), "",
-                                   observed, token_id=tokens.get(cid, ""))
+                                   observed, token_id=market.yes_token,
+                                   market_closed_time=market.closed_time)
             observations: list[PriceObservation] = []
             if not receipt.token_id:
                 receipt = _with(receipt, status="no_token")
@@ -262,17 +298,27 @@ def _with(receipt: ChunkReceipt, **changes: Any) -> ChunkReceipt:
 def run_pending(
     data_dir: Path, *, limit: int, max_seconds: float, get: GetJson | None = None,
     now: datetime | None = None, clock: Callable[[], float] = time.monotonic,
+    priority: AbstractSet[ChunkKey] = frozenset(),
 ) -> dict[str, Any]:
     """One bounded pass for the chunks a data directory's buys reach (lean-pilot stage).
 
+    ``priority`` chunks are fetched first (see :func:`select_pending`); the result
+    counts those still without a final receipt, ended or not, and those selected.
     ``partial`` when the pass stopped early, a chunk failed, or the token lookup
     failed. Exception details stay in the log, never the result.
     """
     store = data_dir / STORE_DIR
     needed = needed_chunks(data_dir / ACTIVITY_FILE)
-    pending = select_pending(needed, latest_receipts(store),
-                             now=now or datetime.now(UTC), limit=limit)
-    result: dict[str, Any] = {"chunks_needed": len(needed), "selected": len(pending)}
+    receipts = latest_receipts(store)
+    pending = select_pending(needed, receipts, now=now or datetime.now(UTC), limit=limit,
+                             priority=priority)
+    result: dict[str, Any] = {
+        "chunks_needed": len(needed), "selected": len(pending),
+        "priority_open": sum(key in needed and (key not in receipts
+                                                or receipts[key][0] not in FINAL_STATUSES)
+                             for key in priority),
+        "priority_selected": sum(key in priority for key in pending),
+    }
     if not pending:
         return {"status": "succeeded", **result, "summary": asdict(BackfillSummary())}
     deadline = clock() + max_seconds

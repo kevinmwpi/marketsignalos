@@ -221,6 +221,10 @@ def test_selection_skips_final_markets_and_waits_before_retrying_the_rest() -> N
     assert select_pending(ids, receipts, now=now, limit=10) == [
         "0xnew1", "0xnew2", "0xerror_older", "0xopen_old"]  # never tried, then stalest retry
     assert select_pending(ids, receipts, now=now, limit=3) == ["0xnew1", "0xnew2", "0xerror_older"]
+    # Priority markets jump the queue in the same order; final ones stay skipped.
+    priority = {"0xopen_old", "0xnew2", "0xok", "0xelsewhere"}
+    assert select_pending(ids, receipts, now=now, limit=10, priority=priority) == [
+        "0xnew2", "0xopen_old", "0xnew1", "0xerror_older"]
 
 
 class Tick:
@@ -258,6 +262,20 @@ def test_worker_pass_fetches_what_wallets_traded_and_is_bounded(tmp_path: Path) 
     assert second["selected"] == 1  # only 0xc is left; it is still open
     assert second["summary"]["by_status"] == {"not_closed": 1}
     assert run_pending(tmp_path, limit=2, max_seconds=60, get=fake, now=now)["selected"] == 0
+
+
+def test_worker_pass_fetches_priority_markets_first(tmp_path: Path) -> None:
+    (tmp_path / "polymarket_activity.jsonl").write_text("".join(
+        json.dumps({"type": "TRADE", "condition_id": c}) + "\n" for c in ("0xa", "0xb", "0xc")))
+    fake = FakeClob({c: _market(c, "t" + c) for c in ("0xa", "0xb", "0xc")},
+                    {"t0xa": [], "t0xb": [], "t0xc": [(CLOSE - 60, 0.5)]})
+    now = datetime(2026, 9, 30, tzinfo=UTC)
+    priority = {"0xc", "0xuntraded"}
+    first = run_pending(tmp_path, limit=1, max_seconds=60, get=fake, now=now, priority=priority)
+    assert (first["priority_open"], first["priority_selected"]) == (1, 1)
+    assert set(latest_receipts(tmp_path / STORE_DIR)) == {"0xc"}
+    again = run_pending(tmp_path, limit=1, max_seconds=60, get=fake, now=now, priority=priority)
+    assert (again["priority_open"], again["priority_selected"]) == (0, 0)
 
 
 def test_a_failed_market_lookup_is_partial_and_keeps_details_out_of_the_result(

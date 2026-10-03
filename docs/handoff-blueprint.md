@@ -1030,3 +1030,18 @@ Answer these before Stage 1; each changes what gets built.
    labels `systematic` and deletes its data; the watchlist refills from the monthly
    volume leaderboard. The diagnostic's population therefore changes; no decision
    had been recorded before it did.
+
+   *Open question, 2026-10-03 (no rule change):* a scheduled end is not a close.
+   The 03:08 UTC report kept 110 bets (16 wallets) and, among bets whose window had
+   been fetched, found no reference for 11 of 12 at 24 h and 8 of 8 at 72 h, the
+   pattern of markets that resolve long before their scheduled end. With n this
+   small it may equally be gaps in thin markets' hourly series. Two changes make it
+   measurable without touching the rule: every `no_reference` is now split into
+   `closed` (Gamma `closedTime` before the horizon), `ended` and `gap`, and the
+   funnel counts kept bets whose market actually closed within seven days of entry
+   (`bets_7d_closed_within_7d` of `bets_7d_close_known`). The entry-price and
+   closing-line backfills also fetch these bets' chunks and markets before any
+   other (`priority_chunks`, `priority_markets`); the chunks had been queued behind
+   about 16,000 for newer buys, and the closing-line receipts carry the close times. If early closes dominate,
+   the filter would move from scheduled end to actual close, which uses information
+   from after entry and needs the owner's approval here first.
