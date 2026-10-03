@@ -39,6 +39,7 @@ import json
 import logging
 import time
 from collections.abc import Callable, Iterable, Iterator
+from collections.abc import Set as AbstractSet
 from dataclasses import asdict, dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -221,6 +222,18 @@ def latest_receipts(
     return latest
 
 
+def close_times(store: Path) -> dict[str, int]:
+    """Actual close time (Unix seconds) per market, from the latest receipt whose
+    close came from Gamma's ``closedTime`` rather than the scheduled end date."""
+    found: dict[str, int] = {}
+    for row in _read_jsonl(store / RECEIPTS_FILE):
+        closed = _parse_time(row.get("close_time"))
+        cid = str(row.get("condition_id", "")).lower()
+        if cid and closed is not None and row.get("close_field") == "closedTime":
+            found[cid] = int(closed.timestamp())
+    return found
+
+
 def final_conditions(store: Path) -> set[str]:
     """Condition ids whose latest receipt is final."""
     return {cid for cid, (status, _) in latest_receipts(store).items()
@@ -281,8 +294,10 @@ def activity_condition_ids(path: Path) -> list[str]:
 def select_pending(
     condition_ids: Iterable[str], receipts: dict[str, tuple[str, datetime]], *,
     now: datetime, limit: int, retry_after: timedelta = RETRY_AFTER,
+    priority: AbstractSet[str] = frozenset(),
 ) -> list[str]:
-    """Markets to fetch next: never-tried ones first, then the stalest retries.
+    """Markets to fetch next: never-tried ones first, then the stalest retries, with
+    every ``priority`` market ahead of every other one in the same order.
 
     Final markets are skipped for good. A market that was open, or whose fetch
     failed, waits ``retry_after`` before it is asked about again.
@@ -296,7 +311,10 @@ def select_pending(
         elif receipt[0] not in FINAL_STATUSES and now - receipt[1] >= retry_after:
             retry.append((receipt[1], cid))
     retry.sort()
-    return (fresh + [cid for _, cid in retry])[:max(0, limit)]
+    ordered = fresh + [cid for _, cid in retry]
+    ordered = ([cid for cid in ordered if cid in priority]
+               + [cid for cid in ordered if cid not in priority])
+    return ordered[:max(0, limit)]
 
 
 def lookup_closed_markets(condition_ids: list[str], get: GetJson) -> dict[str, dict[str, Any]]:
@@ -420,20 +438,30 @@ def backfill(
 def run_pending(
     data_dir: Path, *, limit: int, max_seconds: float, get: GetJson | None = None,
     now: datetime | None = None, clock: Callable[[], float] = time.monotonic,
+    priority: AbstractSet[str] = frozenset(),
 ) -> dict[str, Any]:
     """One bounded backfill pass for the markets a data directory's wallets traded.
 
     Used by the lean-pilot worker. At most ``limit`` markets are attempted and no
-    new one starts after ``max_seconds``; the rest wait for the next pass. The
-    result is ``partial`` when the pass stopped early, a market's fetch failed, or
-    the Gamma lookup failed. Exception details stay in the log, never the result.
+    new one starts after ``max_seconds``; the rest wait for the next pass.
+    ``priority`` markets go first (see :func:`select_pending`); the result counts
+    those without a final receipt and those selected. The result is ``partial`` when
+    the pass stopped early, a market's fetch failed, or the Gamma lookup failed.
+    Exception details stay in the log, never the result.
     """
     store = data_dir / STORE_DIR
     conditions = activity_condition_ids(data_dir / ACTIVITY_FILE)
-    pending = select_pending(conditions, latest_receipts(store),
-                             now=now or datetime.now(UTC), limit=limit)
-    result: dict[str, Any] = {"conditions_in_activity": len(conditions),
-                              "selected": len(pending)}
+    receipts = latest_receipts(store)
+    pending = select_pending(conditions, receipts, now=now or datetime.now(UTC),
+                             limit=limit, priority=priority)
+    traded = set(conditions)
+    result: dict[str, Any] = {
+        "conditions_in_activity": len(conditions), "selected": len(pending),
+        "priority_open": sum(cid in traded and (cid not in receipts
+                                                or receipts[cid][0] not in FINAL_STATUSES)
+                             for cid in priority),
+        "priority_selected": sum(cid in priority for cid in pending),
+    }
     if not pending:
         return {"status": "succeeded", **result, "summary": asdict(BackfillSummary())}
     deadline = clock() + max_seconds

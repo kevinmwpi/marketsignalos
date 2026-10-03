@@ -14,7 +14,10 @@ from marketsignalos_polymarket.horizon_diagnostic import (
     MARKETS_FILE,
     REPORT_DIR,
     RULE,
+    _missing_reason,
     diagnose,
+    priority_chunks,
+    priority_markets,
     resolved_winners,
     run,
     select_horizon,
@@ -122,11 +125,14 @@ def test_diagnose_reports_coverage_leakage_and_signal_per_horizon(pilot_dir: Pat
     assert report["funnel"] == {"buy_fills": 9, "bought_markets": 6, "in_market_store": 6,
                                 "closed_in_store": 5, "resolved_in_store": 4,
                                 "closed_per_gamma_lookup": 1, "resolved_bets": 6,
-                                "bets_7d_before_scheduled_end": 5}
+                                "bets_7d_before_scheduled_end": 5, "bets_7d_close_known": 0,
+                                "bets_7d_closed_within_7d": 0}
     one, day = report["horizons"]["1h"], report["horizons"]["24h"]
-    # w3's bet on A waits on the backfill; its bet on E has a fetched, empty window.
+    # w3's bet on A waits on the backfill; its bet on E has a fetched, empty window,
+    # and no known close time explains why.
     assert (one["pending"], one["no_reference"], one["referenced"]) == (1, 1, 3)
     assert (day["pending"], day["no_reference"], day["referenced"]) == (1, 1, 3)
+    assert one["no_reference_reasons"] == day["no_reference_reasons"] == {"ended": 1}
 
     # After an hour A still trades at 0.45: (10 x 0.05 + 30 x -0.05) / 40.
     assert one["near_outcome"] == 0.0
@@ -146,6 +152,48 @@ def test_diagnose_reports_coverage_leakage_and_signal_per_horizon(pilot_dir: Pat
     assert "pending" not in report["common"]["24h"]
     assert one["coverage"] == 0.75  # 3 referenced of 4 fetched; the pending bet is excluded
     assert report["selection"]["eligible"] is False  # 3 bets is far below the rule's 500
+
+
+def test_known_close_times_explain_missing_references_and_check_the_end_date_filter(
+    pilot_dir: Path,
+) -> None:
+    """E closed an hour after its buy although its scheduled end was two months off;
+    A's actual close (from an entry-price receipt) came 30 days in."""
+    with (pilot_dir / closing_lines.STORE_DIR / closing_lines.RECEIPTS_FILE).open("a") as out:
+        out.write(json.dumps({"condition_id": "0xe", "status": "ok", "observed_time": FETCHED,
+                              "close_time": _iso(W + HOUR), "close_field": "closedTime"}) + "\n")
+        out.write(json.dumps({"condition_id": "0xb", "status": "ok", "observed_time": FETCHED,
+                              "close_time": _iso(W + HOUR), "close_field": "endDate"}) + "\n")
+    with (pilot_dir / entry_prices.STORE_DIR / entry_prices.RECEIPTS_FILE).open("a") as out:
+        out.write(json.dumps({"condition_id": "0xa", "chunk_start": _iso(W + C),
+                              "chunk_end": _iso(W + 2 * C), "status": "ok",
+                              "observed_time": FETCHED,
+                              "market_closed_time": _iso(W + 30 * 86400)}) + "\n")
+
+    report = diagnose(pilot_dir, horizons_hours=(1, 24))
+    assert report["horizons"]["1h"]["no_reference_reasons"] == {"closed": 1}
+    # A scheduled end date is not a close: B stays unknown. Of A's two bets and E's
+    # one, only E closed within seven days of its first fill.
+    assert (report["funnel"]["bets_7d_close_known"],
+            report["funnel"]["bets_7d_closed_within_7d"]) == (3, 1)
+
+
+def test_a_missing_reference_is_a_close_an_ended_series_or_a_gap() -> None:
+    series = [(W + i * HOUR, 0.5) for i in (0, 1, 2, 30)]
+    assert _missing_reason(series, W, 24 * HOUR, closed_at=None) == "gap"
+    assert _missing_reason(series, W, 40 * HOUR, closed_at=None) == "ended"
+    assert _missing_reason(series, W, 40 * HOUR, closed_at=W + 40 * HOUR) == "closed"
+    assert _missing_reason(series, W, 24 * HOUR, closed_at=W + 25 * HOUR) == "gap"
+    assert _missing_reason([], W, HOUR, closed_at=None) == "ended"
+
+
+def test_priority_is_the_windows_and_markets_of_the_bets_the_rule_counts(pilot_dir: Path) -> None:
+    # Unresolved C and D, and F's buy two days before its end, are left out.
+    assert priority_chunks(pilot_dir) == {
+        ("0xa", W), ("0xa", W + C), ("0xa", W + 3 * C), ("0xa", W + 4 * C),
+        ("0xb", W), ("0xb", W + C), ("0xe", W), ("0xe", W + C)}
+    assert priority_chunks(pilot_dir) <= entry_prices.needed_chunks(pilot_dir / ACTIVITY_FILE)
+    assert priority_markets(pilot_dir) == {"0xa", "0xb", "0xe"}
 
 
 def test_diagnose_has_no_gate_counts(pilot_dir: Path) -> None:

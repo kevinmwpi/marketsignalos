@@ -303,20 +303,22 @@ def _execute_stage(stage: str, data_dir: Path, config: PilotConfig,
         return score_snapshot(data_dir, data_dir / "score-snapshots", run_id)
     # The backfills are append-only and safe to interrupt: unlike collection, a
     # killed run leaves nothing to reconcile, so they never set recovery_required.
-    if stage == "entry_prices":
-        from . import entry_prices
+    if stage == "entry_prices":  # the horizon decision's chunks first
+        from . import entry_prices, horizon_diagnostic
         return entry_prices.run_pending(data_dir, limit=config.entry_prices_per_cycle,
-                                        max_seconds=config.entry_prices_max_seconds)
+                                        max_seconds=config.entry_prices_max_seconds,
+                                        priority=horizon_diagnostic.priority_chunks(data_dir))
     if stage == "cohort":  # after scoring, which labels each wallet's trading style
         from . import cohort
         return cohort.run(data_dir)
     if stage == "horizon":  # read-only apart from its own report
         from . import horizon_diagnostic
         return horizon_diagnostic.run(data_dir)
-    if stage == "closing_lines":
-        from . import closing_lines
+    if stage == "closing_lines":  # the horizon decision's markets first
+        from . import closing_lines, horizon_diagnostic
         return closing_lines.run_pending(data_dir, limit=config.closing_lines_per_cycle,
-                                         max_seconds=config.closing_lines_max_seconds)
+                                         max_seconds=config.closing_lines_max_seconds,
+                                         priority=horizon_diagnostic.priority_markets(data_dir))
     from .cohort import excluded_wallets
     from .runner import run_pipeline
     result = run_pipeline(
