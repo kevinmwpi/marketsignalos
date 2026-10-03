@@ -98,19 +98,21 @@ def _write_receipts(store: Path, rows: list[dict[str, Any]]) -> None:
 
 # ── Which chunks ─────────────────────────────────────────────────────────────
 
-def test_needed_chunks_cover_the_week_after_each_buy(tmp_path: Path) -> None:
+def test_needed_chunks_cover_the_window_after_each_buy(tmp_path: Path) -> None:
+    assert HORIZON_SECONDS == 6 * HOUR  # the longest candidate horizon since 2026-10-03
     _write_activity(tmp_path, [
-        _buy("0xA", W + 3 * 86400),  # the week runs into the next chunk
-        _buy("0xb", W),  # the horizon ends exactly on the next chunk's first hour
+        _buy("0xA", W + C - 3 * HOUR),  # the window runs into the next chunk
+        _buy("0xb", W + C - HORIZON_SECONDS),  # it ends exactly on the next chunk's start
+        _buy("0xh", W),  # inside one chunk
         {**_buy("0xc", W), "side": "SELL"},
         {**_buy("0xd", W), "type": "REDEEM"},
         _buy("0xe", 0), _buy("0xf", True), _buy("", W), _buy("0xg", "1735776000"),
         "not json", "[1, 2]",
     ])
     assert needed_chunks(tmp_path / ACTIVITY_FILE) == {
-        ("0xa", W), ("0xa", W + C), ("0xb", W), ("0xb", W + C)}
+        ("0xa", W), ("0xa", W + C), ("0xb", W), ("0xb", W + C), ("0xh", W)}
     assert needed_chunks(tmp_path / ACTIVITY_FILE, horizon_seconds=HOUR) == {
-        ("0xa", W), ("0xb", W)}
+        ("0xa", W), ("0xb", W), ("0xh", W)}
     assert needed_chunks(tmp_path / "missing.jsonl") == set()
     assert chunk_start(W + C - 1) == W
     assert HORIZON_SECONDS <= CHUNK_SECONDS  # a buy never reaches more than two chunks
@@ -202,7 +204,7 @@ def test_backfill_starts_no_chunk_after_the_deadline(tmp_path: Path) -> None:
 # ── The pilot stage ──────────────────────────────────────────────────────────
 
 def test_run_pending_fetches_each_ended_chunk_once(tmp_path: Path) -> None:
-    _write_activity(tmp_path, [_buy("0xa", W + 86400), _buy("0xa", W + 2 * 86400)])
+    _write_activity(tmp_path, [_buy("0xa", W + 86400), _buy("0xa", W + C - 2 * HOUR)])
     api = FakeApi({"0xa": ("tok-a", True)},
                   {"tok-a": [(W + 2 * 86400 - HOUR, 0.3), (W + C, 0.35)]})
     now = _at(W + 2 * C + 2 * HOUR)
@@ -221,7 +223,7 @@ def test_run_pending_fetches_each_ended_chunk_once(tmp_path: Path) -> None:
 
 
 def test_run_pending_is_partial_when_a_chunk_fails(tmp_path: Path) -> None:
-    _write_activity(tmp_path, [_buy("0xa", W)])
+    _write_activity(tmp_path, [_buy("0xa", W + C - HOUR)])
     api = FakeApi({"0xa": ("tok-a", True)}, {"tok-a": httpx.ReadTimeout("slow")})
     result = run_pending(tmp_path, limit=10, max_seconds=60, get=api, now=_at(W + 3 * C))
     assert result["status"] == "partial"
@@ -229,7 +231,7 @@ def test_run_pending_is_partial_when_a_chunk_fails(tmp_path: Path) -> None:
 
 
 def test_run_pending_is_partial_without_details_when_the_lookup_fails(tmp_path: Path) -> None:
-    _write_activity(tmp_path, [_buy("0xa", W)])
+    _write_activity(tmp_path, [_buy("0xa", W + C - HOUR)])
 
     def broken(url: str, params: dict[str, Any]) -> Any:
         return {"error": "https://gamma.example/?token=secret"}
@@ -242,7 +244,7 @@ def test_run_pending_is_partial_without_details_when_the_lookup_fails(tmp_path: 
 
 
 def test_run_pending_fetches_priority_chunks_first_and_counts_them(tmp_path: Path) -> None:
-    _write_activity(tmp_path, [_buy("0xold", W), _buy("0xnew", W + C)])
+    _write_activity(tmp_path, [_buy("0xold", W + C - HOUR), _buy("0xnew", W + C)])
     api = FakeApi({"0xold": ("tok-o", True), "0xnew": ("tok-n", True)},
                   {"tok-o": [(W, 0.5)], "tok-n": [(W + C, 0.5)]})
     now = _at(W + 3 * C + 2 * HOUR)

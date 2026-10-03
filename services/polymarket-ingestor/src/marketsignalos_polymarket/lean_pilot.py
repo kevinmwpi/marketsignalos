@@ -48,7 +48,7 @@ class PilotConfig:
     log_limit_mb: int = 8
     # Price backfills for CLV research. 0 disables a stage; the deployed config
     # turns them on. Each run fetches at most `per_cycle` items and starts none
-    # after `max_seconds`. Entry prices (entry_prices.py) hold the week after
+    # after `max_seconds`. Entry prices (entry_prices.py) hold the hours after
     # each buy, the gate-13 reference chosen on 2026-09-30; closing lines
     # (closing_lines.py) hold each market's 48 hours before close.
     entry_prices_every_seconds: int = 0
@@ -68,8 +68,10 @@ class PilotConfig:
     # closed filters, so N conditions need 2 * ceil(N / 25) requests.
     metadata_conditions_per_cycle: int = 100
     metadata_requests_per_cycle: int = 8
-    # Cohort maintenance (cohort.py), run after scoring: wallets the scorer labels
-    # systematic are excluded for good and their data deleted. 0 disables it.
+    # Cohort maintenance (cohort.py): wallets the scorer labels systematic are
+    # excluded for good and their data deleted. Besides this interval it runs in
+    # every cycle that scores, and in the first cycle after a score it has not
+    # acted on yet. 0 disables it.
     cohort_every_seconds: int = 0
     # Volume leaderboard window that seeds the watchlist.
     leaderboard_window: str = "day"
@@ -276,6 +278,12 @@ def plan_cycle(data_dir: Path, config: PilotConfig, *,
         if now >= next_due - timedelta(seconds=_due_grace_seconds(interval)):
             due.append(name)
         stages[name] = {**row, "next_due_at": next_due.isoformat()}
+    if config.cohort_every_seconds and "cohort" not in due:
+        # Act on the trading styles scoring labels as soon as they exist. On its
+        # own interval alone it ran 16 hours after scoring on 2026-10-03.
+        from .cohort import has_unprocessed_score
+        if "score" in due or has_unprocessed_score(data_dir):
+            due.append("cohort")  # last in STAGES, so the order holds
     # Reserve in both days for a cycle that could cross UTC midnight. This is
     # deliberately conservative; successful completion refunds unused time.
     days = sorted({now.date().isoformat(),
