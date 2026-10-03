@@ -127,6 +127,33 @@ def test_the_stage_excludes_what_scoring_labelled_and_finishes_interrupted_purge
     assert again["excluded_new"] == 0 and again["rows_removed"] == {cohort.WATCHLIST_FILE: 1}
 
 
+def test_a_score_generation_is_unprocessed_until_a_run_completes(
+    data_dir: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    snapshots = data_dir / "score-snapshots"
+    assert not cohort.has_unprocessed_score(data_dir)  # nothing published yet
+    (snapshots / "r1").mkdir(parents=True)
+    (snapshots / "r1" / ENRICHMENT).write_text("")
+    (snapshots / "current.json").write_text(json.dumps({"run_id": "r1"}))
+    assert cohort.has_unprocessed_score(data_dir)
+
+    def failing_purge(data_dir: Path, excluded: frozenset[str]) -> dict[str, int]:
+        raise OSError("volume full")
+
+    monkeypatch.setattr(cohort, "load_current", lambda snapshots: {"run_id": "r1"})
+    with monkeypatch.context() as patch:
+        patch.setattr(cohort, "apply_exclusions", failing_purge)
+        with pytest.raises(OSError):
+            cohort.run(data_dir, now=NOW)
+    assert cohort.has_unprocessed_score(data_dir)  # an interrupted run counts for nothing
+    cohort.run(data_dir, now=NOW)
+    assert not cohort.has_unprocessed_score(data_dir)
+    (snapshots / "current.json").write_text(json.dumps({"run_id": "r2"}))
+    assert cohort.has_unprocessed_score(data_dir)
+    (snapshots / "current.json").write_text("{torn")  # planning never raises
+    assert not cohort.has_unprocessed_score(data_dir)
+
+
 def test_the_stage_without_scores_only_applies_existing_exclusions(data_dir: Path) -> None:
     result = cohort.run(data_dir, now=NOW)
     assert result == {"status": "succeeded", "wallets_classified": 0, "excluded_new": 0,

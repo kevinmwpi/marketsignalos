@@ -11,6 +11,7 @@ import pytest
 from marketsignalos_polymarket import closing_lines, entry_prices
 from marketsignalos_polymarket.closing_lines import ACTIVITY_FILE
 from marketsignalos_polymarket.horizon_diagnostic import (
+    HORIZONS_HOURS,
     MARKETS_FILE,
     REPORT_DIR,
     RULE,
@@ -188,10 +189,10 @@ def test_a_missing_reference_is_a_close_an_ended_series_or_a_gap() -> None:
 
 
 def test_priority_is_the_windows_and_markets_of_the_bets_the_rule_counts(pilot_dir: Path) -> None:
-    # Unresolved C and D, and F's buy two days before its end, are left out.
+    # Unresolved C and D, and F's buy two days before its end, are left out. Every
+    # window ends six hours after its buy, inside the buy's own chunk.
     assert priority_chunks(pilot_dir) == {
-        ("0xa", W), ("0xa", W + C), ("0xa", W + 3 * C), ("0xa", W + 4 * C),
-        ("0xb", W), ("0xb", W + C), ("0xe", W), ("0xe", W + C)}
+        ("0xa", W), ("0xa", W + 3 * C), ("0xb", W), ("0xe", W)}
     assert priority_chunks(pilot_dir) <= entry_prices.needed_chunks(pilot_dir / ACTIVITY_FILE)
     assert priority_markets(pilot_dir) == {"0xa", "0xb", "0xe"}
 
@@ -254,6 +255,9 @@ def test_the_rule_can_find_no_horizon() -> None:
     assert RULE == {"min_hours_to_scheduled_end": 168, "min_common_bets": 500,
                     "min_common_wallets": 20, "max_near_outcome": 0.05, "min_coverage": 0.5,
                     "min_clv_win_corr": 0.0}
+    # Cut from (1, 6, 24, 72, 168) on 2026-10-03; the backfill fetches far enough.
+    assert HORIZONS_HOURS == (1, 6)
+    assert max(HORIZONS_HOURS) * HOUR <= entry_prices.HORIZON_SECONDS
 
 
 def test_the_first_eligible_report_decides_and_is_never_replaced(
@@ -282,4 +286,5 @@ def test_the_first_eligible_report_decides_and_is_never_replaced(
     third = run(tmp_path, now=datetime(2026, 10, 5, tzinfo=UTC))
     assert third["selection"]["horizon"] == "6h"  # today's numbers still reported
     assert third["decision"]["horizon"] == "24h"  # but the decision stands
-    assert json.loads(decision.read_text())["rule"] == RULE
+    saved = json.loads(decision.read_text())
+    assert saved["rule"] == RULE and saved["horizons_hours"] == [1, 6]

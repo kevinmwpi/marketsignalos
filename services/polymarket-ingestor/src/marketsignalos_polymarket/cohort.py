@@ -17,9 +17,11 @@ Each run of the ``cohort`` stage, right after scoring:
      that remain.
 
 Step 2 is idempotent and runs every time, so a run interrupted halfway is
-finished by the next one. Collection never re-adds an excluded wallet
-(``run_pipeline(exclude_wallets=...)``), and the freed watchlist slots are
-refilled from the leaderboard. Market-keyed stores (markets, entry prices,
+finished by the next one. Each completed run records the score generation it read
+(``cohort_state.json``); the lean pilot runs the stage in every cycle that scores
+and in the first cycle after a generation the stage has not read yet. Collection
+never re-adds an excluded wallet (``run_pipeline(exclude_wallets=...)``), and the
+freed watchlist slots are refilled from the leaderboard. Market-keyed stores (markets, entry prices,
 closing lines) are kept: other wallets may share those markets.
 
 The label is descriptive, as in trader_style.py: it says a wallet's cadence looks
@@ -40,6 +42,7 @@ from .storage import _write_index
 log = logging.getLogger("marketsignalos.polymarket.cohort")
 
 EXCLUDED_FILE = "excluded_wallets.txt"
+STATE_FILE = "cohort_state.json"
 WATCHLIST_FILE = "polymarket_wallet_watchlist.txt"
 ACTIVITY_FILE = "polymarket_activity.jsonl"
 WALLET_JSONL = (
@@ -108,19 +111,31 @@ def apply_exclusions(data_dir: Path, excluded: frozenset[str]) -> dict[str, int]
     return {name: count for name, count in removed.items() if count}
 
 
+def has_unprocessed_score(data_dir: Path) -> bool:
+    """Whether a score generation is published that no completed run has read.
+
+    Used for planning, so it never raises: an unreadable pointer reads as nothing
+    published, and the stage's own run reports the problem."""
+    current = _read_json_object(data_dir / "score-snapshots" / "current.json").get("run_id")
+    processed = _read_json_object(data_dir / STATE_FILE).get("score_run_id")
+    return isinstance(current, str) and current != processed
+
+
 def run(data_dir: Path, *, now: datetime | None = None) -> dict[str, Any]:
     """Lean-pilot stage: exclude systematic wallets, then purge every excluded one."""
     snapshots = data_dir / "score-snapshots"
     newly = 0
     classified = 0
-    if (snapshots / "current.json").exists():
-        manifest = load_current(snapshots)
-        rows = list(_rows(snapshots / manifest["run_id"] / ENRICHMENT))
+    run_id = _current_score_run_id(data_dir)
+    if run_id is not None:
+        rows = list(_rows(snapshots / run_id / ENRICHMENT))
         classified = len(rows)
         newly = record_exclusions(data_dir, wallets_to_exclude(rows),
                                   now=now or datetime.now(UTC))
     excluded = excluded_wallets(data_dir)
     removed = apply_exclusions(data_dir, excluded)
+    if run_id is not None:  # only once the purge is complete
+        _replace_text(data_dir / STATE_FILE, json.dumps({"score_run_id": run_id}))
     if newly or removed:
         log.info("cohort excluded_new=%d excluded_total=%d removed=%s",
                  newly, len(excluded), removed)
@@ -129,6 +144,22 @@ def run(data_dir: Path, *, now: datetime | None = None) -> dict[str, Any]:
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
+
+def _current_score_run_id(data_dir: Path) -> str | None:
+    """The published generation, verified (score_snapshot.load_current)."""
+    snapshots = data_dir / "score-snapshots"
+    if not (snapshots / "current.json").exists():
+        return None
+    return str(load_current(snapshots)["run_id"])
+
+
+def _read_json_object(path: Path) -> dict[str, Any]:
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
 
 def _filter_watchlist(path: Path, excluded: frozenset[str]) -> int:
     if not path.exists():

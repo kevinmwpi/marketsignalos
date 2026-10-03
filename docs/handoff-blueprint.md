@@ -68,8 +68,8 @@ collection restarts in the cloud. Three findings change how Stages 0–1 read:
   Scoring does not read the backfill.
 - **Gate 13 will measure CLV against the price a fixed time after entry** (open
   decision 6, §12, decided 2026-09-30). The worker backfills every hourly price in the
-  week after each buy (`entry_prices.py`), so a diagnostic on pilot data can choose the
-  horizon. It also keeps collecting the pre-close windows at a lower cadence, as the
+  six hours after each buy (`entry_prices.py`; the week after it until 2026-10-03), so
+  a diagnostic on pilot data can choose the horizon. It also keeps collecting the pre-close windows at a lower cadence, as the
   comparison that diagnostic needs.
 - **Polygon logs are complete but not cheaper, and the Goldsky subgraph is gone.** The
   [chain probe](benchmarks/2026-09-29-polygon-logs-probe.md) decoded 30 of 30 Data API
@@ -973,8 +973,9 @@ Answer these before Stage 1; each changes what gets built.
    - the last price at least *L* hours before close;
    - the price *h* hours after entry, which is also defined for open and exited bets.
 
-   *Decided 2026-09-30: the price h hours after entry.* The worker collects the week
-   after each buy, so h can be anything up to seven days. The horizon is still open.
+   *Decided 2026-09-30: the price h hours after entry.* The worker collected the week
+   after each buy, so h could be anything up to seven days; since the second
+   amendment below it collects six hours. The horizon is still open.
    A diagnostic on pilot data picks it and must report, for each h:
    - how often the reference sits within 0.01 of the outcome, compared with the
      last pre-close price on the same bets;
@@ -987,8 +988,9 @@ Answer these before Stage 1; each changes what gets built.
 
    The diagnostic is `horizon_diagnostic.py`, run by the pilot worker. It
    writes `diagnostics/horizon/<date>.json` and prints the same numbers in the
-   Railway log line, for h = 1, 6, 24, 72 and 168 hours, per horizon and on the
-   bets referenced at every horizon (the common set). It never computes gate
+   Railway log line, for h = 1 and 6 hours (1, 6, 24, 72 and 168 until the second
+   amendment), per horizon and on the bets referenced at every horizon (the common
+   set). It never computes gate
    counts.
 
    *Selection rule, recorded 2026-10-02 before any report existed and approved
@@ -1031,17 +1033,31 @@ Answer these before Stage 1; each changes what gets built.
    volume leaderboard. The diagnostic's population therefore changes; no decision
    had been recorded before it did.
 
-   *Open question, 2026-10-03 (no rule change):* a scheduled end is not a close.
-   The 03:08 UTC report kept 110 bets (16 wallets) and, among bets whose window had
-   been fetched, found no reference for 11 of 12 at 24 h and 8 of 8 at 72 h, the
-   pattern of markets that resolve long before their scheduled end. With n this
-   small it may equally be gaps in thin markets' hourly series. Two changes make it
-   measurable without touching the rule: every `no_reference` is now split into
-   `closed` (Gamma `closedTime` before the horizon), `ended` and `gap`, and the
-   funnel counts kept bets whose market actually closed within seven days of entry
-   (`bets_7d_closed_within_7d` of `bets_7d_close_known`). The entry-price and
-   closing-line backfills also fetch these bets' chunks and markets before any
-   other (`priority_chunks`, `priority_markets`); the chunks had been queued behind
-   about 16,000 for newer buys, and the closing-line receipts carry the close times. If early closes dominate,
-   the filter would move from scheduled end to actual close, which uses information
-   from after entry and needs the owner's approval here first.
+   *A scheduled end is not a close (2026-10-03).* The 03:08 UTC report kept 110 bets
+   and found no reference for 11 of 12 fetched bets at 24 h and 8 of 8 at 72 h:
+   either markets resolving long before their scheduled end, or gaps in thin
+   markets' hourly series. Every `no_reference` is now split into `closed` (Gamma
+   `closedTime` before the horizon), `ended` and `gap`; the funnel counts kept bets
+   whose market actually closed within seven days of entry
+   (`bets_7d_closed_within_7d` of `bets_7d_close_known`); and both backfills fetch
+   these bets' chunks and markets first (`priority_chunks`, `priority_markets`).
+   The 09:12 UTC report answered it: of 274 kept bets with a known close, 261 (95%)
+   had closed within seven days, and every missing reference at 24, 72 and 168 h was
+   `closed` (gaps: 3 of 329 at 1 h and 6 h). The common set held 5 bets and could
+   not reach 500 at any horizon set that included 24 h or longer.
+
+   *Second amendment, approved by the owner 2026-10-03 (09:25 UTC), before any
+   report was eligible:* the candidate horizons are 1 h and 6 h
+   (`horizon_diagnostic.HORIZONS_HOURS`), and the entry-price backfill collects six
+   hours after each buy. The reason is feasibility, as with the first amendment:
+   longer horizons have no price for 95% of the bets. Unlike the first, this one
+   was made after per-horizon numbers had been seen, so for the record the bound
+   and the sample were left exactly as approved (`RULE` is unchanged, including the
+   seven-day filter), and the numbers seen were: `near_outcome` 0.064 at 1 h
+   (242 bets, 18 wallets) and 0.24 at 6 h (133 bets), against 0.64 and 0.71 for the
+   last pre-close price on the same bets; CLV-win correlation 0.33 and 0.50. On
+   those numbers neither horizon passes the 0.05 bound, so the likely outcome is
+   no horizon and the redesign of gate 13 described above; the rule decides at
+   500 common bets from 20 wallets. Filtering on the actual close instead was
+   rejected: it uses information from after entry, keeps about 5% of bets, and
+   favours markets that resolve at their deadline.

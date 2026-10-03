@@ -593,6 +593,25 @@ def test_cohort_maintenance_runs_right_after_scoring(tmp_path: Path) -> None:
     config = pilot.PilotConfig(cohort_every_seconds=86400)
     due = pilot.plan_cycle(tmp_path, config, now=Clock().now())["due"]
     assert due[-2:] == ["score", "cohort"]
+
+    # 2026-10-03: the stage first ran at 00:09, so on its own interval it lagged the
+    # 08:12 score by 16 hours. Now it runs with every score, and in the first cycle
+    # after a score it has not acted on.
+    clock = Clock(datetime(2026, 10, 3, 0, 9, tzinfo=UTC))
+    pilot.run_cycle(tmp_path, config, "first", execute=lambda *a: {},
+                    now_fn=clock.now, monotonic=clock.monotonic)
+    later = datetime(2026, 10, 4, 0, 9, tzinfo=UTC)
+    assert pilot.plan_cycle(tmp_path, config, now=later)["due"][-2:] == ["score", "cohort"]
+    hourly = datetime(2026, 10, 3, 9, 10, tzinfo=UTC)  # neither interval is due
+    assert "cohort" not in pilot.plan_cycle(tmp_path, config, now=hourly)["due"]
+    snapshots = tmp_path / "score-snapshots"
+    snapshots.mkdir()
+    (snapshots / "current.json").write_text(json.dumps({"run_id": "r0812"}))
+    assert pilot.plan_cycle(tmp_path, config, now=hourly)["due"][-1] == "cohort"
+    assert "cohort" not in pilot.plan_cycle(  # off means off, unprocessed score or not
+        tmp_path, pilot.PilotConfig(), now=hourly)["due"]
+    (tmp_path / "cohort_state.json").write_text(json.dumps({"score_run_id": "r0812"}))
+    assert "cohort" not in pilot.plan_cycle(tmp_path, config, now=hourly)["due"]
     path = Path(__file__).resolve().parents[3] / "deploy" / "lean-pilot.json"
     deployed = pilot.PilotConfig(**json.loads(path.read_text(encoding="utf-8")))
     assert deployed.cohort_every_seconds == 86400 and deployed.leaderboard_window == "month"

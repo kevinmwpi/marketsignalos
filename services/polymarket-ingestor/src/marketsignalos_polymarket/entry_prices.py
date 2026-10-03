@@ -1,12 +1,18 @@
 """
-Backfill hourly prices for the week after each tracked buy (post-entry CLV).
+Backfill hourly prices for the hours after each tracked buy (post-entry CLV).
 
 Blueprint open decision 6 was settled on 2026-09-30: gate 13's reference price for a
 bet is the market's price a fixed time *after the buy*, not the last price before
 close, which was within 0.01 of the outcome for 38 of 40 probed markets. The horizon
 is not fixed yet; a diagnostic on pilot data picks it, anywhere up to
-``HORIZON_SECONDS`` (seven days). This module therefore stores every hourly point
-from each buy to seven days after it. Scoring does not read it yet.
+``HORIZON_SECONDS``. This module therefore stores every hourly point from each buy
+to that long after it. Scoring does not read it yet.
+
+``HORIZON_SECONDS`` was seven days until 2026-10-03, when the owner limited the
+candidate horizons to 1 h and 6 h: 95% of the cohort's bets were on markets that
+closed within a week, so longer horizons had no price to read. Chunks fetched for
+the longer window stay in the store; the history remains fetchable if a later
+cohort trades longer-lived markets.
 
 History is fetched in fixed chunks of ``CHUNK_SECONDS`` aligned to the Unix epoch and
 keyed by (condition id, chunk start):
@@ -68,7 +74,7 @@ log = logging.getLogger("marketsignalos.polymarket.entry_prices")
 STORE_DIR = "entry_prices"
 OBSERVATIONS_FILE = "price_observations.jsonl"
 RECEIPTS_FILE = "chunk_receipts.jsonl"
-HORIZON_SECONDS = 7 * 86400
+HORIZON_SECONDS = 6 * 3600  # the longest candidate horizon (horizon_diagnostic)
 CHUNK_SECONDS = 7 * 86400
 # A chunk counts as ended this long after its last hour, so late points are in.
 SETTLE_SECONDS = 3600

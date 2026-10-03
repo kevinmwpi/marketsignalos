@@ -28,11 +28,12 @@ circularity decision 6 exists to avoid.
 
 Only fills placed at least seven days before the market's scheduled end count
 (``RULE["min_hours_to_scheduled_end"]``): the end date is known at entry, so the
-filter adds no leakage, every horizon is defined for every remaining bet, and these
-are the bets a person has time to copy. The funnel reports how many resolved bets
-the filter keeps, and how many of those, among markets whose actual close time is
-known, closed within seven days of the bet anyway (an early resolution the scheduled
-end did not predict).
+filter adds no leakage. It was meant to keep markets that outlive every horizon, but
+a scheduled end is not a close: on 2026-10-03, 95% of the kept bets whose market's
+close was known had closed within seven days. The candidate horizons were cut to
+1 h and 6 h for that reason; the filter itself stays as approved. The funnel reports
+how many resolved bets the filter keeps, and how many of those, among markets whose
+actual close time is known, closed within seven days of the bet anyway.
 
 ``priority_chunks`` lists the entry-price chunks these bets reach and
 ``priority_markets`` their markets; the lean pilot's entry-price and closing-line
@@ -59,7 +60,11 @@ from . import closing_lines, entry_prices
 from .closing_lines import ACTIVITY_FILE
 from .entry_prices import CHUNK_SECONDS, FINAL_STATUSES, ChunkKey, chunk_start, price_after
 
-HORIZONS_HOURS = (1, 6, 24, 72, 168)
+# Candidate horizons. 24, 72 and 168 hours were dropped on 2026-10-03 with the
+# owner's approval (blueprint decision 6, second amendment): 95% of the bets the
+# rule keeps were on markets that closed within a week, so the common set could
+# never reach the rule's sample at those horizons.
+HORIZONS_HOURS = (1, 6)
 NEAR_OUTCOME = 0.01
 MARKETS_FILE = "polymarket_markets.jsonl"
 REPORT_DIR = "diagnostics/horizon"
@@ -70,7 +75,8 @@ DECISION_FILE = "decision.json"
 # min_hours_to_scheduled_end was added the same day, after the first report showed
 # the common set could not fill: almost no market in the cohort lived seven days.
 # Only fills placed at least that long before the market's scheduled end (known at
-# entry, so no leakage) count, which also keeps the bets a person could copy.
+# entry, so no leakage) count. The candidate horizons (HORIZONS_HOURS) were cut to
+# 1 h and 6 h on 2026-10-03; these values did not change.
 RULE = {
     "min_hours_to_scheduled_end": 168,
     "min_common_bets": 500,
@@ -318,6 +324,7 @@ def run(data_dir: Path, *, now: datetime | None = None) -> dict[str, Any]:
     decision_path = out / DECISION_FILE
     if not decision_path.exists() and report["selection"]["eligible"]:
         _write_json(decision_path, {"decided_at": report["generated_at"], "rule": RULE,
+                                    "horizons_hours": list(HORIZONS_HOURS),
                                     "selection": report["selection"], "report": report})
     decision = json.loads(decision_path.read_text(encoding="utf-8")) \
         if decision_path.exists() else None
