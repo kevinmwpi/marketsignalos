@@ -925,6 +925,29 @@ def test_run_pipeline_include_profit_reenables_profit(
     assert orders_called == {"PNL", "VOL"}
 
 
+def test_run_pipeline_seeds_from_the_named_metrics_only(
+    tmp_path: Path, monkeypatch: Any,
+) -> None:
+    orders_called: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if _is_ranked_leaderboard(request):
+            orders_called.append(request.url.params["orderBy"])
+            return httpx.Response(200, json=[{"proxyWallet": "0xWin", "pnl": 9.0}])
+        return httpx.Response(200, json=[])
+
+    monkeypatch.setenv("POLYMARKET_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("POLYMARKET_WATCHLIST_PATH", str(tmp_path / "wl.txt"))
+    result = run_pipeline(
+        windows=["month"], leaderboard_limit=5, skip_kalshi=True,
+        seed_metrics=("profit",), client=_client_with_handler(handler),
+    )
+    assert orders_called == ["PNL"] and result.wallets_seeded == 1
+    with pytest.raises(ValueError, match="unsupported seed metrics"):
+        run_pipeline(windows=["month"], leaderboard_limit=5, skip_kalshi=True,
+                     seed_metrics=("roi",), client=_client_with_handler(handler))
+
+
 def test_merge_skill_qualified_wallets_into_watchlist(tmp_path: Path) -> None:
     from marketsignalos_polymarket.runner import _merge_skill_qualified_wallets_into_watchlist
 

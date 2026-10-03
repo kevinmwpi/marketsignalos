@@ -264,10 +264,15 @@ def diagnose(
 
 
 def select_horizon(report: dict[str, Any], horizons: Iterable[int]) -> dict[str, Any]:
-    """Apply ``RULE`` to a report: the longest horizon whose common-set leakage is
-    at most ``max_near_outcome``, whose coverage (referenced over fetched, per
-    horizon) is at least ``min_coverage`` and whose common-set CLV-win correlation
-    is positive. Not ``eligible`` until the common set reaches the sample size."""
+    """Apply ``RULE`` to a report: the longest horizon whose leakage is at most
+    ``max_near_outcome`` both on the common set and on every bet referenced at that
+    horizon, whose coverage (referenced over fetched, per horizon) is at least
+    ``min_coverage`` and whose common-set CLV-win correlation is positive. Not
+    ``eligible`` until the common set reaches the sample size.
+
+    The per-horizon bound was added on 2026-10-03 (third amendment): the common set
+    holds only bets whose market was still open at the longest horizon, a cleaner
+    population than the one a chosen horizon would score."""
     common = report["common"]
     order = sorted(horizons, reverse=True)
     wallets = common[f"{order[0]}h"]["wallets"] if order else 0
@@ -280,10 +285,13 @@ def select_horizon(report: dict[str, Any], horizons: Iterable[int]) -> dict[str,
     for h in order:
         key = f"{h}h"
         near = common[key]["near_outcome"]
+        near_all = report["horizons"][key]["near_outcome"]
         corr = common[key]["clv_win_corr"]
         coverage = report["horizons"][key]["coverage"]
         if near is None or near > RULE["max_near_outcome"]:
             failures[key] = f"near_outcome {near}"
+        elif near_all is None or near_all > RULE["max_near_outcome"]:
+            failures[key] = f"near_outcome {near_all} on all referenced bets"
         elif coverage is None or coverage < RULE["min_coverage"]:
             failures[key] = f"coverage {coverage}"
         elif corr is None or corr <= RULE["min_clv_win_corr"]:
@@ -325,6 +333,7 @@ def run(data_dir: Path, *, now: datetime | None = None) -> dict[str, Any]:
     if not decision_path.exists() and report["selection"]["eligible"]:
         _write_json(decision_path, {"decided_at": report["generated_at"], "rule": RULE,
                                     "horizons_hours": list(HORIZONS_HOURS),
+                                    "near_outcome_bound_on": ["common", "horizons"],
                                     "selection": report["selection"], "report": report})
     decision = json.loads(decision_path.read_text(encoding="utf-8")) \
         if decision_path.exists() else None

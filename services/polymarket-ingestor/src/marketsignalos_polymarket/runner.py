@@ -2571,6 +2571,7 @@ def run_pipeline(
     kalshi_max_pages: int = 25,
     skip_kalshi: bool = True,
     include_profit_leaderboard: bool = False,
+    seed_metrics: tuple[str, ...] | None = None,
     max_watchlist: int | None = None,
     exclude_wallets: frozenset[str] = frozenset(),
     refresh_reference: bool | None = None,
@@ -2586,7 +2587,10 @@ def run_pipeline(
            (data API ``/v1/leaderboard``) across each configured time window. The profit/PnL leaderboard is
            intentionally excluded — it over-represents wallets that ranked via
            a single lucky win rather than a repeatable edge, biasing the review
-           pool. Pass include_profit_leaderboard=True to opt back in. Recent
+           pool. Pass include_profit_leaderboard=True to opt back in, or
+           ``seed_metrics`` to name the metrics outright, in order: the lean
+           pilot seeds from ``("profit",)`` since 2026-10-03, because the volume
+           leaderboard brought in mostly automated wallets. Recent
            on-chain trader discovery lives in run_deep_pipeline, not here: this
            path re-hydrates the entire watchlist every run, so its seed must
            stay bounded. Unsupported windows are skipped with a warning (the
@@ -2638,9 +2642,12 @@ def run_pipeline(
         # 1. Seed watchlist across (window × metric)
         # Named leaderboard_metrics, not metrics: this module now imports the
         # observability `metrics` module, and the bare name shadowed it.
-        leaderboard_metrics = (
+        leaderboard_metrics = seed_metrics or (
             ("profit", "volume") if include_profit_leaderboard else ("volume",)
         )
+        unknown = [metric for metric in leaderboard_metrics if metric not in _SEED_ORDERS]
+        if unknown:
+            raise ValueError(f"unsupported seed metrics {unknown}")
         log.info(
             "pipeline step=seed_watchlist windows=%s metrics=%s",
             attempts,
