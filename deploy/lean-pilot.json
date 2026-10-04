@@ -3,7 +3,7 @@
   "score_every_seconds": 86400,
   "wallet_batch_size": 20,
   "activity_requests_per_wallet": 10,
-  "leaderboard_limit": 25,
+  "leaderboard_limit": 100,
   "cycle_timeout_seconds": 1200,
   "daily_runtime_seconds": 3600,
   "rss_limit_mb": 4096,

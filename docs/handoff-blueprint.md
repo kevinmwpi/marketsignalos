@@ -1047,6 +1047,14 @@ Answer these before Stage 1; each changes what gets built.
    convergence rather than wallet skill, are not affected. The 26 volume-seeded
    wallets that survived the purges stay in the watchlist.
 
+   *Seed depth, approved by the owner 2026-10-04 (08:40 UTC):* the pilot read only
+   the top 25 of the leaderboard, so once each was watched or excluded nothing new
+   could enter, and the watchlist fell from 64 to about 35 while the rule waits on
+   20 wallets (17 in the 08:12 report). It now reads the top 100
+   (`leaderboard_limit: 100`); the 64-wallet cap still bounds collection. In the
+   first profit-seeded score, 10 of 45 wallets were labelled `systematic` (at most
+   10 of 19 profit seeds, against 31 of about 49 volume seeds).
+
    *A scheduled end is not a close (2026-10-03).* The 03:08 UTC report kept 110 bets
    and found no reference for 11 of 12 fetched bets at 24 h and 8 of 8 at 72 h:
    either markets resolving long before their scheduled end, or gaps in thin
