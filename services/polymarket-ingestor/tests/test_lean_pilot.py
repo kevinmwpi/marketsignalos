@@ -622,3 +622,5 @@ def test_cohort_maintenance_runs_right_after_scoring(tmp_path: Path) -> None:
     deployed = pilot.PilotConfig(**json.loads(path.read_text(encoding="utf-8")))
     assert deployed.cohort_every_seconds == 86400 and deployed.leaderboard_window == "month"
     assert deployed.leaderboard_metric == "profit"  # since 2026-10-03
+    # Deep enough that freed slots refill up to the cap (2026-10-04).
+    assert deployed.leaderboard_limit == 100 and deployed.max_watchlist_wallets == 64
