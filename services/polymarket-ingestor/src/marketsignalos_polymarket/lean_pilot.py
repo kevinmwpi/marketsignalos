@@ -34,7 +34,8 @@ _ZERO_ALLOWED = frozenset({"entry_prices_every_seconds", "closing_lines_every_se
                            "max_watchlist_wallets"})
 _LEADERBOARD_WINDOWS = frozenset({"day", "week", "month", "all"})
 _LEADERBOARD_METRICS = frozenset({"volume", "profit"})
-_TEXT_FIELDS = frozenset({"leaderboard_window", "leaderboard_metric"})
+_SCORE_VERSIONS = frozenset({"forecast-v4", "forecast-v5"})
+_TEXT_FIELDS = frozenset({"leaderboard_window", "leaderboard_metric", "score_version"})
 
 
 @dataclass(frozen=True)
@@ -80,6 +81,10 @@ class PilotConfig:
     # cohort are not evidence (blueprint decision 6, 2026-10-03).
     leaderboard_window: str = "day"
     leaderboard_metric: str = "volume"
+    # Scorer published by the score stage. forecast-v5 measures gate 13's CLV 1 h
+    # after each buy (post_entry_clv.py, docs/gate13-clv-v5-plan.md); the switch
+    # is plan step 4, taken with before/after cohort counts.
+    score_version: str = "forecast-v4"
     # The volume cannot grow past 5 GB on Railway Hobby, and every wallet added
     # keeps its activity history, so the watchlist stops growing here. 0 = no cap.
     max_watchlist_wallets: int = 0
@@ -89,6 +94,8 @@ class PilotConfig:
             raise ValueError(f"leaderboard_window must be one of {sorted(_LEADERBOARD_WINDOWS)}")
         if self.leaderboard_metric not in _LEADERBOARD_METRICS:
             raise ValueError(f"leaderboard_metric must be one of {sorted(_LEADERBOARD_METRICS)}")
+        if self.score_version not in _SCORE_VERSIONS:
+            raise ValueError(f"score_version must be one of {sorted(_SCORE_VERSIONS)}")
         for name, value in asdict(self).items():
             if name in _TEXT_FIELDS:
                 continue
@@ -315,7 +322,8 @@ def _execute_stage(stage: str, data_dir: Path, config: PilotConfig,
                    run_id: str) -> dict[str, Any]:
     if stage == "score":
         from .score_snapshot import score_snapshot
-        return score_snapshot(data_dir, data_dir / "score-snapshots", run_id)
+        return score_snapshot(data_dir, data_dir / "score-snapshots", run_id,
+                              score_version=config.score_version)
     # The backfills are append-only and safe to interrupt: unlike collection, a
     # killed run leaves nothing to reconcile, so they never set recovery_required.
     if stage == "entry_prices":  # the horizon decision's chunks first
