@@ -412,6 +412,7 @@ def test_the_deployed_config_is_valid_and_enables_both_backfills() -> None:
     assert config.entry_prices_every_seconds > 0
     assert config.closing_lines_every_seconds > 0
     assert 0 < config.horizon_every_seconds <= 86400
+    assert config.horizon_every_seconds == 86400  # daily since the decision (2026-10-05)
     # The backfills share the daily runtime allowance with hourly collection, so
     # their combined worst case must stay a small part of it.
     worst_case = sum(86400 // every * max_seconds for every, max_seconds in (

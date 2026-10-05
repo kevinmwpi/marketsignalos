@@ -16,7 +16,7 @@
   "closing_lines_max_seconds": 180,
   "min_free_disk_mb": 512,
   "max_watchlist_wallets": 64,
-  "horizon_every_seconds": 3600,
+  "horizon_every_seconds": 86400,
   "metadata_conditions_per_cycle": 600,
   "metadata_requests_per_cycle": 48,
   "cohort_every_seconds": 86400,

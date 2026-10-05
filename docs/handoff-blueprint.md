@@ -975,7 +975,8 @@ Answer these before Stage 1; each changes what gets built.
 
    *Decided 2026-09-30: the price h hours after entry.* The worker collected the week
    after each buy, so h could be anything up to seven days; since the second
-   amendment below it collects six hours. The horizon is still open.
+   amendment below it collects six hours. *h = 1 hour, decided by the rule on
+   2026-10-05 at 00:17 UTC* (record at the end of this item).
    A diagnostic on pilot data picks it and must report, for each h:
    - how often the reference sits within 0.01 of the outcome, compared with the
      last pre-close price on the same bets;
@@ -1096,3 +1097,22 @@ Answer these before Stage 1; each changes what gets built.
    all 245 bets referenced at 1 h. Under the second amendment alone the rule would
    have been on course to choose 1 h; under this one 1 h fails on today's numbers,
    and the decision is still taken at 500 common bets from 20 wallets.
+
+   *Decided by the rule, 2026-10-05 00:17:25 UTC: h = 1 hour.* The first eligible
+   report wrote `diagnostics/horizon/decision.json` on the pilot volume:
+   `{"eligible": true, "horizon": "1h", "rejected_longer": {"6h": "near_outcome
+   0.2064"}}`. Its sample: 611 common bets from 25 wallets (largest share 0.28);
+   `near_outcome` at 1 h of 0.049 on the common set and 0.0496 on all 665 bets
+   referenced at 1 h, against 0.85 for the last pre-close price on the same bets;
+   coverage 0.987; CLV-win correlation 0.135 (mean 1 h CLV +0.003 for winners,
+   -0.011 for losers). The decision is final.
+
+   For the record, without bearing on it: 1 h passed both bounds by less than
+   0.001. The 08:10 UTC report the same day, on 1,027 common bets from 31 wallets,
+   gave 0.036 and 0.038, the same answer with more room. Both reports still held
+   the 17 wallets that the 08:10 score then labelled `systematic`; trading close
+   to resolution, they would raise `near_outcome`, not lower it. The CLV-win
+   correlation fell to 0.088 in that report: a 1 h reference carries little of
+   the outcome, which is the point, and also means a wallet's 1 h CLV is a weak,
+   noisy signal. The gate-13 score version has to be built for that (enough bets
+   per wallet, an honest lower bound), not around it by revisiting h.
