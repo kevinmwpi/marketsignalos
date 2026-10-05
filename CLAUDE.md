@@ -307,6 +307,7 @@ Keep the $15/month target and the prepare-before-provisioning rule.
 | `docs/storage-benchmark.md` | Offline activity JSONL/Parquet benchmark and source integrity |
 | `docs/enrichment-shadow.md` | Full scorer parity and memory measurements |
 | `docs/benchmarks/2026-09-29-price-history-probe.md` | Live probe: closing prices recoverable at 1 h for markets closed 2023+ via explicit windows; basis for `closing_lines.py` |
+| `docs/gate13-clv-v5-plan.md` | Plan for gate 13 on 1 h post-entry CLV (`forecast-v5`): definition, owner decisions D1–D5 (chosen 2026-10-05), build steps |
 | `docs/llm-judge.md` | Market-matcher eval set, TF-IDF baseline tooling, and the planned LLM judge (Phase 1 built) |
 | `docs/benchmarks/2026-09-29-polygon-logs-probe.md` | Live probe: V2 `OrderFilled` decodes to Data API trades exactly; ~2.9 GB/day to follow the chain, ~970 calls per wallet history on free RPC; Goldsky orderbook subgraph is deprecated |
 | `docs/prd.md` | Product requirements, MVP scope, success metrics |
