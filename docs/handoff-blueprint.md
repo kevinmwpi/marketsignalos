@@ -180,7 +180,7 @@ For Stage 0 you need these by name. All thirteen must pass for `tailability_stat
 | 10 | `all_time_pnl > 0` and `all_time_roi > 0` and `pnl_30d >= 0` | economics | economic |
 | 11 | `recent_ess >= 5.0` (`MIN_RECENT_INDEPENDENT_EVENTS`) | recency fit | model |
 | 12 | `recent_fit.edge_mean >= 0.0` | recency fit | model |
-| 13 | `clv_sample >= 10.0` (`MIN_CLV_SAMPLE`) and `clv_lower_bound > 0` | CLV | model |
+| 13 | `clv_sample >= 10.0` (`MIN_CLV_SAMPLE`) and `clv_lower_bound > 0`; CLV 1 h after each buy in `forecast-v5` (the pilot since 2026-10-05) | CLV | model |
 
 Gates 1–6 are **fixable by engineering**. Gates 7–13 are **findings about the world**.
 Conflating them is what produced the current situation.
@@ -1116,3 +1116,11 @@ Answer these before Stage 1; each changes what gets built.
    the outcome, which is the point, and also means a wallet's 1 h CLV is a weak,
    noisy signal. The gate-13 score version has to be built for that (enough bets
    per wallet, an honest lower bound), not around it by revisiting h.
+
+   *Gate 13 switched to forecast-v5, approved by the owner 2026-10-05 (about 10:40
+   UTC).* The pilot publishes `forecast-v5`: gate 13 reads CLV 1 h after each buy
+   (`post_entry_clv.py`; plan, decisions D1-D5 and build in
+   `docs/gate13-clv-v5-plan.md`). Before/after counts on the same inputs, 64
+   wallets ([report](benchmarks/2026-10-05-gate13-power.md)): gate 13 passes 2 →
+   2, tailable 0 → 0, blocked by gate 13 alone 4 → 4. The threshold is unchanged
+   (D4). The daily `gate13` stage keeps scoring both versions side by side.

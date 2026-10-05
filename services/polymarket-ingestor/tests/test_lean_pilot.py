@@ -539,6 +539,24 @@ def test_the_gate13_diagnostic_runs_last_even_when_cohort_maintenance_is_added(
     assert "gate13" not in pilot.plan_cycle(tmp_path, pilot.PilotConfig(), now=later)["due"]
 
 
+def test_the_entry_price_stage_fetches_both_gate13_chunk_sets_first(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from marketsignalos_polymarket import entry_prices, horizon_diagnostic, post_entry_clv
+
+    seen: dict[str, Any] = {}
+
+    def fake_run(data_dir: Path, **kwargs: Any) -> dict[str, Any]:
+        seen.update(kwargs)
+        return {"status": "succeeded"}
+
+    monkeypatch.setattr(horizon_diagnostic, "priority_chunks", lambda d: {("0xa", 1)})
+    monkeypatch.setattr(post_entry_clv, "priority_chunks", lambda d: {("0xb", 2)})
+    monkeypatch.setattr(entry_prices, "run_pending", fake_run)
+    pilot._execute_stage("entry_prices", tmp_path, pilot.PilotConfig(), "r")
+    assert seen["priority"] == {("0xa", 1), ("0xb", 2)}
+
+
 def test_the_score_stage_publishes_the_configured_score_version(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -663,7 +681,7 @@ def test_cohort_maintenance_runs_right_after_scoring(tmp_path: Path) -> None:
     deployed = pilot.PilotConfig(**json.loads(path.read_text(encoding="utf-8")))
     assert deployed.cohort_every_seconds == 86400 and deployed.leaderboard_window == "month"
     assert deployed.leaderboard_metric == "profit"  # since 2026-10-03
-    assert deployed.score_version == "forecast-v4"  # v5 waits for plan step 4
+    assert deployed.score_version == "forecast-v5"  # plan step 4, 2026-10-05
     assert deployed.gate13_every_seconds == 86400  # plan step 3, daily
     # Deep enough that freed slots refill up to the cap (2026-10-04).
     assert deployed.leaderboard_limit == 100 and deployed.max_watchlist_wallets == 64
