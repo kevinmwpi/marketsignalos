@@ -103,6 +103,10 @@ Each step is its own PR with its own evidence.
    1 h CLV; how many wallets could clear zero at their current mean and SD; the
    distribution of exclusion reasons. Published as
    `docs/benchmarks/<date>-gate13-power.md`. This is the evidence for D4.
+   *Built as the pilot's daily `gate13` stage (`gate13_power.py`). It also scores
+   v4 and v5 from the same inputs into a scratch directory, so its log line
+   carries step 4's before/after counts. It cross-checks its per-wallet figures
+   against the v5 generation. The benchmark write-up follows the first runs.*
 4. **Cut-over with counts.** Switch the pilot's scorer to v5. Record gate-13 and
    overall tailable counts for v4 and v5 on the same frozen inputs in
    `docs/benchmarks/<date>-gate13-v5.md` (invariant 1). No threshold change in the
