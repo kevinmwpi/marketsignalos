@@ -333,11 +333,13 @@ def _execute_stage(stage: str, data_dir: Path, config: PilotConfig,
                               score_version=config.score_version)
     # The backfills are append-only and safe to interrupt: unlike collection, a
     # killed run leaves nothing to reconcile, so they never set recovery_required.
-    if stage == "entry_prices":  # the horizon decision's chunks first
-        from . import entry_prices, horizon_diagnostic
+    if stage == "entry_prices":  # gate 13's chunks first: the diagnostic's and v5's
+        from . import entry_prices, horizon_diagnostic, post_entry_clv
+        priority = (horizon_diagnostic.priority_chunks(data_dir)
+                    | post_entry_clv.priority_chunks(data_dir))
         return entry_prices.run_pending(data_dir, limit=config.entry_prices_per_cycle,
                                         max_seconds=config.entry_prices_max_seconds,
-                                        priority=horizon_diagnostic.priority_chunks(data_dir))
+                                        priority=priority)
     if stage == "cohort":  # after scoring, which labels each wallet's trading style
         from . import cohort
         return cohort.run(data_dir)

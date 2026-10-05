@@ -111,7 +111,9 @@ Each step is its own PR with its own evidence.
 4. **Cut-over with counts.** Switch the pilot's scorer to v5. Record gate-13 and
    overall tailable counts for v4 and v5 on the same frozen inputs in
    `docs/benchmarks/<date>-gate13-v5.md` (invariant 1). No threshold change in the
-   same commit.
+   same commit. *Done 2026-10-05 with the owner's approval. The counts are in the
+   step 3 report (identical: 2/0/4). The entry-price stage also fetches every v5
+   fill's hour first (`post_entry_clv.priority_chunks`).*
 5. **Optional threshold change.** Only if step 3 shows `MIN_CLV_SAMPLE` measures
    collection rather than wallets, in its own commit with before/after counts and
    the owner's approval.

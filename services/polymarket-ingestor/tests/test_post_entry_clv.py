@@ -176,6 +176,13 @@ def test_v4_ignores_entry_prices_and_v5_rescoring_is_identical(
             == {cid: _without_timestamps(bet) for cid, bet in second["bets"].items()})
 
 
+def test_v5_fetches_the_hour_after_every_long_dated_fill_first(data: Path) -> None:
+    # Resolved, open and not-yet-priced bets alike; 0xc came two days before its end.
+    assert post_entry_clv.priority_chunks(data) == {("0xa", W), ("0xb", W), ("0xd", W)}
+    assert post_entry_clv.priority_chunks(data) <= entry_prices.needed_chunks(
+        data / "polymarket_activity.jsonl")
+
+
 # ── The power diagnostic (plan step 3) ──────────────────────────────────────
 
 def test_wallet_stats_report_the_sample_needed_for_a_positive_bound() -> None:

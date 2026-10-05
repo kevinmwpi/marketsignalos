@@ -30,9 +30,11 @@ from __future__ import annotations
 from collections import Counter
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
+from pathlib import Path
 
-from .entry_prices import price_after
-from .horizon_diagnostic import RULE
+from .closing_lines import ACTIVITY_FILE
+from .entry_prices import CHUNK_SECONDS, ChunkKey, chunk_start, price_after
+from .horizon_diagnostic import MARKETS_FILE, RULE, _rows, market_states
 
 SCORE_VERSION = "forecast-v5"
 HORIZON_SECONDS = 3600  # decision 6: h = 1 hour
@@ -92,3 +94,26 @@ def bet_clv(
     if weight <= 0.0:
         return BetClv(None, 0.0, exclusions)
     return BetClv(weighted / weight, weight, exclusions)
+
+
+def priority_chunks(data_dir: Path) -> set[ChunkKey]:
+    """Entry-price chunks forecast-v5 reads: the hour after every BUY fill placed at
+    least seven days before its market's scheduled end, whatever the bet's status.
+    The pilot's entry-price stage fetches them first, together with the horizon
+    diagnostic's (approved 2026-10-05: open and exited bets were queuing behind
+    newer buys)."""
+    ends = {cid: state.scheduled_end for cid, state in
+            market_states(data_dir / MARKETS_FILE).items() if state.scheduled_end is not None}
+    chunks: set[ChunkKey] = set()
+    for row in _rows(data_dir / ACTIVITY_FILE):  # streamed: activity is large
+        if row.get("type") != "TRADE" or str(row.get("side", "")).upper() != "BUY":
+            continue
+        cid = str(row.get("condition_id", "")).strip().lower()
+        ts = row.get("timestamp")
+        end = ends.get(cid)
+        if (end is None or not isinstance(ts, int) or isinstance(ts, bool)
+                or end - ts < MIN_SECONDS_TO_END):
+            continue
+        for start in range(chunk_start(ts), ts + HORIZON_SECONDS + 1, CHUNK_SECONDS):
+            chunks.add((cid, start))
+    return chunks
