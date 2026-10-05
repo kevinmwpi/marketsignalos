@@ -1,8 +1,8 @@
 # Gate 13 on 1-hour post-entry CLV (`forecast-v5`): plan for review
 
-Status: **plan only, nothing built.** Written 2026-10-05 after the horizon rule
-decided h = 1 hour (blueprint §12, decision 6). No scoring change lands until the
-owner has reviewed the decisions in §3.
+Status: **decisions chosen, build not started.** Written 2026-10-05 after the
+horizon rule decided h = 1 hour (blueprint §12, decision 6). The owner chose the
+recommended option for D1–D5 on 2026-10-05 (§3); the build follows §4.
 
 ## 1. What is settled
 
@@ -40,7 +40,10 @@ to its start, so rescoring a snapshot never sees prices fetched later.
 
 ## 3. Decisions for the owner
 
-Each has a recommendation; none is built until chosen.
+Chosen 2026-10-05: the recommended option in each case. D1: fills at least seven
+days before the scheduled end. D2: resolved, exited and open bets. D3: against the
+price paid. D4: keep 10 until the power diagnostic. D5: v5 redefines the `clv_*`
+fields as 1 h post-entry CLV.
 
 **D1. Which fills count.** *Recommended: only fills at least seven days before the
 scheduled end*, the population the leakage bound was measured on. Without the
