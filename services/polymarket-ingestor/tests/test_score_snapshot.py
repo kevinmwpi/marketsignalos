@@ -77,6 +77,7 @@ def data(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     root = tmp_path / "data"
     root.mkdir()
     for name in snapshot.INPUTS:
+        (root / name).parent.mkdir(parents=True, exist_ok=True)
         (root / name).write_text("", encoding="utf-8")
     # Scoring must never parse the activity dedupe index or replace old outputs.
     (root / "polymarket_activity.jsonl.index.json").write_text("not JSON", encoding="utf-8")
@@ -87,8 +88,13 @@ def data(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     return root
 
 
+def _files(root: Path) -> dict[str, bytes]:
+    return {path.relative_to(root).as_posix(): path.read_bytes()
+            for path in root.rglob("*") if path.is_file()}
+
+
 def test_publish_validates_and_commits_pointer_last(data: Path, tmp_path: Path) -> None:
-    before = {path.name: path.read_bytes() for path in data.iterdir()}
+    before = _files(data)
     snapshots = tmp_path / "snapshots"
     result = snapshot.score_snapshot(data, snapshots, "run-1")
     assert result["snapshot_kind"] == "derived_scores"
@@ -99,7 +105,7 @@ def test_publish_validates_and_commits_pointer_last(data: Path, tmp_path: Path) 
     assert len(result["code"]["package_source_sha256"]) == 64
     assert datetime.fromisoformat(result["completed_at"]).utcoffset() is not None
     assert snapshot.load_current(snapshots) == result
-    assert {path.name: path.read_bytes() for path in data.iterdir()} == before
+    assert _files(data) == before
     assert {path.name for path in (snapshots / "run-1").iterdir()} == {
         "manifest.json", snapshot.ENRICHMENT, snapshot.BETS,
     }
@@ -206,6 +212,24 @@ def test_load_rejects_corrupted_snapshot(data: Path, tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="checksum/count mismatch"):
         snapshot.load_current(snapshots)
     assert snapshot.load_current(snapshots, verify_files=False)["run_id"] == "first"
+
+
+def test_entry_prices_are_inventoried_as_scoring_inputs(data: Path, tmp_path: Path) -> None:
+    from marketsignalos_polymarket import entry_prices
+
+    names = {f"{entry_prices.STORE_DIR}/{entry_prices.OBSERVATIONS_FILE}",
+             f"{entry_prices.STORE_DIR}/{entry_prices.RECEIPTS_FILE}"}
+    assert names <= set(snapshot.INPUTS)
+    observations = data / entry_prices.STORE_DIR / entry_prices.OBSERVATIONS_FILE
+    observations.write_text('{"price": 0.5}\n', encoding="utf-8")
+    result = snapshot.score_snapshot(data, tmp_path / "snapshots", "with-prices")
+    recorded = result["inputs"][f"{entry_prices.STORE_DIR}/{entry_prices.OBSERVATIONS_FILE}"]
+    assert recorded["exists"] and recorded["bytes"] == observations.stat().st_size
+    # A pilot that never backfilled entry prices still scores, and says so.
+    for name in names:
+        (data / name).unlink()
+    bare = snapshot.score_snapshot(data, tmp_path / "snapshots", "no-prices")
+    assert all(bare["inputs"][name] == {"exists": False} for name in names)
 
 
 def test_missing_context_is_explicit_but_missing_activity_fails(data: Path, tmp_path: Path) -> None:

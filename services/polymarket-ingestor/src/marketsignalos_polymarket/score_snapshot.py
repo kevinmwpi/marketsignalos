@@ -30,6 +30,11 @@ INPUTS = (
     "polymarket_leaderboard.jsonl",
     "polymarket_wallet_hydration.jsonl",
     "polymarket_price_snapshots.jsonl",
+    # Hourly prices after each buy (entry_prices.py), the reference for gate 13's
+    # 1 h post-entry CLV (forecast-v5, docs/gate13-clv-v5-plan.md). Inventoried
+    # so every generation records which entry prices existed when it was scored.
+    "entry_prices/price_observations.jsonl",
+    "entry_prices/chunk_receipts.jsonl",
 )
 ENRICHMENT = "polymarket_wallet_enrichment.jsonl"
 BETS = "polymarket_wallet_bets.jsonl"
