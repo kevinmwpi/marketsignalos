@@ -1930,12 +1930,24 @@ def _load_price_snapshot_records(path: Path) -> list[PolymarketPriceSnapshot]:
     return out
 
 
-def run_enrichment(stores: _Stores) -> int:
+def run_enrichment(
+    stores: _Stores, *, entry_prices_store: Path | None = None,
+    observed_before: datetime | None = None,
+) -> int:
     """Recompute and overwrite wallet enrichment from the local JSONL stores.
 
     The activity file is streamed through wallet-disjoint on-disk shards so
     peak memory is bounded by one shard, not the whole file — fully-hydrated
-    whale wallets push the activity JSONL past what fits in RAM."""
+    whale wallets push the activity JSONL past what fits in RAM.
+
+    With ``entry_prices_store`` the scorer is forecast-v5 (post_entry_clv.py):
+    CLV reads the hourly prices after each buy, and only those fetched by
+    ``observed_before``, so a generation never sees prices fetched after it."""
+    from .entry_prices import load_entry_prices
+
+    entry_price_series = (
+        None if entry_prices_store is None
+        else load_entry_prices(entry_prices_store, observed_before=observed_before))
     markets = _load_market_records(stores.markets_path)
     leaderboard = _load_leaderboard_records(stores.leaderboard_path)
     hydration = stores.hydration.load_hydration()
@@ -1962,6 +1974,7 @@ def run_enrichment(stores: _Stores) -> int:
                 hydration_by_wallet=hydration,
                 price_snapshots=price_snapshots,
                 bet_sink=_bet_sink,
+                entry_price_series=entry_price_series,
             )
     finally:
         shutil.rmtree(shard_dir, ignore_errors=True)

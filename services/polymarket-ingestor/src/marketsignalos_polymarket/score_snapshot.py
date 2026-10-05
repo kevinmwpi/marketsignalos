@@ -149,8 +149,16 @@ def _write_json_atomic(path: Path, payload: dict[str, Any], run_id: str) -> str:
     return hashlib.sha256(raw).hexdigest()
 
 
-def score_snapshot(data_dir: Path, snapshots_dir: Path, run_id: str) -> dict[str, Any]:
+SCORE_VERSIONS = ("forecast-v4", "forecast-v5")
+
+
+def score_snapshot(
+    data_dir: Path, snapshots_dir: Path, run_id: str, *, score_version: str = "forecast-v4",
+) -> dict[str, Any]:
     """Score local inputs, validate the generation, and atomically publish it.
+
+    ``forecast-v5`` measures CLV 1 h after each buy from the entry-price store,
+    reading only prices fetched before this generation started (point in time).
 
     run_id must be new. Input size/mtime/inode checks detect ordinary concurrent
     changes, not adversarial same-stat rewrites; the caller's lock is required.
@@ -158,6 +166,8 @@ def score_snapshot(data_dir: Path, snapshots_dir: Path, run_id: str) -> dict[str
     untrusted-data behavior. An activity file must exist, even if empty.
     """
     _validate_run_id(run_id)
+    if score_version not in SCORE_VERSIONS:
+        raise ValueError(f"score_version must be one of {SCORE_VERSIONS}")
     data_dir = data_dir.resolve(strict=True)
     snapshots_dir = snapshots_dir.resolve()
     inventory = _input_inventory(data_dir)
@@ -166,7 +176,8 @@ def score_snapshot(data_dir: Path, snapshots_dir: Path, run_id: str) -> dict[str
     snapshots_dir.mkdir(parents=True, exist_ok=True)
     generation = snapshots_dir / run_id
     generation.mkdir(exist_ok=False)
-    started_at = datetime.now(UTC).isoformat()
+    started = datetime.now(UTC)
+    started_at = started.isoformat()
     code_digest = hashlib.sha256()
     for source in sorted(Path(__file__).parent.glob("*.py")):
         code_digest.update(source.name.encode())
@@ -176,7 +187,11 @@ def score_snapshot(data_dir: Path, snapshots_dir: Path, run_id: str) -> dict[str
     stores.enrichment = JsonlEnrichmentStore(generation / ENRICHMENT)
     bet_store = _CountedBetStore(generation / BETS)
     stores.wallet_bets = bet_store
-    wallet_count = run_enrichment(stores)
+    if score_version == "forecast-v5":
+        wallet_count = run_enrichment(
+            stores, entry_prices_store=data_dir / "entry_prices", observed_before=started)
+    else:
+        wallet_count = run_enrichment(stores)
     if type(wallet_count) is not int or wallet_count < 0:
         raise ValueError("Scorer returned an invalid wallet count")
     outputs = {name: _validate_output(generation / name) for name in OUTPUTS}

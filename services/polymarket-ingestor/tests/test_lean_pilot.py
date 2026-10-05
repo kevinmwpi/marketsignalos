@@ -519,6 +519,26 @@ def test_the_horizon_diagnostic_runs_after_the_backfills_and_before_scoring(
         "collect", "entry_prices", "closing_lines", "horizon", "score"]
 
 
+def test_the_score_stage_publishes_the_configured_score_version(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from marketsignalos_polymarket import score_snapshot
+
+    seen: dict[str, Any] = {}
+
+    def fake(data_dir: Path, snapshots_dir: Path, run_id: str, *,
+             score_version: str) -> dict[str, Any]:
+        seen.update(run_id=run_id, score_version=score_version)
+        return {"status": "succeeded"}
+
+    monkeypatch.setattr(score_snapshot, "score_snapshot", fake)
+    pilot._execute_stage("score", tmp_path, pilot.PilotConfig(score_version="forecast-v5"), "r")
+    assert seen == {"run_id": "r", "score_version": "forecast-v5"}
+    assert pilot.PilotConfig().score_version == "forecast-v4"
+    with pytest.raises(ValueError, match="score_version"):
+        pilot.PilotConfig(score_version="forecast-v6")
+
+
 def test_the_horizon_stage_writes_a_report_from_an_empty_directory(tmp_path: Path) -> None:
     result = pilot._execute_stage("horizon", tmp_path, pilot.PilotConfig(), "r1")
     assert result["status"] == "succeeded" and result["resolved_bets"] == 0
@@ -623,5 +643,6 @@ def test_cohort_maintenance_runs_right_after_scoring(tmp_path: Path) -> None:
     deployed = pilot.PilotConfig(**json.loads(path.read_text(encoding="utf-8")))
     assert deployed.cohort_every_seconds == 86400 and deployed.leaderboard_window == "month"
     assert deployed.leaderboard_metric == "profit"  # since 2026-10-03
+    assert deployed.score_version == "forecast-v4"  # v5 waits for plan step 4
     # Deep enough that freed slots refill up to the cap (2026-10-04).
     assert deployed.leaderboard_limit == 100 and deployed.max_watchlist_wallets == 64

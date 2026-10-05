@@ -36,11 +36,11 @@ import logging
 import math
 import time
 from collections import defaultdict
-from collections.abc import Callable, Iterator
-from dataclasses import dataclass, replace
+from collections.abc import Callable, Iterator, Mapping
+from dataclasses import dataclass, field, replace
 from typing import Any
 
-from . import metrics
+from . import metrics, post_entry_clv
 from .bayesian_skill import (
     Bet,
     PopulationPrior,
@@ -112,6 +112,10 @@ class _Position:
     # volume-weighted entry price survives a full exit (CLV needs it).
     bought_size: float = 0.0
     bought_cost_usdc: float = 0.0
+    # Each BUY fill as (timestamp, price paid, USDC): forecast-v5 references
+    # every fill 1 h after it (post_entry_clv.py). Price is USDC / size, because
+    # the activity store does not keep price.
+    buys: list[tuple[int, float, float]] = field(default_factory=list)
 
 
 def _aggregate_positions(activity: list[PolymarketActivity]) -> dict[tuple[str, int], _Position]:
@@ -151,6 +155,10 @@ def _aggregate_positions(activity: list[PolymarketActivity]) -> dict[tuple[str, 
             pos.total_cost_usdc += event.usdc_size
             pos.bought_size += event.size
             pos.bought_cost_usdc += event.usdc_size
+            if event.size > 0 and event.usdc_size > 0:
+                pos.buys.append(
+                    (event.timestamp, event.usdc_size / event.size, event.usdc_size)
+                )
         elif side == "SELL":
             if pos.net_size > 0:
                 # Proportional cost-basis removal.
@@ -376,6 +384,7 @@ class _PositionRecord:
     total_pnl_usdc: float
     market_resolved: bool
     last_ts: int
+    buys: tuple[tuple[int, float, float], ...] = ()
 
 
 @dataclass(slots=True)
@@ -453,6 +462,7 @@ def _roll_up_wallet(
                 total_pnl_usdc=pnl,
                 market_resolved=market_resolved,
                 last_ts=pos.last_ts,
+                buys=tuple(pos.buys),
             )
         )
 
@@ -565,6 +575,7 @@ def _enrichment_from_rollup(
     hydration: PolymarketWalletHydration | None = None,
     style: TraderStyle | None = None,
     lead: PriceLead | None = None,
+    score_version: str = "forecast-v4",
 ) -> PolymarketWalletEnrichment:
     style = style or unclassified_style("style not computed")
     lead = lead or unmeasured_price_lead("price lead not computed")
@@ -634,12 +645,16 @@ def _enrichment_from_rollup(
     # market settled? Require statistically-confident positive CLV over an
     # adequate sample, not just a good win/loss-implied forecast fit. (clv_stats
     # is (mean, lower_bound, sample_size).)
+    # forecast-v5 measures it 1 h after each buy (post_entry_clv.py); forecast-v4
+    # against the last pre-close price, which sits at the outcome (decision 6).
+    clv_name = ("1 h post-entry CLV" if score_version == post_entry_clv.SCORE_VERSION
+                else "closing-line")
     if clv_stats[2] < MIN_CLV_SAMPLE:
         tailability_reasons.append(
-            f"fewer than {int(MIN_CLV_SAMPLE)} closing-line observations"
+            f"fewer than {int(MIN_CLV_SAMPLE)} {clv_name} observations"
         )
     elif clv_stats[1] <= 0.0:
-        tailability_reasons.append("closing-line value not confidently positive")
+        tailability_reasons.append(f"{clv_name} value not confidently positive")
     tailability_status = "tailable" if not tailability_reasons else "blocked"
 
     return PolymarketWalletEnrichment(
@@ -690,6 +705,7 @@ def _enrichment_from_rollup(
         clv_mean=round(clv_stats[0], 6),
         clv_lower_bound=round(clv_stats[1], 6),
         clv_sample_size=round(clv_stats[2], 4),
+        score_version=score_version,
         style_archetype=style.archetype,
         automation_score=style.automation_score,
         style_drivers=list(style.drivers),
@@ -736,6 +752,45 @@ def _records_clv(
         per_record.append(clv)
         observations.append((clv, rec.event_slug, rec.cost_usdc))
     return _weighted_clv_stats(observations), per_record
+
+
+def _records_post_entry_clv(
+    records: list[_PositionRecord],
+    markets_by_condition: dict[str, PolymarketMarket],
+    series: Mapping[str, list[tuple[int, float]]],
+) -> tuple[tuple[float, float, float], list[float | None]]:
+    """forecast-v5's ``_records_clv``: each record's CLV 1 h after each of its BUY
+    fills (post_entry_clv.py), with the same event-capped wallet statistics. A
+    record's weight is the USDC of its fills that have a reference."""
+    observations: list[tuple[float, str, float]] = []
+    per_record: list[float | None] = []
+    for rec in records:
+        market = markets_by_condition.get(rec.condition_id)
+        # parse_iso_ts reads a blank or unparseable date as 0: no end date.
+        end = (parse_iso_ts(market.end_date) if market is not None else 0) or None
+        result = post_entry_clv.bet_clv(
+            rec.buys, condition_id=rec.condition_id, outcome_index=rec.outcome_index,
+            scheduled_end=end, series=series,
+        )
+        per_record.append(result.clv)
+        if result.clv is not None:
+            observations.append((result.clv, rec.event_slug, result.weight_usdc))
+    return _weighted_clv_stats(observations), per_record
+
+
+def _clv_for(
+    records: list[_PositionRecord],
+    markets_by_condition: dict[str, PolymarketMarket],
+    history: _PriceHistory,
+    entry_price_series: Mapping[str, list[tuple[int, float]]] | None,
+) -> tuple[tuple[float, float, float], list[float | None], str]:
+    """CLV statistics, per-record CLV and the score version that defines them:
+    forecast-v5 when entry prices are supplied, forecast-v4 otherwise."""
+    if entry_price_series is None:
+        return (*_records_clv(records, history), "forecast-v4")
+    stats, per_record = _records_post_entry_clv(
+        records, markets_by_condition, entry_price_series)
+    return stats, per_record, post_entry_clv.SCORE_VERSION
 
 
 def _wallet_bets_from_rollup(
@@ -794,6 +849,7 @@ def compute_wallet_enrichment(
     population_prior: PopulationPrior | None = None,
     hydration: PolymarketWalletHydration | None = None,
     price_snapshots: list[PolymarketPriceSnapshot] | None = None,
+    entry_price_series: Mapping[str, list[tuple[int, float]]] | None = None,
 ) -> PolymarketWalletEnrichment:
     """
     Compute one wallet's enrichment row.
@@ -830,7 +886,8 @@ def compute_wallet_enrichment(
     history = build_price_history(
         list(markets_by_condition.values()), price_snapshots
     )
-    clv_stats, _ = _records_clv(rollup.records, history)
+    clv_stats, _, score_version = _clv_for(
+        rollup.records, markets_by_condition, history, entry_price_series)
     style = compute_trader_style(
         activity, categories_by_condition=_categories_index(markets_by_condition)
     )
@@ -847,6 +904,7 @@ def compute_wallet_enrichment(
         hydration=hydration,
         style=style,
         lead=lead,
+        score_version=score_version,
     )
 
 
@@ -857,6 +915,7 @@ def compute_enrichment_outputs(
     leaderboard: list[PolymarketLeaderboardEntry],
     hydration_by_wallet: dict[str, PolymarketWalletHydration] | None = None,
     price_snapshots: list[PolymarketPriceSnapshot] | None = None,
+    entry_price_series: Mapping[str, list[tuple[int, float]]] | None = None,
 ) -> tuple[list[PolymarketWalletEnrichment], list[PolymarketWalletBet]]:
     """Single-shot wrapper around the shard-streaming core — use it when the
     activity list already fits in memory (tests, small datasets)."""
@@ -866,6 +925,7 @@ def compute_enrichment_outputs(
         leaderboard=leaderboard,
         hydration_by_wallet=hydration_by_wallet,
         price_snapshots=price_snapshots,
+        entry_price_series=entry_price_series,
     )
 
 
@@ -877,6 +937,7 @@ def compute_enrichment_outputs_streaming(
     hydration_by_wallet: dict[str, PolymarketWalletHydration] | None = None,
     price_snapshots: list[PolymarketPriceSnapshot] | None = None,
     bet_sink: Callable[[list[PolymarketWalletBet]], None] | None = None,
+    entry_price_series: Mapping[str, list[tuple[int, float]]] | None = None,
 ) -> tuple[list[PolymarketWalletEnrichment], list[PolymarketWalletBet]]:
     """
     Compute enrichment for every wallet present in the activity stream,
@@ -901,6 +962,10 @@ def compute_enrichment_outputs_streaming(
     the last unbounded sink after the rollup fix. Sink order is deterministic
     (shard order, then first-appearance order within a shard) but NOT sorted
     by wallet the way the accumulate-and-return path sorts.
+
+    With ``entry_price_series`` (entry_prices.load_entry_prices) the scorer is
+    forecast-v5: CLV is measured 1 h after each buy (post_entry_clv.py) instead
+    of against the closing line, and every row says so in ``score_version``.
 
     The leaderboard list is used purely to look up display names /
     pseudonyms (since the data-api uses the pseudonymized
@@ -986,7 +1051,8 @@ def compute_enrichment_outputs_streaming(
                 recent_bets, mu_prior=prior.mu, sigma2_prior=prior.sigma2
             )
             recent_ess = effective_sample_size(recent_bets)
-            clv_stats, per_record_clv = _records_clv(rollup.records, history)
+            clv_stats, per_record_clv, score_version = _clv_for(
+                rollup.records, markets_by_condition, history, entry_price_series)
             hydration = refresh_hydration_metadata(
                 (hydration_by_wallet or {}).get(rollup.wallet),
                 activity_conditions(events), coverage_index,
@@ -1007,6 +1073,7 @@ def compute_enrichment_outputs_streaming(
                     hydration=hydration,
                     style=style,
                     lead=lead,
+                    score_version=score_version,
                 )
             )
             wallet_bets = _wallet_bets_from_rollup(

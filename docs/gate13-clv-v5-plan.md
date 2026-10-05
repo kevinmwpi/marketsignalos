@@ -31,9 +31,12 @@ Wallet level: the existing `_weighted_clv_stats` — event-capped capital weight
 weighted mean, normal-approximation 5th-percentile lower bound, and
 `clv_sample_size` = sum of event-capped weights. Unchanged code, new inputs.
 
-A fill without a reference is excluded **with its reason** (`closed`, `ended`,
-`gap`, `not_fetched`, `no_history` before 2023), never zero-filled. Reasons are
-counted per wallet in the enrichment row.
+A fill without a reference is excluded **with its reason**, never zero-filled:
+`no_scheduled_end`, `near_scheduled_end`, `invalid_fill` or `no_reference`
+(`post_entry_clv.py`). The power diagnostic (step 3) counts them per wallet. They
+are not stored on the enrichment row, which would need a Postgres migration for a
+diagnostic quantity. It also splits `no_reference` into not fetched, closed and
+gap using the chunk receipts.
 
 Point in time: a frozen generation reads entry prices with `observed_before` set
 to its start, so rescoring a snapshot never sees prices fetched later.
@@ -86,12 +89,16 @@ migration of old rows is needed.
 Each step is its own PR with its own evidence.
 
 1. **Score input.** Add the `entry_prices/` store to `score_snapshot.INPUTS`, so
-   the manifest inventories both files, and pass `observed_before`. Acceptance:
-   inventory test; the same snapshot rescored twice is byte-identical.
-2. **v5 scorer.** Implement §2 behind `score_version = "forecast-v5"`, reusing
-   `horizon_diagnostic`'s filter and `entry_prices.price_after`, with exclusion
-   reasons per fill. Acceptance: unit tests on fixtures built through the real
-   stores (the lesson of 2026-10-02: no invented fields), and v4 output unchanged.
+   the manifest inventories both files. Acceptance: inventory test. *Done:
+   PR #60.*
+2. **v5 scorer.** Implement §2 behind `score_version = "forecast-v5"`
+   (`post_entry_clv.py`; `score_snapshot(score_version=...)`; the pilot's
+   `score_version`, still `forecast-v4` when deployed), reusing `horizon_diagnostic`'s
+   filter and `entry_prices.price_after`, and reading entry prices with
+   `observed_before` set to the generation's start. Acceptance: unit tests on
+   fixtures built through the real stores (the lesson of 2026-10-02: no invented
+   fields). v4 output must be unchanged with or without entry prices, and a v5
+   rescoring identical apart from `computed_at`.
 3. **Power diagnostic (read-only).** Per wallet: n_eff, mean, SD and lower bound of
    1 h CLV; how many wallets could clear zero at their current mean and SD; the
    distribution of exclusion reasons. Published as
