@@ -21,5 +21,6 @@
   "metadata_requests_per_cycle": 48,
   "cohort_every_seconds": 86400,
   "leaderboard_window": "month",
-  "leaderboard_metric": "profit"
+  "leaderboard_metric": "profit",
+  "gate13_every_seconds": 86400
 }

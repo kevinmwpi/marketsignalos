@@ -53,6 +53,25 @@ class BetClv:
     exclusions: Counter[str] = field(default_factory=Counter)
 
 
+def fill_clv(
+    fill: Fill, *, outcome_index: int, scheduled_end: int | None,
+    points: list[tuple[int, float]],
+) -> tuple[float | None, str]:
+    """One fill's CLV, or None with the reason it is excluded (empty when it counts)."""
+    ts, price, usdc = fill
+    if scheduled_end is None:
+        return None, "no_scheduled_end"
+    if scheduled_end - ts < MIN_SECONDS_TO_END:
+        return None, "near_scheduled_end"
+    if not 0.0 < price < 1.0 or usdc <= 0.0:
+        return None, "invalid_fill"
+    yes = price_after(points, ts, HORIZON_SECONDS)
+    if yes is None:
+        return None, "no_reference"
+    reference = yes if outcome_index == 0 else 1.0 - yes
+    return reference - price, ""
+
+
 def bet_clv(
     fills: Iterable[Fill], *, condition_id: str, outcome_index: int,
     scheduled_end: int | None, series: Series,
@@ -62,23 +81,14 @@ def bet_clv(
     weighted = 0.0
     weight = 0.0
     points = series.get(condition_id, [])
-    for ts, price, usdc in fills:
-        if scheduled_end is None:
-            exclusions["no_scheduled_end"] += 1
+    for fill in fills:
+        clv, reason = fill_clv(fill, outcome_index=outcome_index,
+                               scheduled_end=scheduled_end, points=points)
+        if clv is None:
+            exclusions[reason] += 1
             continue
-        if scheduled_end - ts < MIN_SECONDS_TO_END:
-            exclusions["near_scheduled_end"] += 1
-            continue
-        if not 0.0 < price < 1.0 or usdc <= 0.0:
-            exclusions["invalid_fill"] += 1
-            continue
-        yes = price_after(points, ts, HORIZON_SECONDS)
-        if yes is None:
-            exclusions["no_reference"] += 1
-            continue
-        reference = yes if outcome_index == 0 else 1.0 - yes
-        weighted += usdc * (reference - price)
-        weight += usdc
+        weighted += fill[2] * clv
+        weight += fill[2]
     if weight <= 0.0:
         return BetClv(None, 0.0, exclusions)
     return BetClv(weighted / weight, weight, exclusions)

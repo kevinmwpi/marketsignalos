@@ -176,6 +176,54 @@ def test_v4_ignores_entry_prices_and_v5_rescoring_is_identical(
             == {cid: _without_timestamps(bet) for cid, bet in second["bets"].items()})
 
 
+# ── The power diagnostic (plan step 3) ──────────────────────────────────────
+
+def test_wallet_stats_report_the_sample_needed_for_a_positive_bound() -> None:
+    from marketsignalos_polymarket.gate13_power import wallet_stats
+
+    stats = wallet_stats([(0.02, "a", 5.0), (0.04, "b", 9.0)])
+    assert (stats["bets"], stats["n_eff"], stats["mean"], stats["sd"]) == (
+        2, 2.0, pytest.approx(0.03), pytest.approx(0.01))
+    assert stats["lower_bound"] == pytest.approx(0.03 - 1.6448536 * 0.01 / 2 ** 0.5, abs=1e-6)
+    assert stats["needed_n_eff"] == pytest.approx((1.6448536 * 0.01 / 0.03) ** 2, abs=0.05)
+    assert stats["passes"] is False  # a sample of 2 events is under MIN_CLV_SAMPLE
+    assert wallet_stats([(-0.01, "a", 1.0), (0.0, "b", 1.0)])["needed_n_eff"] is None
+
+
+def test_the_power_diagnostic_counts_both_versions_and_explains_exclusions(
+    data: Path, tmp_path: Path,
+) -> None:
+    from marketsignalos_polymarket import gate13_power
+
+    now = datetime(2026, 10, 5, 12, tzinfo=UTC)
+    result = gate13_power.run(data, now=now)
+    assert result["status"] == "succeeded"
+    assert result["counts"]["forecast-v4"]["wallets"] == 1
+    assert result["counts"]["forecast-v5"] == {
+        "wallets": 1, "gate13_pass": 0, "tailable": 0,
+        "blocked_only_by_gate13": 0}
+    # 0xc was bought two days before its end; 0xd's prices were fetched after the
+    # run began, and with no chunk receipts its hour counts as not yet fetched.
+    assert result["exclusions"] == {"near_scheduled_end": 1, "not_fetched": 1}
+    assert result["cross_check_mismatches"] == 0  # agrees with the v5 generation
+    assert result["wallets_with_observations"] == 1
+    saved = json.loads((data / gate13_power.REPORT_DIR / "2026-10-05.json").read_text())
+    assert saved["wallets"][WALLET]["bets"] == 2
+    assert not (data / gate13_power.SCRATCH_DIR).exists()
+    assert not (data / "score-snapshots").exists()  # the published scores are untouched
+
+
+def test_an_unfetchable_hour_is_split_by_why_it_has_no_price() -> None:
+    from marketsignalos_polymarket.gate13_power import _no_reference_reason
+
+    points = [(W + i * HOUR, 0.5) for i in (0, 1, 2, 30)]
+    final = {("0xa", W)}
+    assert _no_reference_reason("0xa", W + C - 1800, points, final, None) == "not_fetched"
+    assert _no_reference_reason("0xa", W + 5 * HOUR, points, final, None) == "gap"
+    assert _no_reference_reason("0xa", W + 40 * HOUR, points, final, None) == "ended"
+    assert _no_reference_reason("0xa", W + 5 * HOUR, points, final, W + 5 * HOUR) == "closed"
+
+
 def test_an_unknown_score_version_is_refused(data: Path, tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="score_version"):
         snapshot.score_snapshot(data, tmp_path / "snapshots", "bad", score_version="v6")

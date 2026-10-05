@@ -519,6 +519,26 @@ def test_the_horizon_diagnostic_runs_after_the_backfills_and_before_scoring(
         "collect", "entry_prices", "closing_lines", "horizon", "score"]
 
 
+def test_the_gate13_diagnostic_runs_last_even_when_cohort_maintenance_is_added(
+    tmp_path: Path,
+) -> None:
+    config = pilot.PilotConfig(cohort_every_seconds=86400, gate13_every_seconds=86400)
+    assert pilot.plan_cycle(tmp_path, config, now=Clock().now())["due"][-3:] == [
+        "score", "cohort", "gate13"]
+    clock = Clock(datetime(2026, 10, 5, 0, 9, tzinfo=UTC))
+    pilot.run_cycle(tmp_path, config, "first", execute=lambda *a: {},
+                    now_fn=clock.now, monotonic=clock.monotonic)
+    snapshots = tmp_path / "score-snapshots"
+    snapshots.mkdir()
+    (snapshots / "current.json").write_text(json.dumps({"run_id": "unread"}))
+    later = datetime(2026, 10, 6, 0, 9, tzinfo=UTC)  # gate13 due by interval, score too
+    assert pilot.plan_cycle(tmp_path, config, now=later)["due"][-3:] == [
+        "score", "cohort", "gate13"]
+    hourly = datetime(2026, 10, 5, 9, 10, tzinfo=UTC)  # only the unread score adds cohort
+    assert pilot.plan_cycle(tmp_path, config, now=hourly)["due"] == ["collect", "cohort"]
+    assert "gate13" not in pilot.plan_cycle(tmp_path, pilot.PilotConfig(), now=later)["due"]
+
+
 def test_the_score_stage_publishes_the_configured_score_version(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -644,5 +664,6 @@ def test_cohort_maintenance_runs_right_after_scoring(tmp_path: Path) -> None:
     assert deployed.cohort_every_seconds == 86400 and deployed.leaderboard_window == "month"
     assert deployed.leaderboard_metric == "profit"  # since 2026-10-03
     assert deployed.score_version == "forecast-v4"  # v5 waits for plan step 4
+    assert deployed.gate13_every_seconds == 86400  # plan step 3, daily
     # Deep enough that freed slots refill up to the cap (2026-10-04).
     assert deployed.leaderboard_limit == 100 and deployed.max_watchlist_wallets == 64

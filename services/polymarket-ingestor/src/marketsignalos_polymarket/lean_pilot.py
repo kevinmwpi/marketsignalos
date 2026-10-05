@@ -31,7 +31,7 @@ SCHEMA_VERSION = 1
 # Fields where 0 means "off" or "no limit".
 _ZERO_ALLOWED = frozenset({"entry_prices_every_seconds", "closing_lines_every_seconds",
                            "horizon_every_seconds", "cohort_every_seconds",
-                           "max_watchlist_wallets"})
+                           "gate13_every_seconds", "max_watchlist_wallets"})
 _LEADERBOARD_WINDOWS = frozenset({"day", "week", "month", "all"})
 _LEADERBOARD_METRICS = frozenset({"volume", "profit"})
 _SCORE_VERSIONS = frozenset({"forecast-v4", "forecast-v5"})
@@ -85,6 +85,10 @@ class PilotConfig:
     # after each buy (post_entry_clv.py, docs/gate13-clv-v5-plan.md); the switch
     # is plan step 4, taken with before/after cohort counts.
     score_version: str = "forecast-v4"
+    # Gate-13 power diagnostic (gate13_power.py, plan step 3): scores v4 and v5
+    # into a scratch directory and reports per-wallet v5 CLV power. Read-only
+    # apart from its report. 0 disables it.
+    gate13_every_seconds: int = 0
     # The volume cannot grow past 5 GB on Railway Hobby, and every wallet added
     # keeps its activity history, so the watchlist stops growing here. 0 = no cap.
     max_watchlist_wallets: int = 0
@@ -261,8 +265,10 @@ def _storage_mb(data_dir: Path) -> dict[str, float]:
 
 # Run order within a cycle: collection first, then the price backfills for what
 # was collected, then the diagnostic that reads them, then scoring, then cohort
-# maintenance, which acts on the trading styles scoring has just labelled.
-STAGES = ("collect", "entry_prices", "closing_lines", "horizon", "score", "cohort")
+# maintenance, which acts on the trading styles scoring has just labelled, then
+# the gate-13 power diagnostic on the cohort that remains.
+STAGES = ("collect", "entry_prices", "closing_lines", "horizon", "score", "cohort",
+          "gate13")
 
 
 def _stage_intervals(config: PilotConfig) -> list[tuple[str, int]]:
@@ -271,7 +277,8 @@ def _stage_intervals(config: PilotConfig) -> list[tuple[str, int]]:
                  "closing_lines": config.closing_lines_every_seconds,
                  "horizon": config.horizon_every_seconds,
                  "score": config.score_every_seconds,
-                 "cohort": config.cohort_every_seconds}
+                 "cohort": config.cohort_every_seconds,
+                 "gate13": config.gate13_every_seconds}
     return [(name, intervals[name]) for name in STAGES if intervals[name] > 0]
 
 
@@ -297,7 +304,7 @@ def plan_cycle(data_dir: Path, config: PilotConfig, *,
         # own interval alone it ran 16 hours after scoring on 2026-10-03.
         from .cohort import has_unprocessed_score
         if "score" in due or has_unprocessed_score(data_dir):
-            due.append("cohort")  # last in STAGES, so the order holds
+            due = [stage for stage in STAGES if stage in due or stage == "cohort"]
     # Reserve in both days for a cycle that could cross UTC midnight. This is
     # deliberately conservative; successful completion refunds unused time.
     days = sorted({now.date().isoformat(),
@@ -334,6 +341,9 @@ def _execute_stage(stage: str, data_dir: Path, config: PilotConfig,
     if stage == "cohort":  # after scoring, which labels each wallet's trading style
         from . import cohort
         return cohort.run(data_dir)
+    if stage == "gate13":  # read-only apart from its report and a scratch directory
+        from . import gate13_power
+        return gate13_power.run(data_dir)
     if stage == "horizon":  # read-only apart from its own report
         from . import horizon_diagnostic
         return horizon_diagnostic.run(data_dir)
