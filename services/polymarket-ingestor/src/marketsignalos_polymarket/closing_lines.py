@@ -14,7 +14,8 @@ probe in docs/benchmarks/2026-09-29-price-history-probe.md established:
 
 Rows follow the blueprint's ``price_observations`` contract (docs/handoff-blueprint.md
 section 8): each point keeps its event time and the time it was fetched, so a
-backfilled price can never pass for one observed live. Both files are append-only.
+backfilled price can never pass for one observed live. Both files are append-only,
+apart from cutting a torn final row (a crash mid-append) before the next append.
 
 Scoring does not read this store. The last pre-close price was within 0.01 of the
 outcome for 38 of 40 probed markets, so CLV against it would mostly restate whether
@@ -182,6 +183,37 @@ def _read_jsonl(path: Path) -> Iterator[dict[str, Any]]:
         return
     with path.open(encoding="utf-8") as handle:
         yield from _parse_lines(handle, path.name)
+
+
+def _trim_torn_tail(path: Path) -> None:
+    """Cut a torn final row (a crash mid-append) before appending to ``path``.
+
+    Readers ignore a torn final row, but the next append would fuse it with a new
+    row into an invalid line mid-file, which they reject. The torn row was written
+    before its receipt (or is the receipt), so its market or chunk is fetched again.
+    """
+    if not path.exists() or path.stat().st_size == 0:
+        return
+    end = _complete_bytes(path)
+    if end < path.stat().st_size:
+        log.warning("cutting a torn final row from %s before appending", path.name)
+        with path.open("rb+") as handle:
+            handle.truncate(end)
+
+
+def _complete_bytes(path: Path) -> int:
+    """The length of ``path`` up to and including its last newline."""
+    size = path.stat().st_size
+    with path.open("rb") as handle:
+        position = size
+        while position > 0:
+            step = min(1 << 16, position)
+            position -= step
+            handle.seek(position)
+            newline = handle.read(step).rfind(b"\n")
+            if newline >= 0:
+                return position + newline + 1
+    return 0
 
 
 def _parse_lines(lines: Iterable[str], name: str) -> Iterator[dict[str, Any]]:
@@ -423,6 +455,8 @@ def backfill(
     if not todo:
         return summary
     rows = lookup_closed_markets(todo, get)
+    _trim_torn_tail(store / OBSERVATIONS_FILE)
+    _trim_torn_tail(store / RECEIPTS_FILE)
     with (store / OBSERVATIONS_FILE).open("a", encoding="utf-8") as obs_out, \
             (store / RECEIPTS_FILE).open("a", encoding="utf-8") as receipt_out:
         for cid in todo:

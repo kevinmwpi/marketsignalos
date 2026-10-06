@@ -291,3 +291,19 @@ def test_a_failed_market_lookup_is_partial_and_keeps_details_out_of_the_result(
     assert result["status"] == "partial"
     assert result["error_type"] == "ConnectError"
     assert "secret" not in json.dumps(result)
+
+
+def test_a_pass_after_a_crash_mid_row_starts_each_file_on_a_clean_line(tmp_path: Path) -> None:
+    # A worker killed mid-append leaves a row without its newline in either file.
+    # Appended straight after it, the next row would fuse into an invalid line in
+    # the middle of the file, which the readers reject: every later pass would fail.
+    first = FakeClob({"0xa": _market("0xa", "ta")}, {"ta": [(CLOSE - 60, 0.5)]})
+    backfill(["0xa"], tmp_path, get=first)
+    for name in (OBSERVATIONS_FILE, RECEIPTS_FILE):
+        with (tmp_path / name).open("a", encoding="utf-8") as handle:
+            handle.write('{"torn')
+    second = FakeClob({"0xb": _market("0xb", "tb")}, {"tb": [(CLOSE - 120, 0.7)]})
+    summary = backfill(["0xa", "0xb"], tmp_path, get=second)
+    assert summary.by_status == {"ok": 1} and summary.skipped_final == 1
+    assert final_conditions(tmp_path) == {"0xa", "0xb"}
+    assert set(load_closing_lines(tmp_path).points) == {"0xa", "0xb"}

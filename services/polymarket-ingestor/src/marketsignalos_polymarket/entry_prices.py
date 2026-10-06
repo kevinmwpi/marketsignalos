@@ -35,7 +35,8 @@ sits within 0.01 of 0 or 1, as the closing-line check did.
 Rows use the ``price_observations`` contract (docs/handoff-blueprint.md section 8):
 each point keeps the time it was true and the time it was fetched, so a rescoring of a
 frozen snapshot can exclude anything fetched after it (``observed_before``). Both
-files are append-only; a torn final line from a crash is ignored.
+files are append-only; a torn final line from a crash is ignored, and cut before the
+next append so it cannot fuse with a new row.
 
 Observations are compressed once a pass is done (owner's approval, 2026-10-06; the
 store grew about 68 MB a day uncompressed against a 5 GB volume). ``backfill`` still
@@ -71,10 +72,12 @@ from .closing_lines import (
     HEADERS,
     GetJson,
     PriceObservation,
+    _complete_bytes,
     _iso,
     _parse_lines,
     _parse_time,
     _read_jsonl,
+    _trim_torn_tail,
     _utcnow_iso,
     http_get_json,
     parse_close,
@@ -275,6 +278,8 @@ def backfill(
         return summary
     store.mkdir(parents=True, exist_ok=True)
     markets = lookup_markets(sorted({cid for cid, _ in chunks}), get)
+    _trim_torn_tail(store / OBSERVATIONS_FILE)
+    _trim_torn_tail(store / RECEIPTS_FILE)
     with (store / OBSERVATIONS_FILE).open("a", encoding="utf-8") as obs_out, \
             (store / RECEIPTS_FILE).open("a", encoding="utf-8") as receipt_out:
         for cid, start in chunks:
@@ -412,22 +417,6 @@ def compact_observations(store: Path) -> int:
         raise
     plain.unlink()
     return end
-
-
-def _complete_bytes(path: Path) -> int:
-    """The length of ``path`` up to and including its last newline."""
-    size = path.stat().st_size
-    with path.open("rb") as handle:
-        position = size
-        while position > 0:
-            step = min(1 << 16, position)
-            position -= step
-            handle.seek(position)
-            block = handle.read(step)
-            newline = block.rfind(b"\n")
-            if newline >= 0:
-                return position + newline + 1
-    return 0
 
 
 # ── Reading, for the horizon diagnostic and later scoring ────────────────────
