@@ -34,7 +34,7 @@ The default configuration is committed in `deploy/lean-pilot.json`:
 | Cohort | Daily in `deploy/lean-pilot.json`, and in every cycle that scores or follows a score it has not acted on; off in code | Wallets the scorer labels `systematic` go to `excluded_wallets.txt` for good and their rows are deleted from every per-wallet store (activity dedupe index rebuilt); freed watchlist slots refill from the leaderboard |
 | Activity budget | 10 calls/wallet | Shared across recent, historical, and boundary pagination |
 | Cycle deadline | 20 minutes | Collection plus scoring together, including subprocess startup |
-| Daily runtime allowance | 60 minutes | Local UTC-day accounting, with a full cycle reserved before work |
+| Daily runtime allowance | 90 minutes in `deploy/lean-pilot.json` since 2026-10-06; 60 in code | Local UTC-day accounting, with a full cycle reserved before work. At 60 minutes the last 4–6 hourly runs of every day from 2026-10-03 to 2026-10-05 (18:00–23:59 UTC) exited as `budget_exhausted`: a day's work used about 2,600 s by 18:00, leaving less than the 1,200 s reservation. At the measured 0.34 GB peak, the extra 30 minutes costs an estimated under $0.50/month at the rates below |
 | Disk guard | 512 MiB free | No cycle starts below this; the run exits nonzero as `disk_low` so Railway marks it failed. Every plan reports `disk_free_mb`, and each collection reports `storage_mb` per store |
 | Worker RSS guard | 4,096 MiB | Sampled process-tree memory; separate container limit still needed |
 | Worker log guard | 8 MiB/run | Stop a noisy child before its log grows indefinitely |
