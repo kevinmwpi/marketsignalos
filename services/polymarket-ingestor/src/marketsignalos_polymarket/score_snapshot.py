@@ -33,7 +33,9 @@ INPUTS = (
     # Hourly prices after each buy (entry_prices.py), the reference for gate 13's
     # 1 h post-entry CLV (forecast-v5, docs/gate13-clv-v5-plan.md). Inventoried
     # so every generation records which entry prices existed when it was scored.
+    # The archive holds compacted rows; the plain file only those not yet compacted.
     "entry_prices/price_observations.jsonl",
+    "entry_prices/price_observations.jsonl.gz",
     "entry_prices/chunk_receipts.jsonl",
 )
 ENRICHMENT = "polymarket_wallet_enrichment.jsonl"

@@ -267,3 +267,20 @@ def test_wallets_blocked_only_by_the_sample_minimum_need_a_positive_bound() -> N
 def test_an_unknown_score_version_is_refused(data: Path, tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="score_version"):
         snapshot.score_snapshot(data, tmp_path / "snapshots", "bad", score_version="v6")
+
+
+def test_compacting_the_entry_prices_changes_no_v5_score(data: Path, tmp_path: Path) -> None:
+    # Owner's approval, 2026-10-06: compress the store only if v5 reads it identically.
+    snapshots = tmp_path / "snapshots"
+    before = _scored(data, snapshots, "v5-plain", "forecast-v5")
+    store = data / entry_prices.STORE_DIR
+    assert entry_prices.compact_observations(store) > 0
+    assert not (store / entry_prices.OBSERVATIONS_FILE).exists()
+    after = _scored(data, snapshots, "v5-archived", "forecast-v5")
+    assert _without_timestamps(after["row"]) == _without_timestamps(before["row"])
+    assert ({cid: _without_timestamps(bet) for cid, bet in after["bets"].items()}
+            == {cid: _without_timestamps(bet) for cid, bet in before["bets"].items()})
+    # The generation's inventory records the archive it read.
+    manifest = json.loads((snapshots / "v5-archived" / "manifest.json").read_text())
+    archive = f"{entry_prices.STORE_DIR}/{entry_prices.ARCHIVE_FILE}"
+    assert manifest["inputs"][archive]["exists"]

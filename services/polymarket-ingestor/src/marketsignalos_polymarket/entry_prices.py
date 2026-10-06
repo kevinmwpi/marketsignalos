@@ -6,7 +6,8 @@ bet is the market's price a fixed time *after the buy*, not the last price befor
 close, which was within 0.01 of the outcome for 38 of 40 probed markets. The horizon
 is not fixed yet; a diagnostic on pilot data picks it, anywhere up to
 ``HORIZON_SECONDS``. This module therefore stores every hourly point from each buy
-to that long after it. Scoring does not read it yet.
+to that long after it. The diagnostic chose 1 h on 2026-10-05, and forecast-v5 reads
+these prices for gate 13 (post_entry_clv.py).
 
 ``HORIZON_SECONDS`` was seven days until 2026-10-03, when the owner limited the
 candidate horizons to 1 h and 6 h: 95% of the cohort's bets were on markets that
@@ -35,14 +36,25 @@ Rows use the ``price_observations`` contract (docs/handoff-blueprint.md section 
 each point keeps the time it was true and the time it was fetched, so a rescoring of a
 frozen snapshot can exclude anything fetched after it (``observed_before``). Both
 files are append-only; a torn final line from a crash is ignored.
+
+Observations are compressed once a pass is done (owner's approval, 2026-10-06; the
+store grew about 68 MB a day uncompressed against a 5 GB volume). ``backfill`` still
+appends plain rows to ``OBSERVATIONS_FILE``, so a chunk's rows are on disk before its
+receipt exactly as before. ``compact_observations`` then moves every complete row into
+``ARCHIVE_FILE`` as one more gzip member and removes the plain file. Readers take the
+archive first and the plain file after it, so the rows, their order and therefore
+every score are unchanged.
 """
 from __future__ import annotations
 
 import bisect
+import gzip
 import json
 import logging
+import os
+import shutil
 import time
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Iterator
 from collections.abc import Set as AbstractSet
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime, timedelta
@@ -60,6 +72,7 @@ from .closing_lines import (
     GetJson,
     PriceObservation,
     _iso,
+    _parse_lines,
     _parse_time,
     _read_jsonl,
     _utcnow_iso,
@@ -73,6 +86,7 @@ log = logging.getLogger("marketsignalos.polymarket.entry_prices")
 
 STORE_DIR = "entry_prices"
 OBSERVATIONS_FILE = "price_observations.jsonl"
+ARCHIVE_FILE = "price_observations.jsonl.gz"
 RECEIPTS_FILE = "chunk_receipts.jsonl"
 HORIZON_SECONDS = 6 * 3600  # the longest candidate horizon (horizon_diagnostic)
 CHUNK_SECONDS = 7 * 86400
@@ -311,7 +325,8 @@ def run_pending(
     ``priority`` chunks are fetched first (see :func:`select_pending`); the result
     counts those still without a final receipt, ended or not, and those selected.
     ``partial`` when the pass stopped early, a chunk failed, or the token lookup
-    failed. Exception details stay in the log, never the result.
+    failed. Exception details stay in the log, never the result. Every pass
+    compacts the observations before it fetches and after (``compacted_bytes``).
     """
     store = data_dir / STORE_DIR
     needed = needed_chunks(data_dir / ACTIVITY_FILE)
@@ -325,8 +340,17 @@ def run_pending(
                              for key in priority),
         "priority_selected": sum(key in priority for key in pending),
     }
-    if not pending:
-        return {"status": "succeeded", **result, "summary": asdict(BackfillSummary())}
+    # Compact first too: rows a crashed pass left behind, including a torn final
+    # row, must not have this pass's rows appended straight after them.
+    compacted = compact_observations(store)
+    fetched = (_fetch(pending, store, get=get, max_seconds=max_seconds, clock=clock)
+               if pending else {"status": "succeeded", "summary": asdict(BackfillSummary())})
+    compacted += compact_observations(store)
+    return {"status": fetched["status"], **result, **fetched, "compacted_bytes": compacted}
+
+
+def _fetch(pending: list[ChunkKey], store: Path, *, get: GetJson | None, max_seconds: float,
+           clock: Callable[[], float]) -> dict[str, Any]:
     deadline = clock() + max_seconds
     try:
         if get is None:
@@ -337,10 +361,73 @@ def run_pending(
             summary = backfill(pending, store, get=get, deadline=deadline, clock=clock)
     except (httpx.HTTPError, ValueError) as exc:
         log.warning("entry-price token lookup failed: %s", exc)
-        return {"status": "partial", **result, "error_type": type(exc).__name__}
+        return {"status": "partial", "error_type": type(exc).__name__}
     failed = summary.by_status.get("http_error", 0) > 0
     status = "partial" if summary.stopped_early or failed else "succeeded"
-    return {"status": status, **result, "summary": asdict(summary)}
+    return {"status": status, "summary": asdict(summary)}
+
+
+def compact_observations(store: Path) -> int:
+    """Move the plain observation file's complete rows into the gzip archive and
+    return how many bytes moved.
+
+    The new archive (the old one's bytes plus one new gzip member) is written beside
+    it, synced and swapped in; only then is the plain file removed. A crash before
+    the swap leaves both files as they were. A crash after it leaves the rows in
+    both, and the next compaction archives them again: duplicate rows, which every
+    reader collapses to one point per timestamp. Bytes after the plain file's last
+    newline are a torn row from a crash mid-append, written before its chunk's
+    receipt; they are dropped and that chunk is fetched again.
+    """
+    plain = store / OBSERVATIONS_FILE
+    if not plain.exists():
+        return 0
+    end = _complete_bytes(plain)
+    if end < plain.stat().st_size:
+        log.warning("dropping a torn final row from %s", plain.name)
+    if end == 0:
+        plain.unlink()
+        return 0
+    archive = store / ARCHIVE_FILE
+    tmp = store / (ARCHIVE_FILE + ".tmp")
+    try:
+        with tmp.open("wb") as out:
+            if archive.exists():
+                with archive.open("rb") as old:
+                    shutil.copyfileobj(old, out)
+            with plain.open("rb") as src, gzip.GzipFile(
+                    fileobj=out, mode="wb", compresslevel=6, mtime=0) as member:
+                remaining = end
+                while remaining > 0:
+                    block = src.read(min(1 << 20, remaining))
+                    if not block:
+                        raise OSError(f"{plain.name} shrank while it was compacted")
+                    member.write(block)
+                    remaining -= len(block)
+            out.flush()
+            os.fsync(out.fileno())
+        os.replace(tmp, archive)
+    except BaseException:
+        tmp.unlink(missing_ok=True)
+        raise
+    plain.unlink()
+    return end
+
+
+def _complete_bytes(path: Path) -> int:
+    """The length of ``path`` up to and including its last newline."""
+    size = path.stat().st_size
+    with path.open("rb") as handle:
+        position = size
+        while position > 0:
+            step = min(1 << 16, position)
+            position -= step
+            handle.seek(position)
+            block = handle.read(step)
+            newline = block.rfind(b"\n")
+            if newline >= 0:
+                return position + newline + 1
+    return 0
 
 
 # ── Reading, for the horizon diagnostic and later scoring ────────────────────
@@ -354,7 +441,7 @@ def load_entry_prices(
     snapshot never sees prices fetched later.
     """
     by_market: dict[str, dict[int, float]] = {}
-    for row in _read_jsonl(store / OBSERVATIONS_FILE):
+    for row in _observation_rows(store):
         if row.get("outcome_index") != 0:
             continue
         observed = _parse_time(row.get("observed_time"))
@@ -368,6 +455,15 @@ def load_entry_prices(
         cid = str(row.get("condition_id", "")).lower()
         by_market.setdefault(cid, {})[int(event.timestamp())] = float(price)
     return {cid: sorted(points.items()) for cid, points in by_market.items()}
+
+
+def _observation_rows(store: Path) -> Iterator[dict[str, Any]]:
+    """Every stored observation, oldest first: the archive, then the plain file."""
+    archive = store / ARCHIVE_FILE
+    if archive.exists():
+        with gzip.open(archive, "rt", encoding="utf-8") as handle:
+            yield from _parse_lines(handle, archive.name)
+    yield from _read_jsonl(store / OBSERVATIONS_FILE)
 
 
 def price_after(
