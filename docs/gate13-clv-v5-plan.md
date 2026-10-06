@@ -35,8 +35,11 @@ A fill without a reference is excluded **with its reason**, never zero-filled:
 `no_scheduled_end`, `near_scheduled_end`, `invalid_fill` or `no_reference`
 (`post_entry_clv.py`). The power diagnostic (step 3) counts them per wallet. They
 are not stored on the enrichment row, which would need a Postgres migration for a
-diagnostic quantity. It also splits `no_reference` into not fetched, closed and
-gap using the chunk receipts.
+diagnostic quantity. It also splits `no_reference` using the chunk receipts:
+`not_ended` (a chunk the hour needs is still running, so it cannot be fetched yet;
+this lag of up to a week never reaches zero), `fetch_failed` (an ended chunk
+waiting for its retry), `not_fetched` (an ended chunk never tried, the real
+backlog), and `closed`, `ended` or `gap` for a fetched series.
 
 Point in time: a frozen generation reads entry prices with `observed_before` set
 to its start, so rescoring a snapshot never sees prices fetched later.
@@ -107,7 +110,12 @@ Each step is its own PR with its own evidence.
    v4 and v5 from the same inputs into a scratch directory, so its log line
    carries step 4's before/after counts. It cross-checks its per-wallet figures
    against the v5 generation. First report: [2026-10-05](benchmarks/2026-10-05-gate13-power.md).
-   It finds D4 stands: keep 10.*
+   It finds D4 stands: keep 10. From 2026-10-06 (owner's approval) the counts add
+   `blocked_only_by_min_sample`: wallets whose only failed gate is the sample
+   minimum while their lower bound is already positive, listed in the report
+   file. The second report (2026-10-06) had five wallets with a positive bound
+   and three passing, so the minimum alone may now block two. The weekly D4 read
+   uses `not_fetched` and `fetch_failed` for the backlog, not `not_ended`.*
 4. **Cut-over with counts.** Switch the pilot's scorer to v5. Record gate-13 and
    overall tailable counts for v4 and v5 on the same frozen inputs in
    `docs/benchmarks/<date>-gate13-v5.md` (invariant 1). No threshold change in the

@@ -9,12 +9,19 @@ It changes no score and no threshold. From the pilot's current stores it reports
     sample, mean and lower bound), the spread and effective sample size behind
     the bound, and the effective sample at which that bound would clear zero
     if the wallet kept its current mean and spread;
-  - every excluded fill by reason, with ``no_reference`` split into
-    ``not_fetched`` (the hour after the fill has no final entry-price chunk
-    yet) and horizon_diagnostic's ``closed``, ``ended`` and ``gap``;
+  - every excluded fill by reason, with ``no_reference`` split by the chunk
+    receipts into ``not_ended`` (a chunk the hour needs has not ended yet, so it
+    cannot be fetched: the structural lag of up to a week), ``fetch_failed`` (an
+    ended chunk whose last attempt failed and waits for its retry),
+    ``not_fetched`` (an ended chunk never tried: the real backlog), and
+    horizon_diagnostic's ``closed``, ``ended`` and ``gap``;
   - gate-13 and tailable counts under forecast-v4 and forecast-v5. Both are
     scored now, from the same inputs, into a scratch directory that is deleted
     afterwards. These are the before/after counts plan step 4 requires.
+    ``blocked_only_by_min_sample`` counts wallets whose only failed gate is
+    gate 13's sample minimum while their CLV lower bound is already positive:
+    the wallets ``MIN_CLV_SAMPLE`` alone keeps off the feed (decision D4). The
+    report file lists them.
 
 The per-wallet figures are recomputed here with the scorer's own functions
 (``post_entry_clv.fill_clv``, the event-capped weights). They are checked
@@ -33,7 +40,7 @@ from pathlib import Path
 from typing import Any
 
 from . import closing_lines, entry_prices
-from .entry_prices import CHUNK_SECONDS, FINAL_STATUSES, chunk_start
+from .entry_prices import CHUNK_SECONDS, FINAL_STATUSES, SETTLE_SECONDS, ChunkKey, chunk_start
 from .horizon_diagnostic import _missing_reason
 from .post_entry_clv import HORIZON_SECONDS, fill_clv
 from .price_lead import parse_iso_ts
@@ -96,8 +103,8 @@ def diagnose(data_dir: Path, *, v5_rows: dict[str, dict[str, Any]] | None = None
 
     store = data_dir / entry_prices.STORE_DIR
     series = entry_prices.load_entry_prices(store, observed_before=observed_before)
-    final = {key for key, (status, _) in entry_prices.latest_receipts(store).items()
-             if status in FINAL_STATUSES}
+    receipts = {key: status for key, (status, _) in entry_prices.latest_receipts(store).items()}
+    now = int((observed_before or datetime.now(UTC)).timestamp())
     closes = {**closing_lines.close_times(data_dir / closing_lines.STORE_DIR),
               **entry_prices.close_times(store)}
 
@@ -112,8 +119,8 @@ def diagnose(data_dir: Path, *, v5_rows: dict[str, dict[str, Any]] | None = None
                                    points=points)
             if clv is None:
                 if reason == "no_reference":
-                    reason = _no_reference_reason(cid, fill[0], points, final,
-                                                  closes.get(cid))
+                    reason = _no_reference_reason(cid, fill[0], points, receipts,
+                                                  closes.get(cid), now=now)
                 exclusions[reason] += 1
                 continue
             weighted += fill[2] * clv
@@ -147,6 +154,7 @@ def run(data_dir: Path, *, now: datetime | None = None) -> dict[str, Any]:
     try:
         counts: dict[str, dict[str, int]] = {}
         v5_rows: dict[str, dict[str, Any]] = {}
+        min_sample_only: list[str] = []
         for version in ("forecast-v4", "forecast-v5"):
             score_snapshot(data_dir, scratch, version.replace("forecast-", ""),
                            score_version=version)
@@ -155,6 +163,8 @@ def run(data_dir: Path, *, now: datetime | None = None) -> dict[str, Any]:
             counts[version] = _counts(rows)
             if version == "forecast-v5":
                 v5_rows = {str(row["proxy_wallet"]).lower(): row for row in rows}
+                min_sample_only = sorted(wallet for wallet, row in v5_rows.items()
+                                         if _blocked_only_by_min_sample(row))
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
     report = diagnose(data_dir, v5_rows=v5_rows, observed_before=now)
@@ -164,8 +174,9 @@ def run(data_dir: Path, *, now: datetime | None = None) -> dict[str, Any]:
     out.mkdir(parents=True, exist_ok=True)
     path = out / f"{now.date().isoformat()}.json"
     tmp = path.with_suffix(".json.tmp")
-    tmp.write_text(json.dumps({**summary, "wallets": report["wallets"]}, indent=2,
-                              sort_keys=True), encoding="utf-8")
+    tmp.write_text(json.dumps({**summary, "wallets": report["wallets"],
+                               "v5_blocked_only_by_min_sample": min_sample_only},
+                              indent=2, sort_keys=True), encoding="utf-8")
     tmp.replace(path)
     return {"status": "succeeded", **summary}
 
@@ -173,17 +184,39 @@ def run(data_dir: Path, *, now: datetime | None = None) -> dict[str, Any]:
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
 def _no_reference_reason(cid: str, ts: int, points: list[tuple[int, float]],
-                         final: set[tuple[str, int]], closed_at: int | None) -> str:
+                         receipts: dict[ChunkKey, str], closed_at: int | None, *,
+                         now: int) -> str:
+    """Why a fill has no price an hour later. Chunks the hour needs that are not
+    final come first, by what the backfill can do about them (see the module
+    docstring); otherwise horizon_diagnostic's reason for the fetched series."""
     window = range(chunk_start(ts), ts + HORIZON_SECONDS + 1, CHUNK_SECONDS)
-    if not all((cid, start) in final for start in window):
+    open_starts = [start for start in window
+                   if receipts.get((cid, start)) not in FINAL_STATUSES]
+    if any(start + CHUNK_SECONDS > now - SETTLE_SECONDS for start in open_starts):
+        return "not_ended"  # entry_prices.select_pending waits for these
+    if any((cid, start) in receipts for start in open_starts):
+        return "fetch_failed"
+    if open_starts:
         return "not_fetched"
     return _missing_reason(points, ts, HORIZON_SECONDS, closed_at)
 
 
-def _counts(rows: list[dict[str, Any]]) -> dict[str, int]:
-    def clv_reason(reason: str) -> bool:
-        return "closing-line" in reason or "post-entry CLV" in reason
+def _blocked_only_by_min_sample(row: dict[str, Any]) -> bool:
+    """Gate 13's sample minimum is the wallet's only failed gate, and its CLV
+    lower bound is already positive (the scorer checks the minimum first)."""
+    reasons = list(row.get("tailability_reasons", []))
+    return (len(reasons) == 1
+            and reasons[0].startswith(f"fewer than {int(MIN_CLV_SAMPLE)} ")
+            and _is_clv_reason(reasons[0])
+            and float(row.get("clv_lower_bound", 0.0)) > 0.0)
 
+
+def _is_clv_reason(reason: str) -> bool:
+    """A tailability reason gate 13 gave (either score version's wording)."""
+    return "closing-line" in reason or "post-entry CLV" in reason
+
+
+def _counts(rows: list[dict[str, Any]]) -> dict[str, int]:
     def gate13(row: dict[str, Any]) -> bool:
         return (float(row.get("clv_sample_size", 0.0)) >= MIN_CLV_SAMPLE
                 and float(row.get("clv_lower_bound", 0.0)) > 0.0)
@@ -193,8 +226,9 @@ def _counts(rows: list[dict[str, Any]]) -> dict[str, int]:
         "wallets": len(rows),
         "gate13_pass": sum(gate13(row) for row in rows),
         "tailable": sum(row.get("tailability_status") == "tailable" for row in rows),
-        "blocked_only_by_gate13": sum(bool(r) and all(clv_reason(x) for x in r)
+        "blocked_only_by_gate13": sum(bool(r) and all(_is_clv_reason(x) for x in r)
                                       for r in reasons),
+        "blocked_only_by_min_sample": sum(_blocked_only_by_min_sample(row) for row in rows),
     }
 
 
