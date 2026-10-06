@@ -6,9 +6,11 @@ from pathlib import Path
 from typing import Any
 
 import httpx
+import pytest
 
 from marketsignalos_polymarket.closing_lines import ACTIVITY_FILE
 from marketsignalos_polymarket.entry_prices import (
+    ARCHIVE_FILE,
     CHUNK_SECONDS,
     HORIZON_SECONDS,
     OBSERVATIONS_FILE,
@@ -18,6 +20,7 @@ from marketsignalos_polymarket.entry_prices import (
     backfill,
     chunk_start,
     close_times,
+    compact_observations,
     latest_receipts,
     load_entry_prices,
     lookup_markets,
@@ -213,6 +216,10 @@ def test_run_pending_fetches_each_ended_chunk_once(tmp_path: Path) -> None:
     assert first["status"] == "succeeded"
     assert first["chunks_needed"] == 2 and first["selected"] == 2
     assert first["summary"]["by_status"] == {"ok": 2}
+    # The pass compacted what it fetched: only the archive is left.
+    assert first["compacted_bytes"] > 0
+    assert not (tmp_path / STORE_DIR / OBSERVATIONS_FILE).exists()
+    assert (tmp_path / STORE_DIR / ARCHIVE_FILE).exists()
     requests = len(api.calls)
 
     again = run_pending(tmp_path, limit=10, max_seconds=60, get=api, now=now)
@@ -239,7 +246,7 @@ def test_run_pending_is_partial_without_details_when_the_lookup_fails(tmp_path: 
     result = run_pending(tmp_path, limit=10, max_seconds=60, get=broken, now=_at(W + 3 * C))
     assert result == {"status": "partial", "chunks_needed": 2, "selected": 2,
                       "priority_open": 0, "priority_selected": 0,
-                      "error_type": "ValueError"}
+                      "error_type": "ValueError", "compacted_bytes": 0}
     assert not (tmp_path / STORE_DIR / RECEIPTS_FILE).exists()
 
 
@@ -315,3 +322,105 @@ def test_price_after_takes_the_last_point_near_the_horizon() -> None:
     assert price_after(series, W + HOUR, 30 * 60) is None  # nothing after the buy yet
     assert price_after(series, W - 2 * HOUR, HOUR) is None  # before the series starts
     assert price_after(series, W, 30 * HOUR) is None  # the market stopped publishing
+
+
+# ── Compaction (owner's approval, 2026-10-06) ────────────────────────────────
+
+def _observation(cid: str, ts: int, price: float, observed: datetime) -> dict[str, Any]:
+    return {"condition_id": cid, "token_id": "tok", "outcome_index": 0,
+            "event_time": _at(ts).isoformat().replace("+00:00", "Z"),
+            "observed_time": observed.isoformat().replace("+00:00", "Z"), "price": price,
+            "fidelity_minutes": 60, "source": "clob_prices_history"}
+
+
+def _append_plain(store: Path, rows: list[dict[str, Any]], tail: str = "") -> None:
+    store.mkdir(parents=True, exist_ok=True)
+    with (store / OBSERVATIONS_FILE).open("a", encoding="utf-8") as handle:
+        handle.write("".join(json.dumps(row) + "\n" for row in rows) + tail)
+
+
+def test_compaction_moves_every_row_and_changes_no_read(tmp_path: Path) -> None:
+    store = tmp_path / STORE_DIR
+    fetched, later = _at(W + 2 * C), _at(W + 3 * C)
+    _append_plain(store, [_observation("0xa", W + i * HOUR, 0.4 + i / 100, fetched)
+                          for i in range(5)])
+    before = load_entry_prices(store)
+    as_of = load_entry_prices(store, observed_before=fetched)
+
+    moved = compact_observations(store)
+    assert moved > 0 and not (store / OBSERVATIONS_FILE).exists()
+    assert load_entry_prices(store) == before
+    assert load_entry_prices(store, observed_before=fetched) == as_of
+
+    # A second pass appends a second gzip member; a refetched point still wins.
+    _append_plain(store, [_observation("0xa", W + HOUR, 0.6, later),
+                          _observation("0xb", W, 0.3, later)])
+    compact_observations(store)
+    after = load_entry_prices(store)
+    assert after["0xa"][1] == (W + HOUR, 0.6) and after["0xb"] == [(W, 0.3)]
+    assert load_entry_prices(store, observed_before=fetched) == as_of  # point in time holds
+    assert compact_observations(store) == 0  # nothing left to move
+
+
+def test_compaction_drops_only_a_torn_final_row(tmp_path: Path) -> None:
+    store = tmp_path / STORE_DIR
+    _append_plain(store, [_observation("0xa", W, 0.4, _at(W + 2 * C))], tail='{"torn')
+    size = (store / OBSERVATIONS_FILE).stat().st_size
+    assert compact_observations(store) == size - len('{"torn')
+    assert load_entry_prices(store) == {"0xa": [(W, 0.4)]}
+    # Rows written after the torn one start a clean line in the next member.
+    _append_plain(store, [_observation("0xa", W + HOUR, 0.5, _at(W + 2 * C))])
+    compact_observations(store)
+    assert load_entry_prices(store) == {"0xa": [(W, 0.4), (W + HOUR, 0.5)]}
+
+
+def test_a_crash_after_the_swap_only_duplicates_rows(tmp_path: Path) -> None:
+    store = tmp_path / STORE_DIR
+    rows = [_observation("0xa", W + i * HOUR, 0.4, _at(W + 2 * C)) for i in range(3)]
+    _append_plain(store, rows)
+    plain = (store / OBSERVATIONS_FILE).read_bytes()
+    compact_observations(store)
+    expected = load_entry_prices(store)
+    (store / OBSERVATIONS_FILE).write_bytes(plain)  # the unlink never happened
+    _append_plain(store, [_observation("0xa", W + 3 * HOUR, 0.5, _at(W + 2 * C))])
+    compact_observations(store)
+    assert load_entry_prices(store) == {"0xa": expected["0xa"] + [(W + 3 * HOUR, 0.5)]}
+
+
+def test_a_failed_compaction_leaves_both_files_as_they_were(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import os
+
+    store = tmp_path / STORE_DIR
+    _append_plain(store, [_observation("0xa", W, 0.4, _at(W + 2 * C))])
+    compact_observations(store)
+    _append_plain(store, [_observation("0xa", W + HOUR, 0.5, _at(W + 2 * C))])
+    archive = (store / ARCHIVE_FILE).read_bytes()
+    plain = (store / OBSERVATIONS_FILE).read_bytes()
+
+    def no_disk(fd: int) -> None:
+        raise OSError("disk full")
+
+    monkeypatch.setattr(os, "fsync", no_disk)
+    with pytest.raises(OSError, match="disk full"):
+        compact_observations(store)
+    assert (store / ARCHIVE_FILE).read_bytes() == archive
+    assert (store / OBSERVATIONS_FILE).read_bytes() == plain
+    assert {p.name for p in store.iterdir()} == {ARCHIVE_FILE, OBSERVATIONS_FILE}
+
+
+def test_a_pass_after_a_crash_mid_row_never_joins_the_torn_row_to_new_ones(
+    tmp_path: Path,
+) -> None:
+    # A worker killed mid-append leaves a row without its newline. Appending the
+    # next pass's rows straight after it would fuse the two into one invalid line
+    # in the middle of the store, and every later read would fail.
+    store = tmp_path / STORE_DIR
+    _append_plain(store, [_observation("0xa", W, 0.4, _at(W + 2 * C))], tail='{"torn')
+    _write_activity(tmp_path, [_buy("0xb", W + HOUR)])
+    api = FakeApi({"0xb": ("tok-b", True)}, {"tok-b": [(W + 2 * HOUR, 0.3)]})
+    result = run_pending(tmp_path, limit=10, max_seconds=60, get=api,
+                         now=_at(W + 2 * C + 2 * HOUR))
+    assert result["summary"]["by_status"] == {"ok": 1}
+    assert load_entry_prices(store) == {"0xa": [(W, 0.4)], "0xb": [(W + 2 * HOUR, 0.3)]}

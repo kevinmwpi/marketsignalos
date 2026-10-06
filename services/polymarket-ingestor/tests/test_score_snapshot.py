@@ -218,6 +218,7 @@ def test_entry_prices_are_inventoried_as_scoring_inputs(data: Path, tmp_path: Pa
     from marketsignalos_polymarket import entry_prices
 
     names = {f"{entry_prices.STORE_DIR}/{entry_prices.OBSERVATIONS_FILE}",
+             f"{entry_prices.STORE_DIR}/{entry_prices.ARCHIVE_FILE}",
              f"{entry_prices.STORE_DIR}/{entry_prices.RECEIPTS_FILE}"}
     assert names <= set(snapshot.INPUTS)
     observations = data / entry_prices.STORE_DIR / entry_prices.OBSERVATIONS_FILE
@@ -227,7 +228,7 @@ def test_entry_prices_are_inventoried_as_scoring_inputs(data: Path, tmp_path: Pa
     assert recorded["exists"] and recorded["bytes"] == observations.stat().st_size
     # A pilot that never backfilled entry prices still scores, and says so.
     for name in names:
-        (data / name).unlink()
+        (data / name).unlink(missing_ok=True)
     bare = snapshot.score_snapshot(data, tmp_path / "snapshots", "no-prices")
     assert all(bare["inputs"][name] == {"exists": False} for name in names)
 

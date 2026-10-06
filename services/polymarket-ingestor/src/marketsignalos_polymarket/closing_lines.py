@@ -181,20 +181,25 @@ def _read_jsonl(path: Path) -> Iterator[dict[str, Any]]:
     if not path.exists():
         return
     with path.open(encoding="utf-8") as handle:
-        for number, line in enumerate(handle, 1):
-            if not line.endswith("\n"):
-                if line.strip():
-                    log.warning("ignoring a torn final line in %s", path.name)
-                return
-            if not line.strip():
-                continue
-            try:
-                row = json.loads(line)
-            except json.JSONDecodeError as exc:
-                raise ValueError(f"{path.name}:{number}: invalid JSON ({exc.msg})") from exc
-            if not isinstance(row, dict):
-                raise ValueError(f"{path.name}:{number}: expected an object")
-            yield row
+        yield from _parse_lines(handle, path.name)
+
+
+def _parse_lines(lines: Iterable[str], name: str) -> Iterator[dict[str, Any]]:
+    """The rows of an open JSONL stream, by :func:`_read_jsonl`'s rules."""
+    for number, line in enumerate(lines, 1):
+        if not line.endswith("\n"):
+            if line.strip():
+                log.warning("ignoring a torn final line in %s", name)
+            return
+        if not line.strip():
+            continue
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"{name}:{number}: invalid JSON ({exc.msg})") from exc
+        if not isinstance(row, dict):
+            raise ValueError(f"{name}:{number}: expected an object")
+        yield row
 
 
 def _parse_time(value: Any) -> datetime | None:
