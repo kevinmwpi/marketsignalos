@@ -424,3 +424,14 @@ def test_a_pass_after_a_crash_mid_row_never_joins_the_torn_row_to_new_ones(
                          now=_at(W + 2 * C + 2 * HOUR))
     assert result["summary"]["by_status"] == {"ok": 1}
     assert load_entry_prices(store) == {"0xa": [(W, 0.4)], "0xb": [(W + 2 * HOUR, 0.3)]}
+
+
+def test_a_torn_receipt_is_cut_before_the_next_pass_appends(tmp_path: Path) -> None:
+    store = tmp_path / STORE_DIR
+    api = FakeApi({"0xa": ("tok-a", True), "0xb": ("tok-b", True)},
+                  {"tok-a": [(W, 0.5)], "tok-b": [(W, 0.6)]})
+    backfill([("0xa", W)], store, get=api)
+    with (store / RECEIPTS_FILE).open("a", encoding="utf-8") as handle:
+        handle.write('{"torn')
+    backfill([("0xb", W)], store, get=api)
+    assert set(latest_receipts(store)) == {("0xa", W), ("0xb", W)}
