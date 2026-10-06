@@ -5,7 +5,7 @@
   "activity_requests_per_wallet": 10,
   "leaderboard_limit": 100,
   "cycle_timeout_seconds": 1200,
-  "daily_runtime_seconds": 3600,
+  "daily_runtime_seconds": 5400,
   "rss_limit_mb": 4096,
   "log_limit_mb": 8,
   "entry_prices_every_seconds": 21600,

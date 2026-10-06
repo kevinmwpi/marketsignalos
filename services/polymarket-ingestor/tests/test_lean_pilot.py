@@ -421,6 +421,21 @@ def test_the_deployed_config_is_valid_and_enables_both_backfills() -> None:
     assert worst_case <= config.daily_runtime_seconds // 3
 
 
+def test_the_deployed_allowance_fits_a_full_day_of_hourly_runs() -> None:
+    # Every run must reserve a whole cycle before it starts, so the last hourly run of
+    # the day needs that reservation free on top of the day's work. At 3,600 s the
+    # last 4-6 runs of each day were skipped (2026-10-03 to 2026-10-05).
+    path = Path(__file__).resolve().parents[3] / "deploy" / "lean-pilot.json"
+    config = pilot.PilotConfig(**json.loads(path.read_text(encoding="utf-8")))
+    hourly = 24 * 90  # collection measured at 63-122 s per run on 2026-10-05/06
+    backfills = sum(86400 // every * max_seconds for every, max_seconds in (
+        (config.entry_prices_every_seconds, config.entry_prices_max_seconds),
+        (config.closing_lines_every_seconds, config.closing_lines_max_seconds)))
+    daily_stages = 300  # horizon, score, cohort and gate13 together, measured ~100 s
+    assert (hourly + backfills + daily_stages + config.cycle_timeout_seconds
+            <= config.daily_runtime_seconds)
+
+
 # ── Position retention after collection ──────────────────────────────────────
 
 def test_collection_retention_keeps_two_snapshots_and_the_exit_watermark(
