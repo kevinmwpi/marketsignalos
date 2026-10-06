@@ -208,7 +208,7 @@ def test_the_power_diagnostic_counts_both_versions_and_explains_exclusions(
     assert result["counts"]["forecast-v4"]["wallets"] == 1
     assert result["counts"]["forecast-v5"] == {
         "wallets": 1, "gate13_pass": 0, "tailable": 0,
-        "blocked_only_by_gate13": 0}
+        "blocked_only_by_gate13": 0, "blocked_only_by_min_sample": 0}
     # 0xc was bought two days before its end; 0xd's prices were fetched after the
     # run began, and with no chunk receipts its hour counts as not yet fetched.
     assert result["exclusions"] == {"near_scheduled_end": 1, "not_fetched": 1}
@@ -216,6 +216,7 @@ def test_the_power_diagnostic_counts_both_versions_and_explains_exclusions(
     assert result["wallets_with_observations"] == 1
     saved = json.loads((data / gate13_power.REPORT_DIR / "2026-10-05.json").read_text())
     assert saved["wallets"][WALLET]["bets"] == 2
+    assert saved["v5_blocked_only_by_min_sample"] == []
     assert not (data / gate13_power.SCRATCH_DIR).exists()
     assert not (data / "score-snapshots").exists()  # the published scores are untouched
 
@@ -224,11 +225,43 @@ def test_an_unfetchable_hour_is_split_by_why_it_has_no_price() -> None:
     from marketsignalos_polymarket.gate13_power import _no_reference_reason
 
     points = [(W + i * HOUR, 0.5) for i in (0, 1, 2, 30)]
-    final = {("0xa", W)}
-    assert _no_reference_reason("0xa", W + C - 1800, points, final, None) == "not_fetched"
-    assert _no_reference_reason("0xa", W + 5 * HOUR, points, final, None) == "gap"
-    assert _no_reference_reason("0xa", W + 40 * HOUR, points, final, None) == "ended"
-    assert _no_reference_reason("0xa", W + 5 * HOUR, points, final, W + 5 * HOUR) == "closed"
+    receipts = {("0xa", W): "ok"}
+    later = W + 10 * C  # every chunk below has ended
+
+    def reason(ts: int, closed_at: int | None = None, *, now: int = later,
+               known: dict[tuple[str, int], str] = receipts) -> str:
+        return _no_reference_reason("0xa", ts, points, known, closed_at, now=now)
+
+    # The hour crosses into the next chunk, which was never tried: real backlog.
+    assert reason(W + C - 1800) == "not_fetched"
+    # The same hour while that chunk is still running (or settling) cannot be fetched.
+    assert reason(W + C - 1800, now=W + 2 * C) == "not_ended"
+    assert reason(W + C - 1800, now=W + C + 60) == "not_ended"
+    # Tried and failed (no YES token, an HTTP error): waits for its retry.
+    assert reason(W + C - 1800, known={**receipts, ("0xa", W + C): "no_token"}) == "fetch_failed"
+    assert reason(W + 5 * HOUR) == "gap"
+    assert reason(W + 40 * HOUR) == "ended"
+    assert reason(W + 5 * HOUR, W + 5 * HOUR) == "closed"
+
+
+def test_wallets_blocked_only_by_the_sample_minimum_need_a_positive_bound() -> None:
+    from marketsignalos_polymarket.gate13_power import _blocked_only_by_min_sample, _counts
+
+    few = "fewer than 10 1 h post-entry CLV observations"
+    rows = [
+        {"tailability_reasons": [few], "clv_lower_bound": 0.002},           # counts
+        {"tailability_reasons": [few], "clv_lower_bound": -0.001},          # bound not there
+        {"tailability_reasons": [few, "recent forecast edge is negative"],
+         "clv_lower_bound": 0.002},                                         # another gate fails
+        {"tailability_reasons": ["fewer than 10 resolved trades"],
+         "clv_lower_bound": 0.002},                                         # not gate 13
+        {"tailability_reasons": ["1 h post-entry CLV value not confidently positive"],
+         "clv_lower_bound": -0.001, "clv_sample_size": 12.0},
+    ]
+    assert [_blocked_only_by_min_sample(row) for row in rows] == [True, False, False, False,
+                                                                 False]
+    assert _counts(rows)["blocked_only_by_min_sample"] == 1
+    assert _counts(rows)["blocked_only_by_gate13"] == 3
 
 
 def test_an_unknown_score_version_is_refused(data: Path, tmp_path: Path) -> None:
