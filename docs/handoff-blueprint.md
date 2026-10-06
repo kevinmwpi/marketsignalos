@@ -554,6 +554,13 @@ Do not enable the API's own scheduler simultaneously — one ingestion owner.
 
 **Entry gate.** Stage 2 running for ≥14 days with no unexplained gaps.
 
+*Plan and owner decisions, 2026-10-06:
+[`docs/stage3-cohort-v1-plan.md`](stage3-cohort-v1-plan.md).*
+- All 13 gates qualified no wallet, so three nested tiers are frozen together: T1 (all
+  13 gates), T2 (gates 1–12) and T3 (data gates only).
+- The primary test is on T2.
+- The 14 days count from the last Stage 3 pilot change.
+
 Run this on the **leaderboard-discovered cohort**, knowing it is survivorship-biased,
 and say so in the evidence. Selection on past success can inflate retrospective
 performance, but it does not establish an upper bound on future performance for
@@ -965,6 +972,11 @@ Answer these before Stage 1; each changes what gets built.
 4. **What is the primary outcome for cohort v1?** §6 Stage 3 recommends event-weighted
    signed price improvement over a pre-declared horizon. Pick one and freeze it —
    picking after you look is the failure mode this whole document exists to prevent.
+   *Answered 2026-10-06, before any cohort-v1 outcome existed:* event-weighted signed
+   price improvement for the follower, 1 h after the follower's entry, net of measured
+   costs. The primary test is on tier T2 (gates 1–12), because all 13 gates qualified
+   no wallet. See [`docs/stage3-cohort-v1-plan.md`](stage3-cohort-v1-plan.md)
+   (decisions S1–S7).
 5. **Retention.** Score generations at ~426 MB each, raw archive, logs, abandoned
    generations. Nothing deletes anything today. Required before Stage 2 runs unattended
    for weeks.
