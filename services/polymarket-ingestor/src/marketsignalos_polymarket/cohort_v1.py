@@ -84,6 +84,9 @@ OUTCOME = {
                   "calibration, Brier score and log loss", "the 6 h horizon",
                   ("the same 1 h improvement before fees, to tell no edge from an edge "
                    "the fees consume")],
+    "price_reference": ("the token bought, CLOB /prices-history at 5-minute fidelity over "
+                        "detection - 1 h to + 6 h: the last point at or before detection + "
+                        "1 h (+ 6 h), at most 15 minutes before it"),
     "event_weighting": "signals in one event share one event weight, as gate 13",
     "analysis": "event-cluster bootstrap, one look at the evaluation date",
 }

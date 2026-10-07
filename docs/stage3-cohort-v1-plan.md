@@ -91,6 +91,11 @@ into the frozen config. During the window:
 
 Today 20 of 64 wallets are polled per run. Six T2 members plus six comparison wallets
 polled hourly leave eight places a run for the rotation.
+*2026-10-07:* the first provisional list had 16 members (8 T2, 8 comparison), which
+would have left 4 places for 48 wallets, each polled about every 12 hours. The batch
+is now 28, so 12 places refresh the rest about every 4 hours. Collection took about
+3 minutes for 20 wallets, against 2,617 s used of the 5,400 s daily allowance
+on 2026-10-06.
 
 **S3. Primary outcome (open decision 4).** *Recommended: event-weighted signed price
 improvement for the follower, 1 h after the follower's entry, net of costs.*
@@ -211,6 +216,19 @@ the pilot, so they should land by about 2026-10-13 (S7).
      same 1 h improvement before fees, to tell no edge from an edge the fees consume.
 3. **Prices after the follower's entry.** Fetch hourly prices for at least one hour
    after detection for each recorded signal, reusing the entry-price backfill.
+   *Built 2026-10-07 (`cohort_prices.py`, run first in the pilot's entry-price stage).*
+   - **Window per signal.** It reuses the backfill's rules, not its 7-day chunks.
+     Those are fetched only after they end, so signals in the window's last week
+     would have no price until after the evaluation date.
+   - **What is fetched.** The bought token's `/prices-history` from 1 h before
+     detection to 6 h after, the secondary horizon. A window is fetched once it has
+     ended and an hour has passed, so its prices are final. A failed window is retried
+     an hour later.
+   - **Which signals.** Every signal with a token, excluded ones included, so the
+     evaluation can check that exclusions do not select on outcome.
+   - **Fidelity.** It requests 5 minutes. Each receipt records the points returned
+     and their median spacing. Before the freeze, check that the frozen tolerance
+     (15 minutes before the horizon) fits the spacing the API actually returns.
 4. **Freeze the membership.** Implement S2: cohort-stage exemption, hourly polling of
    members, new seeds tagged for v2.
    *Built 2026-10-07 as the pilot's `cohort_v1` stage, together with step 5's power
@@ -238,8 +256,14 @@ the pilot, so they should land by about 2026-10-13 (S7).
     compressed (the rows are raw evidence, so they are kept, not deleted), or cap the
     window at 28 days.
   - Score generations (about 7 MB a day) still have no retention (open decision 5).
+  - *Measured 2026-10-07:* the first activity compaction moved 135.4 MB into one
+    segment, and activity took 17.5 MB on disk afterwards, about 7.7 times smaller.
+    Tracked storage fell to 195 MB from 292 MB. The runway now lasts well beyond a
+    42-day window opening on 2026-10-27.
 - **Runtime.** Hourly polling of about 9 members plus signal capture must fit the
-  90-minute daily allowance. Measure it before the freeze.
+  90-minute daily allowance. Measure it before the freeze. *2026-10-07:* 16
+  provisional members and a 28-wallet batch. Read the day's runtime total from the
+  receipts before the freeze.
 - **T2 can change during the window.** Membership is frozen at the cutoff, so a member
   that later fails a gate stays in. That is intended: the test is of the rule at the
   cutoff.
