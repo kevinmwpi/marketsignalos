@@ -394,9 +394,11 @@ def _execute_stage(stage: str, data_dir: Path, config: PilotConfig,
                                          max_seconds=config.closing_lines_max_seconds,
                                          priority=horizon_diagnostic.priority_markets(data_dir))
     from .cohort import excluded_wallets
+    from .cohort_capture import activity_offset
     from .cohort_v1 import member_wallets
     from .runner import run_pipeline
     members = member_wallets(data_dir)
+    offset = activity_offset(data_dir)  # rows past it are this run's (Stage 3 capture)
     result = run_pipeline(
         windows=[config.leaderboard_window], leaderboard_limit=config.leaderboard_limit,
         seed_metrics=(config.leaderboard_metric,),
@@ -412,6 +414,7 @@ def _execute_stage(stage: str, data_dir: Path, config: PilotConfig,
         "partial" if not result["windows_succeeded"] or result.get("wallets_with_errors", 0)
         else "succeeded"
     )
+    result["cohort_v1_capture"] = _capture_signals(data_dir, offset, run_id)  # before compaction
     result["positions_retention"] = _compact_positions(data_dir)
     result["activity_compaction"] = _compact_activity(data_dir)
     try:
@@ -430,6 +433,19 @@ POSITION_SNAPSHOTS_KEPT = 2
 # (jsonl_archive; Stage 3 step 0). About a day of collection at 2026-10-06 rates,
 # so segments stay few and the plain tail stays small.
 ACTIVITY_COMPACT_MIN_BYTES = 32 * 1024 * 1024
+
+
+def _capture_signals(data_dir: Path, offset: int, run_id: str) -> dict[str, Any]:
+    """Book and fee for this run's cohort-v1 signals (Stage 3 step 2). A failure is
+    reported, never raised: collection itself succeeded, and failing it would demand
+    manual recovery. Signals it could not record are lost, and the error says so."""
+    from .cohort_capture import capture
+
+    try:
+        return capture(data_dir, offset, run_id)
+    except Exception as exc:  # noqa: BLE001 - any capture fault must leave collection intact
+        log.warning("Cohort signal capture failed: %s", type(exc).__name__)
+        return {"status": "failed", "error_type": type(exc).__name__}
 
 
 def _compact_activity(data_dir: Path) -> dict[str, Any]:

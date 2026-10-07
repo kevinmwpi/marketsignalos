@@ -81,18 +81,27 @@ OUTCOME = {
     "primary": "event-weighted signed price improvement for the follower, 1 h after "
                "the follower's entry, net of measured costs",
     "secondary": ["settlement ROI (unresolved at the evaluation date: censored)",
-                  "calibration, Brier score and log loss", "the 6 h horizon"],
+                  "calibration, Brier score and log loss", "the 6 h horizon",
+                  ("the same 1 h improvement before fees, to tell no edge from an edge "
+                   "the fees consume")],
     "event_weighting": "signals in one event share one event weight, as gate 13",
     "analysis": "event-cluster bootstrap, one look at the evaluation date",
 }
 COST_MODEL = {
+    "signal": "a member's BUY fills of one (market, outcome) first seen by one pilot "
+              "collection; fills more than 3 h old when seen are not signals",
     "entry_time": "the first pilot run that sees the wallet's buy",
     "entry_price": "best ask for the side bought, in that run",
     "size_usdc": 100,
-    "slippage": "walk the book depth for the clip",
-    "fees": "the market's taker fee, read in the same run",
-    "missing": "a signal without a readable book or fee is excluded with its reason, "
-               "never priced at zero cost",
+    "slippage": "walk the asks for 100 USDC of notional; the fee comes on top",
+    "fees": "taker fee as Polymarket's clob-client-v2 charges it: shares * r * "
+            "(p * (1 - p)) ** e at each level's price, r and e from CLOB "
+            "/clob-markets fd in the same run; no fd means no fee, as that client does",
+    "all_in_price": "(100 + fee) / shares",
+    "missing": "a signal without a readable book or fee details, with fee or token "
+               "sources (CLOB vs Gamma) that disagree, too thin for the clip, or on a "
+               "market not accepting orders is excluded with its reason, never priced "
+               "at zero cost",
 }
 BASELINE = {
     "primary_test": "T2 follower improvement after costs against zero "
