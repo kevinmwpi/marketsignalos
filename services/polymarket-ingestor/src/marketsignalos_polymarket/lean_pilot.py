@@ -397,9 +397,14 @@ def _execute_stage(stage: str, data_dir: Path, config: PilotConfig,
                                          priority=horizon_diagnostic.priority_markets(data_dir))
     from .cohort import excluded_wallets
     from .cohort_capture import activity_offset
-    from .cohort_v1 import member_wallets
+    from .cohort_v1 import frozen_members, member_wallets
     from .runner import run_pipeline
-    members = member_wallets(data_dir)
+    # Frozen members are never excluded (plan S2). A provisional member the cohort
+    # stage has since excluded is not polled: its rows were purged, and polling it
+    # would refetch its whole history only for the next cohort run to purge again
+    # (2026-10-07 09:07).
+    excluded = excluded_wallets(data_dir) - frozen_members(data_dir)
+    members = member_wallets(data_dir) - excluded
     offset = activity_offset(data_dir)  # rows past it are this run's (Stage 3 capture)
     result = run_pipeline(
         windows=[config.leaderboard_window], leaderboard_limit=config.leaderboard_limit,
@@ -408,7 +413,7 @@ def _execute_stage(stage: str, data_dir: Path, config: PilotConfig,
         max_pages_per_wallet=2, market_pages=1, refresh_reference=False,
         max_activity_requests_per_wallet=config.activity_requests_per_wallet,
         max_watchlist=config.max_watchlist_wallets or None,
-        exclude_wallets=excluded_wallets(data_dir) - members,
+        exclude_wallets=excluded,
         priority_wallets=members,  # Stage 3 members: polled every run (plan S2)
     ).to_dict()
     result["cohort_v1_members_polled"] = len(members)

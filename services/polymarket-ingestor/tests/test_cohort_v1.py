@@ -251,3 +251,49 @@ def test_the_pilot_freezes_at_the_first_cycle_after_the_freeze_time(tmp_path: Pa
         pilot.PilotConfig(cohort_v1_every_seconds=1, cohort_v1_freeze_at="2030-01-01T00:00")
     with pytest.raises(ValueError, match="enabled"):
         pilot.PilotConfig(cohort_v1_freeze_at=CUTOFF.isoformat())
+
+
+def test_a_wallet_excluded_after_scoring_is_screened_out(data: Path) -> None:
+    # 2026-10-07: the cohort stage excluded a provisional member after the score
+    # generation that still listed it; it must leave the tiers, not stay a member.
+    assert build(data, cutoff=CUTOFF, discovery={})["screened"][WALLET]["tier"] != "excluded"
+    with (data / "excluded_wallets.txt").open("a", encoding="utf-8") as out:
+        out.write(f"{WALLET}\t2026-10-07T08:11:00+00:00\tsystematic\n")
+    config = build(data, cutoff=CUTOFF, discovery={})
+    assert config["screened"][WALLET]["tier"] == "excluded"
+    assert all(WALLET not in wallets for wallets in config["tiers"].values())
+
+
+def test_collection_skips_excluded_provisional_members_but_never_frozen_ones(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from marketsignalos_polymarket import cohort, runner
+    from marketsignalos_polymarket import lean_pilot as pilot
+
+    seen: dict[str, Any] = {}
+
+    class Result:
+        def to_dict(self) -> dict[str, Any]:
+            return {"windows_succeeded": ["month"], "wallets_with_errors": 0}
+
+    def fake_pipeline(**kwargs: Any) -> Result:
+        seen.update(kwargs)
+        return Result()
+
+    monkeypatch.setattr(runner, "run_pipeline", fake_pipeline)
+    stage = tmp_path / "cohort-v1"
+    stage.mkdir()
+    (stage / "members.json").write_text(json.dumps({"wallets": ["0xkeep", "0xgone"]}))
+    cohort.record_exclusions(tmp_path, {"0xgone": "systematic", "0xbot": "systematic"},
+                             now=datetime(2026, 10, 7, 8, 11, tzinfo=UTC))
+    result = pilot._execute_stage("collect", tmp_path, pilot.PilotConfig(), "r")
+    assert seen["priority_wallets"] == {"0xkeep"}
+    assert seen["exclude_wallets"] == {"0xgone", "0xbot"}
+    assert result["cohort_v1_members_polled"] == 1
+    # Once frozen, a member is protected (S2): polled first, never excluded.
+    frozen = {"cohort_id": "cohort-v1", "config_hash": "h",
+              "tiers": {"T2": ["0xgone"]}, "comparison": {"pairs": {"0xgone": "0xkeep"}}}
+    (stage / "frozen-config.json").write_text(json.dumps(frozen))
+    pilot._execute_stage("collect", tmp_path, pilot.PilotConfig(), "r")
+    assert seen["priority_wallets"] == {"0xkeep", "0xgone"}
+    assert seen["exclude_wallets"] == {"0xbot"}
