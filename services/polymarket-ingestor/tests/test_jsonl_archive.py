@@ -46,8 +46,9 @@ def _hashes(path: Path) -> list[str]:
 def test_compaction_keeps_every_row_in_order(tmp_path: Path) -> None:
     path = _store(tmp_path, range(1, 4))
     before = list(iter_lines(path))
+    size = path.stat().st_size  # bytes on disk: Windows text mode writes \r\n
     moved = compact(path)
-    assert moved == sum(len(line.encode()) for line in before)
+    assert moved == size
     assert path.exists() and path.stat().st_size == 0  # still a store for writers
     assert [p.name for p in segment_paths(path)] == ["000001.jsonl.gz"]
     assert list(iter_lines(path)) == before

@@ -713,8 +713,9 @@ def test_collection_compacts_activity_once_it_is_large_enough(
     monkeypatch.setattr(pilot, "ACTIVITY_COMPACT_MIN_BYTES", 10**9)
     assert pilot._compact_activity(tmp_path) == {"bytes_moved": 0, "segments": 0}
     monkeypatch.setattr(pilot, "ACTIVITY_COMPACT_MIN_BYTES", 1)
+    size = path.stat().st_size  # bytes on disk: Windows text mode writes \r\n
     result = pilot._compact_activity(tmp_path)
-    assert result == {"bytes_moved": len(rows.encode()), "segments": 1}
+    assert result == {"bytes_moved": size, "segments": 1}
     assert path.stat().st_size == 0  # emptied, still present for the store
     # The archive counts toward the activity storage figure.
     assert "polymarket_activity.jsonl.archive" in pilot._STORAGE_AREAS["activity"]
