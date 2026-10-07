@@ -42,6 +42,10 @@ docker run --rm --network none -e POLYMARKET_PILOT_DATA_DIR=/tmp/pilot marketsig
 Without a data directory the entry point exits with status 2 rather than keep its
 cadence and runtime accounting on a disk that is wiped every run.
 
+**Merge pilot changes only between :30 and :59 past the hour.** A deploy stops a running
+cron container. On 2026-10-07 a merge at 00:12 stopped the run that started at
+00:09, mid-stage. Runs start at about :07–:12 and finish within about seven minutes.
+
 **Not verified until provisioning:**
 
 - that Railway accepts these config keys;

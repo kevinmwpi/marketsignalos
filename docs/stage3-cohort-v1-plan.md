@@ -160,6 +160,13 @@ the pilot, so they should land by about 2026-10-13 (S7).
    `frozen-config.json`: discovery source, cutoff, every screened wallet with its
    tier and reasons, score version, gate thresholds, code hash, outcome, horizon,
    cost model, baseline, matching rule, window and evaluation date.
+   *Built 2026-10-07 (`cohort_v1.py`).*
+   - It writes the frozen config and a separate member list, T2 plus its comparison
+     set, which step 4 polls.
+   - The member list is a data file on purpose. Step 4's code must run unattended
+     for 14 days before the cutoff (S7), but the final members exist only at the
+     cutoff. A provisional list from the current generation runs during the burn-in,
+     and the final list replaces it at the freeze, with no code change.
 2. **Signal capture in the pilot.** Record each new BUY by a frozen member: detection
    time, order-book top and depth for the side bought, and the market's fee. Append to
    the ledger with the cohort ID and config hash. Log counts only, never performance.
