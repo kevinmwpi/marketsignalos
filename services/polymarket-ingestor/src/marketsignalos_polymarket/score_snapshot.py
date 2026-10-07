@@ -26,6 +26,9 @@ from .storage import JsonlEnrichmentStore, JsonlWalletBetStore
 
 INPUTS = (
     "polymarket_activity.jsonl",
+    # Activity rows compacted into gzip segments (jsonl_archive); inventoried as a
+    # directory: file count, total bytes and newest mtime.
+    "polymarket_activity.jsonl.archive",
     "polymarket_markets.jsonl",
     "polymarket_leaderboard.jsonl",
     "polymarket_wallet_hydration.jsonl",
@@ -73,6 +76,14 @@ def _input_inventory(data_dir: Path) -> dict[str, Any]:
             stat = path.stat()
         except FileNotFoundError:
             inventory[name] = {"exists": False}
+            continue
+        if path.is_dir() and name.endswith(".archive"):
+            files = sorted(item for item in path.iterdir() if item.is_file())
+            stats = [item.stat() for item in files]
+            inventory[name] = {"exists": True, "files": len(files),
+                               "bytes": sum(item.st_size for item in stats),
+                               "mtime_ns": max((item.st_mtime_ns for item in stats),
+                                               default=stat.st_mtime_ns)}
             continue
         if not path.is_file():
             raise ValueError(f"Scoring input is not a regular file: {name}")

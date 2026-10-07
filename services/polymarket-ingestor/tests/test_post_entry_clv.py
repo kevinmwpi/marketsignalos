@@ -284,3 +284,29 @@ def test_compacting_the_entry_prices_changes_no_v5_score(data: Path, tmp_path: P
     manifest = json.loads((snapshots / "v5-archived" / "manifest.json").read_text())
     archive = f"{entry_prices.STORE_DIR}/{entry_prices.ARCHIVE_FILE}"
     assert manifest["inputs"][archive]["exists"]
+
+
+def test_compacting_the_activity_changes_no_v5_score(data: Path, tmp_path: Path) -> None:
+    # Stage 3 step 0: activity moves into gzip segments; every reader must see the
+    # same rows, so scores and the entry-price work list stay identical.
+    from marketsignalos_polymarket import gate13_power, jsonl_archive
+
+    snapshots = tmp_path / "snapshots"
+    activity = data / "polymarket_activity.jsonl"
+    now = datetime(2026, 10, 5, 12, tzinfo=UTC)
+    before = _scored(data, snapshots, "v5-plain", "forecast-v5")
+    chunks = entry_prices.needed_chunks(activity)
+    priority = post_entry_clv.priority_chunks(data)
+    diagnosis = gate13_power.diagnose(data, observed_before=now)
+
+    assert jsonl_archive.compact(activity) > 0
+    assert activity.stat().st_size == 0 and jsonl_archive.segment_paths(activity)
+    after = _scored(data, snapshots, "v5-archived", "forecast-v5")
+    assert _without_timestamps(after["row"]) == _without_timestamps(before["row"])
+    assert ({cid: _without_timestamps(bet) for cid, bet in after["bets"].items()}
+            == {cid: _without_timestamps(bet) for cid, bet in before["bets"].items()})
+    assert entry_prices.needed_chunks(activity) == chunks
+    assert post_entry_clv.priority_chunks(data) == priority
+    assert gate13_power.diagnose(data, observed_before=now) == diagnosis
+    manifest = json.loads((snapshots / "v5-archived" / "manifest.json").read_text())
+    assert manifest["inputs"]["polymarket_activity.jsonl.archive"]["files"] == 1

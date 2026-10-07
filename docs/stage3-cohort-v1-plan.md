@@ -152,7 +152,9 @@ the pilot, so they should land by about 2026-10-13 (S7).
 
 0. **Compress cold activity** (the disk constraint, §5). Compress it the way PR #67
    compresses entry prices: every row is kept and reads are unchanged, verified by an
-   identical v5 rescoring.
+   identical v5 rescoring. *Built 2026-10-07 (`jsonl_archive.py`). Activity uses
+   segments with an exactly-once commit, because unlike prices a repeated activity row
+   would count a fill twice.*
 
 1. **Tiers.** Compute T1/T2/T3 membership from a score generation. Write
    `frozen-config.json`: discovery source, cutoff, every screened wallet with its

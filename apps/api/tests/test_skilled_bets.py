@@ -1033,3 +1033,28 @@ def test_corrupt_disk_cache_falls_back_to_recompute(
     sb._compute_skilled_bets_cached.cache_clear()
     again = sb.compute_skilled_bets(min_skill=0.9, min_resolved=20, limit=None)
     assert again == first
+
+
+def test_skilled_bets_read_activity_from_archive_segments(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The pilot compacts activity into gzip segments (jsonl_archive). The feed
+    must be identical, and moving rows must change the cache fingerprint."""
+    from marketsignalos_polymarket.jsonl_archive import compact
+
+    from marketsignalos_api.services import skilled_bets as service
+
+    pm_dir = _seed(tmp_path)
+    monkeypatch.setenv("POLYMARKET_DATA_DIR", str(pm_dir))
+    client = TestClient(app)
+    url = "/signals/skilled-bets?min_skill=0.9&min_resolved=20"
+    before = client.get(url).json()
+    fingerprint = service._inputs_fingerprint()
+
+    assert compact(pm_dir / "polymarket_activity.jsonl") > 0
+    assert service._inputs_fingerprint() != fingerprint
+    service.invalidate_cache()
+    after = client.get(url).json()
+    assert [(r["condition_id"], r["transaction_hash"]) for r in after] == [
+        (r["condition_id"], r["transaction_hash"]) for r in before]
+    assert len(after) == 2
