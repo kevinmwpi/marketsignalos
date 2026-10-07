@@ -445,6 +445,14 @@ def _build_stores(data_dir: Path) -> _Stores:
     )
 
 
+def _write_watchlist(path: Path, text: str, *, encoding: str = "utf-8") -> None:
+    """Replace the watchlist atomically: a kill mid-write must not leave a truncated
+    list, which would silently drop wallets from collection."""
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(text, encoding=encoding)
+    tmp.replace(path)
+
+
 def _load_watchlist(path: Path) -> list[str]:
     if not path.exists():
         log.warning("watchlist not found path=%s", path)
@@ -1428,7 +1436,8 @@ def seed_watchlist_from_leaderboard(
     merged = sorted(new_wallets | existing)
 
     watchlist_path.parent.mkdir(parents=True, exist_ok=True)
-    watchlist_path.write_text(
+    _write_watchlist(
+        watchlist_path,
         "\n".join(
             ["# Polymarket wallet watchlist — auto-seeded + manual additions"]
             + merged
@@ -2008,7 +2017,8 @@ def _merge_skill_qualified_wallets_into_watchlist(
     if added <= 0:
         return 0
     watchlist_path.parent.mkdir(parents=True, exist_ok=True)
-    watchlist_path.write_text(
+    _write_watchlist(
+        watchlist_path,
         "\n".join(
             ["# Polymarket wallet watchlist — auto-seeded + manual additions"]
             + sorted(existing),
@@ -2719,7 +2729,8 @@ def run_pipeline(
         watchlist_path = _watchlist_path()
         merged = sorted(seeded)
         watchlist_path.parent.mkdir(parents=True, exist_ok=True)
-        watchlist_path.write_text(
+        _write_watchlist(
+            watchlist_path,
             "\n".join(
                 ["# Polymarket wallet watchlist — auto-seeded + manual additions"]
                 + merged,
@@ -3631,9 +3642,8 @@ def run_add_watchlist_wallet(address: str) -> dict[str, Any]:
     if added:
         merged = sorted(existing | {wallet})
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(
-            "\n".join([_WATCHLIST_HEADER] + merged) + "\n", encoding="utf-8"
-        )
+        _write_watchlist(path, "\n".join([_WATCHLIST_HEADER] + merged) + "\n",
+                         encoding="utf-8")
     review_status = run_pin_wallet(wallet, pin=True)
     log.info(
         "watchlist_manual_add wallet=%s added=%s size=%d",

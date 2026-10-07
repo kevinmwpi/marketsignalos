@@ -109,11 +109,29 @@ wallets, or verified predictive performance.
 An interrupted or exceptional collection sets `recovery_required` on the next
 inspection by a worker, preserves its runtime charge, and exits nonzero. This
 is deliberate: the legacy JSONL append/index/checkpoint writes are not one
-transaction. Before clearing that flag, preserve the files, validate JSONL line
-integrity, reconcile the activity index with durable rows, and check wallet
-checkpoints/hydration against what was actually persisted. There is no automatic
-repair command in this increment. Interrupted scoring retains prior published
-scores and leaves its unused generation for inspection.
+transaction. Interrupted scoring retains prior published scores and leaves its
+unused generation for inspection.
+
+**Recovery is manual, by design (blueprint §6 Stage 2), but needs no shell.**
+
+1. The worker's log line reports `recovery_required` and names the interrupted run
+   as `recovery_run_id`.
+2. Set the Railway service variable `PILOT_RECOVER` to that id. The next scheduled run
+   repairs the data directory before collecting (`pilot_recovery.py`, `--recover RUN_ID`).
+   It:
+   - cuts any torn final row from each append-only JSONL store, keeping the cut bytes;
+   - counts invalid lines elsewhere without removing them;
+   - rebuilds an unreadable wallet-checkpoint file from the stored activity (never
+     newer than the lost one, so trades are refetched, not skipped);
+   - rebuilds the activity dedupe index from the stored rows.
+3. The flag is cleared only if every step succeeded. Either way the receipt is
+   `.lean-pilot/recoveries/<run id>.json`, and the cut bytes sit beside it.
+4. Remove the variable afterwards.
+
+A different run id is refused, so a variable left set never repairs a later incident
+on its own. A state written before run ids were recorded takes the id `unrecorded`.
+Checkpoint and watchlist files are now replaced atomically, so new incidents can
+leave only torn JSONL rows and a stale index.
 
 ## Budget envelope, not a cost guarantee
 

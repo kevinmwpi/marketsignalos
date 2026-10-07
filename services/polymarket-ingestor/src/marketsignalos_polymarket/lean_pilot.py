@@ -208,6 +208,10 @@ def _read_state(path: Path) -> dict[str, Any]:
     active = state.get("active")
     if type(state.get("recovery_required", False)) is not bool:
         raise ValueError("Invalid recovery state")
+    recovery_run = state.get("recovery_run_id")
+    if recovery_run is not None and (not isinstance(recovery_run, str)
+                                     or not recovery_run.isalnum()):
+        raise ValueError("Invalid recovery run identifier")
     if active is not None:
         if not isinstance(active, dict) or not isinstance(active.get("run_id"), str):
             raise ValueError("Invalid active run")
@@ -317,6 +321,8 @@ def plan_cycle(data_dir: Path, config: PilotConfig, *,
             "runtime_remaining_seconds": max(0, remaining),
             "disk_free_mb": disk_free_mb,
             "recovery_required": state.get("recovery_required", False),
+            # The id an operator passes to --recover (PILOT_RECOVER); see pilot_recovery.
+            "recovery_run_id": state.get("recovery_run_id"),
             "can_run": bool(due) and remaining >= config.cycle_timeout_seconds
             and disk_free_mb >= config.min_free_disk_mb
             and not state.get("recovery_required", False)}
@@ -424,6 +430,7 @@ def run_cycle(data_dir: Path, config: PilotConfig, run_id: str, *,
                     row["last_status"] = "interrupted"
                     if name == "collect":
                         state["recovery_required"] = True
+                        state["recovery_run_id"] = previous["run_id"]
             state["active"] = None
             _atomic_json(state_path, state)
         now = now_fn()
@@ -480,6 +487,7 @@ def run_cycle(data_dir: Path, config: PilotConfig, run_id: str, *,
                     row["last_status"] = "failed"
                     if name == "collect":
                         state["recovery_required"] = True
+                        state["recovery_run_id"] = run_id
             log.exception("Pilot cycle failed")
         elapsed = max(0, monotonic() - started)
         ended = now_fn().astimezone(UTC)
@@ -594,9 +602,16 @@ def main(argv: list[str] | None = None) -> int:
     modes = parser.add_mutually_exclusive_group()
     modes.add_argument("--plan", action="store_true", help="Read-only plan (default)")
     modes.add_argument("--run", action="store_true", help="Run due stages once, then exit")
+    modes.add_argument("--recover", metavar="RUN_ID",
+                       help="Repair after the named interrupted collection (pilot_recovery)")
     parsed = parser.parse_args(args)
     config = PilotConfig(**json.loads(parsed.config.read_text()) if parsed.config else {})
     data_dir = parsed.data_dir.resolve()
+    if parsed.recover:
+        from .pilot_recovery import recover
+        outcome = recover(data_dir, parsed.recover)
+        log.info("Pilot recovery %s", json.dumps(outcome))
+        return int(outcome["status"] not in {"recovered", "nothing_to_recover"})
     if not parsed.run:
         log.info("Pilot plan %s", json.dumps(plan_cycle(data_dir, config)))
         return 0
