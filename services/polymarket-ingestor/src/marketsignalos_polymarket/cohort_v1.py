@@ -223,7 +223,9 @@ def build(data_dir: Path, *, cutoff: datetime, discovery: dict[str, Any]) -> dic
                            "top_category": str(row.get("top_category", "")),
                            "buys_30d": buys.get(wallet, 0),
                            "style_archetype": str(row.get("style_archetype", ""))}
-    for wallet in sorted(excluded_wallets(data_dir) - set(wallets)):
+    # Excluded wins over a tier: the cohort stage can exclude a wallet after the score
+    # generation that still lists it was written.
+    for wallet in sorted(excluded_wallets(data_dir)):
         wallets[wallet] = {"tier": "excluded",
                            "reasons": ["excluded by the cohort stage (systematic)"]}
     for wallet in sorted(_leaderboard_wallets(data_dir) - set(wallets)):

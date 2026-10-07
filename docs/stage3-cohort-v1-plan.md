@@ -237,6 +237,13 @@ the pilot, so they should land by about 2026-10-13 (S7).
    - At the first cycle after that time, it writes the frozen config once.
    - New seeds are cohort v2 by construction: they are absent from the frozen
      config.
+   - *Fixed 2026-10-07:* on 08:1x the cohort stage excluded 6 systematic wallets, and
+     at least one was a provisional member. Collection kept polling it first: it
+     refetched the member's history (1,923 and 1,650 old fills at 09:07 and 10:07),
+     only for the next cohort run to purge it again. Now an excluded wallet is
+     neither polled nor tiered unless it is a frozen member, which the cohort stage
+     never excludes. The fix changes what the pilot collects, so it restarts the
+     14-day count (S7).
 5. **Power count and freeze.** Count T2's events over the last 14 days and set the
    window (S6). Commit the frozen config, record its hash in the blueprint, and open
    the window.
