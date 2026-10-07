@@ -350,8 +350,21 @@ def run(data_dir: Path, *, now: datetime, freeze_at: datetime | None,
         config = json.loads(frozen_path.read_text(encoding="utf-8"))
         if config_hash(config) != config.get("config_hash"):
             raise ValueError("frozen cohort config does not match its hash")
-        return {"status": "succeeded", "mode": "frozen", "config_hash": config["config_hash"],
-                "members": len(members(config)["wallets"])}
+        result: dict[str, Any] = {"status": "succeeded", "mode": "frozen",
+                                  "config_hash": config["config_hash"],
+                                  "members": len(members(config)["wallets"])}
+        from . import cohort_v1_eval  # imports this module
+
+        if (cohort_v1_eval.is_due(config, now)
+                and not (stage / cohort_v1_eval.RESULT_FILE).exists()):
+            # Step 6: the one look, a day after the evaluation date.
+            outcome = cohort_v1_eval.evaluate(data_dir, config, now=now)
+            cohort_v1_eval.write_once(data_dir, outcome)
+            text = json.dumps(outcome, sort_keys=True, separators=(",", ":"))
+            for index in range(0, len(text), 8000):
+                log.info("cohort v1 result part %d: %s", index // 8000, text[index:index + 8000])
+            result |= {"evaluated": True, "verdict": outcome["verdict"]}
+        return result
     if freeze_at is not None and now >= freeze_at:
         config = build(data_dir, cutoff=freeze_at, discovery=discovery)
         config["window"] = power_window(data_dir, config["tiers"][PRIMARY_TIER], freeze_at)

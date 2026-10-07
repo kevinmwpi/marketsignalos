@@ -261,6 +261,33 @@ the pilot, so they should land by about 2026-10-13 (S7).
    the window.
 6. **Evaluation (on the evaluation date only).** `docs/evaluations/cohort-v1/result.md`
    per blueprint §6 Stage 3 acceptance evidence.
+   *Analysis written 2026-10-07, before the freeze (`cohort_v1_eval.py`).* The package
+   hash in the frozen config's score generation pins it, so the analysis is
+   pre-registered with the rule.
+   - **When it runs.** In the pilot, a day after the evaluation date, from the frozen
+     `cohort_v1` stage, so the last signals' price windows have been fetched. It
+     refuses to run any earlier, writes `cohort-v1/result.json` once, and logs it in
+     parts to be committed.
+   - **Signals.** Rows with the frozen hash, captured in frozen mode, and detected in
+     `[opens, evaluation_date)`. Excluded rows are counted by reason. A captured signal
+     with no price at a horizon (none within 15 minutes before it) is counted as
+     missing, with its reason.
+   - **Primary.** T2's event-weighted net 1 h improvement, with a 10,000-draw
+     event-cluster bootstrap (seed 20261007). The verdict is `edge_after_costs` if the
+     one-sided 95% lower bound is above zero. Otherwise it is `inconclusive` if the
+     window was declared under-powered at the freeze, else `null` (kill criterion 2).
+   - **Secondary.**
+     - Results by horizon and by cost basis: the 6 h horizon, and gross (before fees).
+     - Results by group: T1, the polled part of T3, the comparison set, and T2 minus
+       the comparison set.
+     - The ablations: price-only is zero, CLV-only, historical-edge is T2, and
+       combined is T1.
+     - T2's settlement ROI, with unresolved markets censored.
+     - T2's calibration bins, Brier score and log loss. The model's forecast is the
+       wallet's entry price moved by its frozen posterior edge. The market's
+       forecast is the mid at detection.
+     - An exclusion check: the 1 h mark move of captured signals against excluded
+       ones.
 
 ## 5. Constraints and risks
 
