@@ -136,8 +136,8 @@ def test_only_this_runs_fresh_member_buys_become_signals(data: Path) -> None:
     assert result == {"status": "succeeded", "signals": 2, "stale_fills": 1, "captured": 2,
                       "excluded": {}, "seconds": 0.0}
     first, second = _signals(data)
-    assert (first["wallet"], first["group"], first["fills"]) == (COMPARISON, "comparison", 1)
-    assert (second["wallet"], second["group"], second["fills"]) == (T2, "t2", 2)
+    assert (first["wallet"], first["groups"], first["fills"]) == (COMPARISON, ["comparison"], 1)
+    assert (second["wallet"], second["groups"], second["fills"]) == (T2, ["t2"], 2)
     assert second["wallet_usdc"] == 50 and second["detection_lag_seconds"] == 300
     assert second["signal_id"] == f"run1:{T2}:{C1}:0" and second["config_hash"] == "h1"
     assert second["membership_mode"] == "provisional" and second["status"] == "captured"
@@ -263,3 +263,14 @@ def test_collection_captures_its_own_new_rows_before_compaction(
     result = pilot._execute_stage("collect", data, pilot.PilotConfig(), "run8")
     assert result["status"] == "succeeded"  # collection itself is unaffected
     assert result["cohort_v1_capture"] == {"status": "failed", "error_type": "KeyError"}
+
+
+def test_a_signal_records_every_group_its_wallet_is_in(data: Path) -> None:
+    # A CLV-only ablation wallet can also be a comparison wallet (both come from T3).
+    roster = json.loads((data / "cohort-v1" / "members.json").read_text())
+    roster["clv_only"] = [COMPARISON]
+    (data / "cohort-v1" / "members.json").write_text(json.dumps(roster))
+    offset = activity_offset(data)
+    _append(data, [_fill(COMPARISON, C2, 300, index=1)])
+    capture(data, offset, "r", get=_venue().get, now_fn=lambda: NOW)
+    assert _signals(data)[0]["groups"] == ["comparison", "clv_only"]

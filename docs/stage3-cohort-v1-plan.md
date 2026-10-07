@@ -78,6 +78,18 @@ One primary tier keeps one primary test. T1 and T3 are secondary and are reporte
 whatever they show. The alternatives are T1 alone, which is probably an empty
 experiment, or postponing Stage 3, which means choosing the start by looking.
 
+*Added 2026-10-07, before the freeze: the ablations.* Blueprint §6 Stage 3 asks the
+result for ablations: price-only, CLV-only, historical-edge and combined.
+- Price-only is the zero baseline. Historical-edge is T2. Combined is T1.
+- CLV-only is not a nested tier: it holds the wallets with trusted data that pass
+  gate 13, whatever gates 7–12 say. Its signals exist only if its wallets are polled
+  with the members.
+- So the frozen config lists those wallets under `ablations.clv_only`. Collection
+  polls them hourly, and the freeze protects them like the members.
+- On 2026-10-07 the v5 report had 3 wallets passing gate 13, so this ablation will
+  be small and is reported as such. It is secondary, like T1 and T3.
+- Collection changed, so the 14-day count restarts (S7).
+
 **S2. Cohort membership during the window.** *Recommended: freeze it at the cutoff.*
 Every wallet screened at the cutoff, with its tier and its exclusion reasons, goes
 into the frozen config. During the window:

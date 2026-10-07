@@ -595,6 +595,14 @@ any outcome:
 The existing `signal_ledger` is the right substrate — it already freezes surface-time
 prices and book context per row. Extend it with the cohort ID and the frozen config
 hash; do not build a parallel mechanism.
+*Amended 2026-10-07 at the build:* the `signal_ledger` is the API's record of feed
+signals. It takes tailable wallets only, keeps one row per position ever, and settles at
+resolution, and the API does not run in the pilot. Cohort-v1 signals are captured in the
+pilot as `cohort-v1/signals.jsonl`, the only record of them. Each row carries the cohort
+ID, the config hash, and the book and fee read when the pilot detected the buy. Reasons:
+[`docs/stage3-cohort-v1-plan.md`](stage3-cohort-v1-plan.md) §1. The CLV-only ablation's
+wallets are polled with the members, so that every ablation listed below can be
+computed.
 
 **Acceptance evidence.** `docs/evaluations/cohort-v1/frozen-config.json` committed
 **before** the window opens, with its hash recorded in this document. At the evaluation
