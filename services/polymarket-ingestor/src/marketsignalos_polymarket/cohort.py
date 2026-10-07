@@ -29,6 +29,7 @@ automated, nothing more.
 """
 from __future__ import annotations
 
+import gzip
 import json
 import logging
 from collections.abc import Iterable, Iterator
@@ -36,6 +37,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from .jsonl_archive import finish_pending, iter_lines, segment_paths
 from .score_snapshot import ENRICHMENT, load_current
 from .storage import _write_index
 
@@ -103,7 +105,8 @@ def apply_exclusions(data_dir: Path, excluded: frozenset[str]) -> dict[str, int]
         return removed
     removed[WATCHLIST_FILE] = _filter_watchlist(data_dir / WATCHLIST_FILE, excluded)
     for name in WALLET_JSONL:
-        removed[name] = _filter_jsonl(data_dir / name, excluded)
+        removed[name] = (_filter_jsonl(data_dir / name, excluded)
+                         + _filter_archive(data_dir / name, excluded))
     for name in WALLET_JSON_OBJECTS:
         removed[name] = _filter_json_object(data_dir / name, excluded)
     if removed[ACTIVITY_FILE]:
@@ -173,6 +176,46 @@ def _filter_watchlist(path: Path, excluded: frozenset[str]) -> int:
     return len(lines) - len(kept)
 
 
+def _filter_archive(path: Path, excluded: frozenset[str]) -> int:
+    """Drop excluded wallets' rows from a store's compressed segments (jsonl_archive).
+
+    An interrupted compaction is finished first, so no rows sit in a pending file.
+    A segment is rewritten, through a temp file, only when it holds an excluded
+    wallet. Each rewrite is atomic and dropping rows is idempotent, so an
+    interrupted purge is finished by the next one."""
+    finish_pending(path)
+    dropped = 0
+    for segment in segment_paths(path):
+        if not any(_excluded_row(line, excluded) for line in _gzip_lines(segment)):
+            continue
+        tmp = segment.with_name(segment.name + ".tmp")
+        try:
+            with tmp.open("wb") as raw, gzip.GzipFile(
+                    fileobj=raw, mode="wb", compresslevel=6, mtime=0) as out:
+                for line in _gzip_lines(segment):
+                    if _excluded_row(line, excluded):
+                        dropped += 1
+                    else:
+                        out.write(line.encode("utf-8"))
+            tmp.replace(segment)
+        finally:
+            tmp.unlink(missing_ok=True)
+    return dropped
+
+
+def _gzip_lines(path: Path) -> Iterator[str]:
+    with gzip.open(path, "rt", encoding="utf-8") as handle:
+        yield from handle
+
+
+def _excluded_row(line: str, excluded: frozenset[str]) -> bool:
+    try:
+        row = json.loads(line)
+    except json.JSONDecodeError:
+        return False  # unreadable lines are kept exactly as they were
+    return isinstance(row, dict) and str(row.get("proxy_wallet", "")).lower() in excluded
+
+
 def _filter_jsonl(path: Path, excluded: frozenset[str]) -> int:
     if not path.exists():
         return 0
@@ -227,13 +270,10 @@ def _replace_text(path: Path, text: str) -> None:
 
 
 def _rows(path: Path) -> Iterator[dict[str, Any]]:
-    if not path.exists():
-        return
-    with path.open(encoding="utf-8") as handle:
-        for line in handle:
-            try:
-                row = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if isinstance(row, dict):
-                yield row
+    for line in iter_lines(path):  # archive segments first (jsonl_archive)
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(row, dict):
+            yield row

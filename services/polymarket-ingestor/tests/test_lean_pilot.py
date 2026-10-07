@@ -700,3 +700,28 @@ def test_cohort_maintenance_runs_right_after_scoring(tmp_path: Path) -> None:
     assert deployed.gate13_every_seconds == 86400  # plan step 3, daily
     # Deep enough that freed slots refill up to the cap (2026-10-04).
     assert deployed.leaderboard_limit == 100 and deployed.max_watchlist_wallets == 64
+
+
+def test_collection_compacts_activity_once_it_is_large_enough(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from marketsignalos_polymarket import jsonl_archive
+
+    path = tmp_path / "polymarket_activity.jsonl"
+    rows = '{"proxy_wallet": "0xa", "transaction_hash": "0xt1"}\n' * 50
+    path.write_text(rows)
+    monkeypatch.setattr(pilot, "ACTIVITY_COMPACT_MIN_BYTES", 10**9)
+    assert pilot._compact_activity(tmp_path) == {"bytes_moved": 0, "segments": 0}
+    monkeypatch.setattr(pilot, "ACTIVITY_COMPACT_MIN_BYTES", 1)
+    size = path.stat().st_size  # bytes on disk: Windows text mode writes \r\n
+    result = pilot._compact_activity(tmp_path)
+    assert result == {"bytes_moved": size, "segments": 1}
+    assert path.stat().st_size == 0  # emptied, still present for the store
+    # The archive counts toward the activity storage figure.
+    assert "polymarket_activity.jsonl.archive" in pilot._STORAGE_AREAS["activity"]
+
+    def broken(path: Path, *, min_bytes: int = 0) -> int:
+        raise OSError("disk full")
+
+    monkeypatch.setattr(jsonl_archive, "compact", broken)
+    assert pilot._compact_activity(tmp_path) == {"error_type": "OSError"}

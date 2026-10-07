@@ -33,6 +33,8 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
+from marketsignalos_polymarket.jsonl_archive import footprint, iter_lines
+
 from marketsignalos_api._paths import (
     kalshi_markets_path,
     market_links_path,
@@ -374,19 +376,18 @@ def _iter_jsonl(path: Path) -> Iterator[dict[str, Any]]:
     splitlines) keeps peak memory flat: polymarket_activity.jsonl can exceed
     1GB / millions of rows, and slurping it whole spikes to several GB and can
     OOM. Callers that only need a subset should filter as they consume."""
-    if not path.exists():
-        return
-    with path.open("r", encoding="utf-8") as fh:
-        for line in fh:
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                obj = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if isinstance(obj, dict):
-                yield obj
+    # Activity rows may sit in compressed archive segments (jsonl_archive); they
+    # come first, oldest to newest, then the plain file.
+    for line in iter_lines(path):
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            obj = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(obj, dict):
+            yield obj
 
 
 def _read_jsonl(path: Path) -> list[dict[str, Any]]:
@@ -825,6 +826,9 @@ def _input_paths() -> tuple[Path, ...]:
         polymarket_position_snapshots_path(),
         polymarket_markets_path(),
         polymarket_activity_path(),
+        # A compaction moves activity rows into archive segments; their files
+        # are inputs too, so moving rows changes the fingerprint.
+        *footprint(polymarket_activity_path()),
         kalshi_markets_path(),
         market_links_path(),
         polymarket_wallet_values_path(),

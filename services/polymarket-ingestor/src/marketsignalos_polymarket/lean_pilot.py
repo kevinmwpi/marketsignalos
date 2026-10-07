@@ -244,7 +244,7 @@ def _disk_free_mb(data_dir: Path) -> int:
 # Disk use per store, reported after each collection so growth is visible in
 # the Railway log line without access to the volume.
 _STORAGE_AREAS = {
-    "activity": ("polymarket_activity.jsonl",),
+    "activity": ("polymarket_activity.jsonl", "polymarket_activity.jsonl.archive"),
     "positions": ("polymarket_positions.jsonl",),
     "entry_prices": ("entry_prices",),
     "closing_lines": ("closing_lines",),
@@ -376,6 +376,7 @@ def _execute_stage(stage: str, data_dir: Path, config: PilotConfig,
         else "succeeded"
     )
     result["positions_retention"] = _compact_positions(data_dir)
+    result["activity_compaction"] = _compact_activity(data_dir)
     try:
         result["storage_mb"] = _storage_mb(data_dir)
     except OSError as exc:  # a file vanishing mid-walk must not fail collection
@@ -386,6 +387,26 @@ def _execute_stage(stage: str, data_dir: Path, config: PilotConfig,
 # Each poll appends a full position snapshot per wallet (about 0.27 GB a day for
 # 13 wallets on 2026-10-02); readers only need the latest two.
 POSITION_SNAPSHOTS_KEPT = 2
+
+
+# Activity is compacted into gzip segments once the plain file reaches this size
+# (jsonl_archive; Stage 3 step 0). About a day of collection at 2026-10-06 rates,
+# so segments stay few and the plain tail stays small.
+ACTIVITY_COMPACT_MIN_BYTES = 32 * 1024 * 1024
+
+
+def _compact_activity(data_dir: Path) -> dict[str, Any]:
+    """Move activity rows into compressed segments. A failure is reported, never
+    raised: the rows are safe in the plain or pending file either way."""
+    from .jsonl_archive import compact, segment_paths
+
+    path = data_dir / "polymarket_activity.jsonl"
+    try:
+        moved = compact(path, min_bytes=ACTIVITY_COMPACT_MIN_BYTES)
+        return {"bytes_moved": moved, "segments": len(segment_paths(path))}
+    except OSError as exc:
+        log.warning("Activity compaction failed: %s", exc)
+        return {"error_type": type(exc).__name__}
 
 
 def _compact_positions(data_dir: Path) -> dict[str, Any]:

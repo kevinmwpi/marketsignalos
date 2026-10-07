@@ -48,6 +48,7 @@ from typing import Any
 
 import httpx
 
+from .jsonl_archive import iter_lines
 from .market_rules import GAMMA_BASE_URL
 
 log = logging.getLogger("marketsignalos.polymarket.closing_lines")
@@ -313,18 +314,15 @@ def activity_condition_ids(path: Path) -> list[str]:
     lines it cannot parse, because that file can exceed memory.
     """
     seen: dict[str, None] = {}
-    if not path.exists():
-        return []
-    with path.open(encoding="utf-8") as handle:
-        for line in handle:
-            try:
-                row = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if isinstance(row, dict) and row.get("type") == "TRADE":
-                cid = str(row.get("condition_id", "")).strip().lower()
-                if cid:
-                    seen.setdefault(cid, None)
+    for line in iter_lines(path):
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(row, dict) and row.get("type") == "TRADE":
+            cid = str(row.get("condition_id", "")).strip().lower()
+            if cid:
+                seen.setdefault(cid, None)
     return list(seen)
 
 

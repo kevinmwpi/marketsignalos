@@ -59,6 +59,7 @@ from typing import Any, NamedTuple
 from . import closing_lines, entry_prices
 from .closing_lines import ACTIVITY_FILE
 from .entry_prices import CHUNK_SECONDS, FINAL_STATUSES, ChunkKey, chunk_start, price_after
+from .jsonl_archive import iter_lines
 
 # Candidate horizons. 24, 72 and 168 hours were dropped on 2026-10-03 with the
 # owner's approval (blueprint decision 6, second amendment): 95% of the bets the
@@ -478,13 +479,10 @@ def _float(value: Any) -> float | None:
 
 
 def _rows(path: Path) -> Iterable[dict[str, Any]]:
-    if not path.exists():
-        return
-    with path.open(encoding="utf-8") as handle:
-        for line in handle:
-            try:
-                row = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if isinstance(row, dict):
-                yield row
+    for line in iter_lines(path):  # archive segments first (jsonl_archive)
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(row, dict):
+            yield row

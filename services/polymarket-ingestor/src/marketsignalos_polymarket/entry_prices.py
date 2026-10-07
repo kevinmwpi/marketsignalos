@@ -83,6 +83,7 @@ from .closing_lines import (
     parse_close,
     parse_token_ids,
 )
+from .jsonl_archive import iter_lines
 from .market_rules import GAMMA_BASE_URL
 
 log = logging.getLogger("marketsignalos.polymarket.entry_prices")
@@ -139,22 +140,19 @@ def needed_chunks(activity_path: Path, *, horizon_seconds: int = HORIZON_SECONDS
     Streams the activity store the way the ingestor does, skipping unparseable lines.
     """
     needed: set[ChunkKey] = set()
-    if not activity_path.exists():
-        return needed
-    with activity_path.open(encoding="utf-8") as handle:
-        for line in handle:
-            try:
-                row = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if not isinstance(row, dict) or row.get("type") != "TRADE" or row.get("side") != "BUY":
-                continue
-            cid = str(row.get("condition_id", "")).strip().lower()
-            ts = row.get("timestamp")
-            if not cid or isinstance(ts, bool) or not isinstance(ts, int) or ts <= 0:
-                continue
-            for start in range(chunk_start(ts), ts + horizon_seconds + 1, CHUNK_SECONDS):
-                needed.add((cid, start))
+    for line in iter_lines(activity_path):
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(row, dict) or row.get("type") != "TRADE" or row.get("side") != "BUY":
+            continue
+        cid = str(row.get("condition_id", "")).strip().lower()
+        ts = row.get("timestamp")
+        if not cid or isinstance(ts, bool) or not isinstance(ts, int) or ts <= 0:
+            continue
+        for start in range(chunk_start(ts), ts + horizon_seconds + 1, CHUNK_SECONDS):
+            needed.add((cid, start))
     return needed
 
 

@@ -39,6 +39,7 @@ from typing import Any, TypeVar, cast
 import httpx
 
 from . import metrics
+from .jsonl_archive import iter_lines
 from .kalshi_markets_fetch import (
     KalshiMarket,
     fetch_kalshi_markets,
@@ -1631,19 +1632,16 @@ def run_reference_refresh(
 def _iter_jsonl(path: Path) -> Iterator[dict[str, Any]]:
     """Stream a JSONL file one parsed row at a time — the activity file can
     exceed RAM, so consumers must never materialize it wholesale."""
-    if not path.exists():
-        return
-    with path.open(encoding="utf-8") as handle:
-        for line in handle:
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                obj = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if isinstance(obj, dict):
-                yield obj
+    for line in iter_lines(path):  # archive segments first (jsonl_archive)
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            obj = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(obj, dict):
+            yield obj
 
 
 def _read_jsonl(path: Path) -> list[dict[str, Any]]:
