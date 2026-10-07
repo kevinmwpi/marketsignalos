@@ -536,6 +536,11 @@ only a dev dependency until this change, so a production `--run` would have cras
 See `docs/railway-deployment.md`. Of the items above, a fresh volume only defers the
 dedupe-index risk (the index starts empty; the receipts' peak RSS tracks its growth).
 Retention, the recovery procedure and the billing alert are still open.
+*2026-10-07:* the recovery procedure exists (`pilot_recovery.py`; operator-triggered by
+the `PILOT_RECOVER` service variable, no shell needed; procedure in
+`docs/lean-pilot.md`). The kill-and-recover drill is still to be run. Entry-price
+storage is compressed (PR #67), but retention for score generations is still open,
+and so is the billing alert, which the owner sets.
 
 **Acceptance evidence.** `docs/benchmarks/<date>-pilot-live.md`: 14 consecutive days
 of receipts with laptop off; measured peak RSS, CPU-seconds, and wall time per cycle

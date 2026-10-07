@@ -16,5 +16,16 @@ if [[ -n "${DATABASE_URL:-}" ]]; then
   exit 2
 fi
 
+config="$(dirname "$0")/lean-pilot.json"
+
+# Operator-triggered repair after an interrupted collection (pilot_recovery.py). Set
+# PILOT_RECOVER to the run id a "recovery_required" log line names. It repairs only
+# that incident: a later one has another id and is refused, so a variable left set is
+# never an automatic repair. A refused or failed recovery exits nonzero here.
+if [[ -n "${PILOT_RECOVER:-}" ]]; then
+  python -m marketsignalos_polymarket.lean_pilot \
+    --data-dir "${root}/pilot" --config "${config}" --recover "${PILOT_RECOVER}"
+fi
+
 exec python -m marketsignalos_polymarket.lean_pilot \
-  --data-dir "${root}/pilot" --config "$(dirname "$0")/lean-pilot.json" "${@:---run}"
+  --data-dir "${root}/pilot" --config "${config}" "${@:---run}"

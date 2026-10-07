@@ -578,9 +578,11 @@ class JsonWalletCheckpointStore:
         return {str(k).lower(): int(v) for k, v in raw.items() if isinstance(v, (int, float))}
 
     def _write(self) -> None:
-        self._path.write_text(
-            json.dumps(self._state, indent=2, sort_keys=True), encoding="utf-8"
-        )
+        # Temp file and rename: a kill mid-write must not leave invalid JSON, which
+        # _read would reject on every later run (pilot_recovery repairs old files).
+        tmp = self._path.with_suffix(self._path.suffix + ".tmp")
+        tmp.write_text(json.dumps(self._state, indent=2, sort_keys=True), encoding="utf-8")
+        tmp.replace(self._path)
 
 
 # ── Postgres implementations (Phase 7.5) ──────────────────────────────────────
