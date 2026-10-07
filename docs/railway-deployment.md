@@ -66,7 +66,8 @@ Record them in the Stage 2 evidence file (`docs/handoff-blueprint.md`).
    service, and give it a mount path such as `/data`. The worker finds it through
    `RAILWAY_VOLUME_MOUNT_PATH`; without one it exits with "No data directory".
 4. Set a usage alert at $10 and a workspace compute limit at $15. The hard limit
-   takes every workload in the workspace offline.
+   takes every workload in the workspace offline. *Set by the owner on 2026-10-07*
+   (owner-reported: the build environment cannot read billing settings).
 5. Let the first scheduled run finish. Check `<volume>/pilot/.lean-pilot/runs/<id>/`
    for the receipt and resource report.
 

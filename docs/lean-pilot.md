@@ -171,6 +171,8 @@ resource use, and a proposed early alert at $10 with a $15 workspace compute
 limit. Railway's hard limit can take all workloads in that workspace offline;
 Agent usage has a separate limit. Nothing here configures either limit. See
 [Railway cost controls](https://docs.railway.com/pricing/cost-control).
+*2026-10-07:* the owner set both, an alert at $10 and a compute limit at $15
+(owner-reported). Projected usage is about $2 a month (blueprint §6 Stage 2 note).
 
 ## Built so far and what remains
 

@@ -32,6 +32,21 @@ and [notification routing](https://grafana.com/docs/grafana-cloud/observe-and-ac
 Account credentials belong in the hosting provider's secret configuration,
 never in a committed runbook or benchmark report.
 
+## Railway spending limits
+
+The owner set them on 2026-10-07: a usage alert at $10 and a workspace compute limit
+at $15.
+- **Effect.** The $15 limit is a hard stop. It takes **every** workload in the
+  workspace offline, not just the pilot worker. Nothing in this repository configures
+  either limit.
+- **If the $10 alert fires.** Projected usage was about $2 a month on 2026-10-07, so
+  the alert means something changed. Check the pilot's receipts for runaway runtime,
+  memory or disk before anything else. Do not raise the limit to make the alert go
+  away.
+- **If the hard limit trips during the cohort-v1 window.** Collection stops, and
+  those hours have no signals. The pilot receipts show the gap, and `result.md`
+  must disclose it. A gap is never filled in afterwards.
+
 ## Incident triage
 
 | Symptom | First evidence to inspect |
