@@ -124,8 +124,12 @@ def has_unprocessed_score(data_dir: Path) -> bool:
     return isinstance(current, str) and current != processed
 
 
-def run(data_dir: Path, *, now: datetime | None = None) -> dict[str, Any]:
-    """Lean-pilot stage: exclude systematic wallets, then purge every excluded one."""
+def run(data_dir: Path, *, now: datetime | None = None,
+        protected: frozenset[str] = frozenset()) -> dict[str, Any]:
+    """Lean-pilot stage: exclude systematic wallets, then purge every excluded one.
+
+    ``protected`` wallets (cohort v1's frozen members, plan S2) are never newly
+    excluded: membership is fixed at the cutoff for the whole window."""
     snapshots = data_dir / "score-snapshots"
     newly = 0
     classified = 0
@@ -133,8 +137,10 @@ def run(data_dir: Path, *, now: datetime | None = None) -> dict[str, Any]:
     if run_id is not None:
         rows = list(_rows(snapshots / run_id / ENRICHMENT))
         classified = len(rows)
-        newly = record_exclusions(data_dir, wallets_to_exclude(rows),
-                                  now=now or datetime.now(UTC))
+        newly = record_exclusions(
+            data_dir, {wallet: archetype for wallet, archetype in wallets_to_exclude(rows).items()
+                       if wallet not in protected},
+            now=now or datetime.now(UTC))
     excluded = excluded_wallets(data_dir)
     removed = apply_exclusions(data_dir, excluded)
     if run_id is not None:  # only once the purge is complete

@@ -174,6 +174,12 @@ the pilot, so they should land by about 2026-10-13 (S7).
    after detection for each recorded signal, reusing the entry-price backfill.
 4. **Freeze the membership.** Implement S2: cohort-stage exemption, hourly polling of
    members, new seeds tagged for v2.
+   *Built 2026-10-07 as the pilot's `cohort_v1` stage, together with step 5's power
+   count.*
+   - It runs in provisional mode until `cohort_v1_freeze_at`.
+   - At the first cycle after that time, it writes the frozen config once.
+   - New seeds are cohort v2 by construction: they are absent from the frozen
+     config.
 5. **Power count and freeze.** Count T2's events over the last 14 days and set the
    window (S6). Commit the frozen config, record its hash in the blueprint, and open
    the window.

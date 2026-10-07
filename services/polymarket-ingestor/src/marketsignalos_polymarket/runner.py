@@ -2185,6 +2185,18 @@ def _select_shallow_wallet_targets(
     return sorted(watchlist_set)
 
 
+def _batch_with_priority(
+    candidates: set[str], priority: frozenset[str], *, stores: _Stores, batch_size: int,
+) -> list[str]:
+    """Stage 3 cohort members first, every run (plan S2), then the rest of the batch
+    rotating oldest-polled first, as before. Members count toward the batch size."""
+    first = sorted({wallet.lower() for wallet in priority})
+    return first + _oldest_polled_wallet_batch(
+        sorted({wallet.lower() for wallet in candidates} - set(first)), stores=stores,
+        batch_size=max(0, batch_size - len(first)),
+    )
+
+
 def _oldest_polled_wallet_batch(
     wallets: list[str], *, stores: _Stores, batch_size: int,
 ) -> list[str]:
@@ -2601,6 +2613,7 @@ def run_pipeline(
     max_activity_requests_per_wallet: int | None = None,
     client: PolymarketClient | None = None,
     progress_cb: ProgressCallback | None = None,
+    priority_wallets: frozenset[str] = frozenset(),
 ) -> PipelineResult:
     """End-to-end Polymarket pipeline:
 
@@ -2751,8 +2764,8 @@ def run_pipeline(
             # watchlist grew to 62.
             hydrated = stores.hydration.load_hydration()
             unpolled = {wallet.lower() for wallet in merged} - set(hydrated)
-            wallet_targets = _oldest_polled_wallet_batch(
-                sorted(set(wallet_targets) | unpolled), stores=stores,
+            wallet_targets = _batch_with_priority(
+                set(wallet_targets) | unpolled, priority_wallets, stores=stores,
                 batch_size=wallet_batch_size,
             )
         log.info(

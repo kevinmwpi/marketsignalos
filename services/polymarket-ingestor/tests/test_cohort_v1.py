@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -150,3 +150,77 @@ def test_the_cli_writes_the_config_and_the_member_list(data: Path, tmp_path: Pat
     with pytest.raises(SystemExit):
         cohort_v1.main(["--data-dir", str(data), "--pilot-config", str(pilot),
                         "--cutoff", "2026-10-27T00:00:00", "--out", str(out)])
+
+
+# ── The pilot stage (build step 4) ───────────────────────────────────────────
+
+def test_members_are_polled_first_and_the_rest_rotates(tmp_path: Path) -> None:
+    from marketsignalos_polymarket.runner import _batch_with_priority, _build_stores
+
+    stores = _build_stores(tmp_path)
+    batch = _batch_with_priority({"0xa", "0xb", "0xc", "0xd"}, frozenset({"0xD"}),
+                                 stores=stores, batch_size=2)
+    assert batch == ["0xd", "0xa"]  # the member, then the oldest-polled of the rest
+    # Members are always polled, even if they alone exceed the batch.
+    assert _batch_with_priority({"0xa"}, frozenset({"0xc", "0xb", "0xd"}), stores=stores,
+                                batch_size=2) == ["0xb", "0xc", "0xd"]
+
+
+def test_the_stage_is_provisional_until_the_freeze_then_frozen_once(data: Path) -> None:
+    before = datetime(2026, 10, 20, tzinfo=UTC)
+    provisional = cohort_v1.run(data, now=before, freeze_at=CUTOFF, discovery={})
+    assert provisional["mode"] == "provisional"
+    roster = json.loads((data / "cohort-v1" / "members.json").read_text())
+    assert roster["mode"] == "provisional"
+    assert cohort_v1.frozen_members(data) == frozenset()  # nothing protected yet
+
+    frozen = cohort_v1.run(data, now=CUTOFF, freeze_at=CUTOFF, discovery={})
+    assert frozen["mode"] == "frozen_now"
+    config = json.loads((data / "cohort-v1" / "frozen-config.json").read_text())
+    assert config["cutoff"] == CUTOFF.isoformat()
+    assert config["window"]["opens"] == CUTOFF.isoformat()
+    assert config["config_hash"] == config_hash(config) == frozen["config_hash"]
+    assert json.loads((data / "cohort-v1" / "members.json").read_text())["mode"] == "frozen"
+
+    # Later runs only verify; a tampered config is refused, never rewritten.
+    later = cohort_v1.run(data, now=CUTOFF.replace(day=28), freeze_at=CUTOFF, discovery={})
+    assert later == {"status": "succeeded", "mode": "frozen",
+                     "config_hash": config["config_hash"], "members": frozen["comparison"]
+                     + len(config["tiers"]["T2"])}
+    config["primary_tier"] = "T3"
+    (data / "cohort-v1" / "frozen-config.json").write_text(json.dumps(config))
+    with pytest.raises(ValueError, match="hash"):
+        cohort_v1.run(data, now=CUTOFF.replace(day=29), freeze_at=CUTOFF, discovery={})
+
+
+def test_the_window_comes_from_the_members_recent_events(data: Path) -> None:
+    window = cohort_v1.power_window(data, [WALLET], CUTOFF)
+    # Two buys in the 14 days before the cutoff, both in one event.
+    assert window["events_last_14_days"] == 1
+    assert window["days"] == 42 and window["under_powered"] is True
+    assert cohort_v1.power_window(data, [], CUTOFF)["under_powered"] is True
+
+
+def test_the_pilot_freezes_at_the_first_cycle_after_the_freeze_time(tmp_path: Path) -> None:
+    from marketsignalos_polymarket import lean_pilot as pilot
+
+    config = pilot.PilotConfig(cohort_v1_every_seconds=86400,
+                               cohort_v1_freeze_at=CUTOFF.isoformat())
+    before = pilot.plan_cycle(tmp_path, config, now=CUTOFF - timedelta(hours=1))
+    assert "cohort_v1" in before["due"]  # never run: due on its interval anyway
+    state = tmp_path / ".lean-pilot" / "state.json"
+    state.parent.mkdir(parents=True)
+    state.write_text(json.dumps({"schema_version": 1, "days": {}, "active": None,
+                                 "stages": {"cohort_v1": {
+                                     "last_attempt_at": (CUTOFF - timedelta(hours=2)).isoformat(),
+                                     "last_status": "succeeded"}}}))
+    assert "cohort_v1" not in pilot.plan_cycle(tmp_path, config,
+                                               now=CUTOFF - timedelta(hours=1))["due"]
+    assert "cohort_v1" in pilot.plan_cycle(tmp_path, config, now=CUTOFF)["due"]
+    (tmp_path / "cohort-v1").mkdir()
+    (tmp_path / "cohort-v1" / "frozen-config.json").write_text("{}")
+    assert "cohort_v1" not in pilot.plan_cycle(tmp_path, config, now=CUTOFF)["due"]
+    with pytest.raises(ValueError, match="timezone"):
+        pilot.PilotConfig(cohort_v1_every_seconds=1, cohort_v1_freeze_at="2026-10-27T00:00")
+    with pytest.raises(ValueError, match="enabled"):
+        pilot.PilotConfig(cohort_v1_freeze_at=CUTOFF.isoformat())

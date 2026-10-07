@@ -31,11 +31,13 @@ SCHEMA_VERSION = 1
 # Fields where 0 means "off" or "no limit".
 _ZERO_ALLOWED = frozenset({"entry_prices_every_seconds", "closing_lines_every_seconds",
                            "horizon_every_seconds", "cohort_every_seconds",
-                           "gate13_every_seconds", "max_watchlist_wallets"})
+                           "gate13_every_seconds", "max_watchlist_wallets",
+                           "cohort_v1_every_seconds"})
 _LEADERBOARD_WINDOWS = frozenset({"day", "week", "month", "all"})
 _LEADERBOARD_METRICS = frozenset({"volume", "profit"})
 _SCORE_VERSIONS = frozenset({"forecast-v4", "forecast-v5"})
-_TEXT_FIELDS = frozenset({"leaderboard_window", "leaderboard_metric", "score_version"})
+_TEXT_FIELDS = frozenset({"leaderboard_window", "leaderboard_metric", "score_version",
+                          "cohort_v1_freeze_at"})
 
 
 @dataclass(frozen=True)
@@ -92,6 +94,21 @@ class PilotConfig:
     # The volume cannot grow past 5 GB on Railway Hobby, and every wallet added
     # keeps its activity history, so the watchlist stops growing here. 0 = no cap.
     max_watchlist_wallets: int = 0
+    # Stage 3 cohort v1 (cohort_v1.py, docs/stage3-cohort-v1-plan.md). Until the
+    # freeze, a provisional member list is rebuilt on this interval so the hourly
+    # polling of members runs during the burn-in; 0 disables it. At
+    # cohort_v1_freeze_at (ISO-8601 with a timezone, set by the owner) the frozen
+    # config is written once and membership is fixed for the window.
+    cohort_v1_every_seconds: int = 0
+    cohort_v1_freeze_at: str = ""
+
+    def freeze_at(self) -> datetime | None:
+        if not self.cohort_v1_freeze_at:
+            return None
+        moment = datetime.fromisoformat(self.cohort_v1_freeze_at)
+        if moment.tzinfo is None:
+            raise ValueError("cohort_v1_freeze_at must include a timezone")
+        return moment.astimezone(UTC)
 
     def __post_init__(self) -> None:
         if self.leaderboard_window not in _LEADERBOARD_WINDOWS:
@@ -121,6 +138,9 @@ class PilotConfig:
             raise ValueError("Pilot cycles must be at most one hour")
         if self.wallet_batch_size > 100 or self.leaderboard_limit > 100:
             raise ValueError("Pilot wallet batch and leaderboard limits must be at most 100")
+        self.freeze_at()  # validates the timestamp
+        if self.cohort_v1_freeze_at and not self.cohort_v1_every_seconds:
+            raise ValueError("cohort_v1_freeze_at needs the cohort_v1 stage enabled")
 
 
 def _utcnow() -> datetime:
@@ -272,7 +292,7 @@ def _storage_mb(data_dir: Path) -> dict[str, float]:
 # maintenance, which acts on the trading styles scoring has just labelled, then
 # the gate-13 power diagnostic on the cohort that remains.
 STAGES = ("collect", "entry_prices", "closing_lines", "horizon", "score", "cohort",
-          "gate13")
+          "cohort_v1", "gate13")
 
 
 def _stage_intervals(config: PilotConfig) -> list[tuple[str, int]]:
@@ -282,6 +302,7 @@ def _stage_intervals(config: PilotConfig) -> list[tuple[str, int]]:
                  "horizon": config.horizon_every_seconds,
                  "score": config.score_every_seconds,
                  "cohort": config.cohort_every_seconds,
+                 "cohort_v1": config.cohort_v1_every_seconds,
                  "gate13": config.gate13_every_seconds}
     return [(name, intervals[name]) for name in STAGES if intervals[name] > 0]
 
@@ -309,6 +330,11 @@ def plan_cycle(data_dir: Path, config: PilotConfig, *,
         from .cohort import has_unprocessed_score
         if "score" in due or has_unprocessed_score(data_dir):
             due = [stage for stage in STAGES if stage in due or stage == "cohort"]
+    freeze_at = config.freeze_at()
+    if (freeze_at is not None and now >= freeze_at and "cohort_v1" not in due
+            and not (data_dir / "cohort-v1" / "frozen-config.json").exists()):
+        # The freeze runs at the first cycle after its time, whatever the interval.
+        due = [stage for stage in STAGES if stage in due or stage == "cohort_v1"]
     # Reserve in both days for a cycle that could cross UTC midnight. This is
     # deliberately conservative; successful completion refunds unused time.
     days = sorted({now.date().isoformat(),
@@ -347,8 +373,15 @@ def _execute_stage(stage: str, data_dir: Path, config: PilotConfig,
                                         max_seconds=config.entry_prices_max_seconds,
                                         priority=priority)
     if stage == "cohort":  # after scoring, which labels each wallet's trading style
-        from . import cohort
-        return cohort.run(data_dir)
+        from . import cohort, cohort_v1
+        return cohort.run(data_dir, protected=cohort_v1.frozen_members(data_dir))
+    if stage == "cohort_v1":  # provisional members, or the one-time freeze
+        from . import cohort_v1
+        return cohort_v1.run(data_dir, now=_utcnow(), freeze_at=config.freeze_at(),
+                             discovery={"leaderboard_metric": config.leaderboard_metric,
+                                        "leaderboard_window": config.leaderboard_window,
+                                        "leaderboard_limit": config.leaderboard_limit,
+                                        "max_watchlist_wallets": config.max_watchlist_wallets})
     if stage == "gate13":  # read-only apart from its report and a scratch directory
         from . import gate13_power
         return gate13_power.run(data_dir)
@@ -361,7 +394,9 @@ def _execute_stage(stage: str, data_dir: Path, config: PilotConfig,
                                          max_seconds=config.closing_lines_max_seconds,
                                          priority=horizon_diagnostic.priority_markets(data_dir))
     from .cohort import excluded_wallets
+    from .cohort_v1 import member_wallets
     from .runner import run_pipeline
+    members = member_wallets(data_dir)
     result = run_pipeline(
         windows=[config.leaderboard_window], leaderboard_limit=config.leaderboard_limit,
         seed_metrics=(config.leaderboard_metric,),
@@ -369,8 +404,10 @@ def _execute_stage(stage: str, data_dir: Path, config: PilotConfig,
         max_pages_per_wallet=2, market_pages=1, refresh_reference=False,
         max_activity_requests_per_wallet=config.activity_requests_per_wallet,
         max_watchlist=config.max_watchlist_wallets or None,
-        exclude_wallets=excluded_wallets(data_dir),
+        exclude_wallets=excluded_wallets(data_dir) - members,
+        priority_wallets=members,  # Stage 3 members: polled every run (plan S2)
     ).to_dict()
+    result["cohort_v1_members_polled"] = len(members)
     result["status"] = (
         "partial" if not result["windows_succeeded"] or result.get("wallets_with_errors", 0)
         else "succeeded"

@@ -158,3 +158,19 @@ def test_the_stage_without_scores_only_applies_existing_exclusions(data_dir: Pat
     result = cohort.run(data_dir, now=NOW)
     assert result == {"status": "succeeded", "wallets_classified": 0, "excluded_new": 0,
                       "excluded_total": 0, "rows_removed": {}}
+
+
+def test_frozen_cohort_members_are_never_excluded(
+    data_dir: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Stage 3 (plan S2): membership is fixed at the cutoff for the whole window.
+    generation = data_dir / "score-snapshots" / "r1"
+    generation.mkdir(parents=True)
+    (data_dir / "score-snapshots" / "current.json").write_text("{}")
+    (generation / ENRICHMENT).write_text(json.dumps(
+        {"proxy_wallet": DROP, "style_archetype": "systematic"}) + "\n")
+    monkeypatch.setattr(cohort, "load_current", lambda snapshots: {"run_id": "r1"})
+
+    result = cohort.run(data_dir, now=NOW, protected=frozenset({DROP}))
+    assert result["excluded_new"] == 0 and result["rows_removed"] == {}
+    assert DROP in _jsonl_wallets(data_dir / cohort.ACTIVITY_FILE)
