@@ -369,9 +369,11 @@ def _execute_stage(stage: str, data_dir: Path, config: PilotConfig,
         from . import entry_prices, horizon_diagnostic, post_entry_clv
         priority = (horizon_diagnostic.priority_chunks(data_dir)
                     | post_entry_clv.priority_chunks(data_dir))
-        return entry_prices.run_pending(data_dir, limit=config.entry_prices_per_cycle,
-                                        max_seconds=config.entry_prices_max_seconds,
-                                        priority=priority)
+        signal_prices = _signal_prices(data_dir)  # Stage 3 step 3, small and first
+        result = entry_prices.run_pending(data_dir, limit=config.entry_prices_per_cycle,
+                                          max_seconds=config.entry_prices_max_seconds,
+                                          priority=priority)
+        return {**result, "cohort_v1_prices": signal_prices}
     if stage == "cohort":  # after scoring, which labels each wallet's trading style
         from . import cohort, cohort_v1
         return cohort.run(data_dir, protected=cohort_v1.frozen_members(data_dir))
@@ -445,6 +447,22 @@ def _capture_signals(data_dir: Path, offset: int, run_id: str) -> dict[str, Any]
         return capture(data_dir, offset, run_id)
     except Exception as exc:  # noqa: BLE001 - any capture fault must leave collection intact
         log.warning("Cohort signal capture failed: %s", type(exc).__name__)
+        return {"status": "failed", "error_type": type(exc).__name__}
+
+
+# Cohort-v1 signal windows are a few requests a pass; this bounds a backlog.
+SIGNAL_PRICES_MAX_SECONDS = 60.0
+
+
+def _signal_prices(data_dir: Path) -> dict[str, Any]:
+    """Prices after each cohort-v1 signal (Stage 3 step 3). A failure is reported,
+    never raised: the entry-price backfill still runs, and the windows are retried."""
+    from .cohort_prices import run_pending
+
+    try:
+        return run_pending(data_dir, max_seconds=SIGNAL_PRICES_MAX_SECONDS)
+    except Exception as exc:  # noqa: BLE001 - the backfill must run regardless
+        log.warning("Cohort signal prices failed: %s", type(exc).__name__)
         return {"status": "failed", "error_type": type(exc).__name__}
 
 

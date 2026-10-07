@@ -211,6 +211,19 @@ the pilot, so they should land by about 2026-10-13 (S7).
      same 1 h improvement before fees, to tell no edge from an edge the fees consume.
 3. **Prices after the follower's entry.** Fetch hourly prices for at least one hour
    after detection for each recorded signal, reusing the entry-price backfill.
+   *Built 2026-10-07 (`cohort_prices.py`, run first in the pilot's entry-price stage).*
+   - **Window per signal.** It reuses the backfill's rules, not its 7-day chunks.
+     Those are fetched only after they end, so signals in the window's last week
+     would have no price until after the evaluation date.
+   - **What is fetched.** The bought token's `/prices-history` from 1 h before
+     detection to 6 h after, the secondary horizon. A window is fetched once it has
+     ended and an hour has passed, so its prices are final. A failed window is retried
+     an hour later.
+   - **Which signals.** Every signal with a token, excluded ones included, so the
+     evaluation can check that exclusions do not select on outcome.
+   - **Fidelity.** It requests 5 minutes. Each receipt records the points returned
+     and their median spacing. Before the freeze, check that the frozen tolerance
+     (15 minutes before the horizon) fits the spacing the API actually returns.
 4. **Freeze the membership.** Implement S2: cohort-stage exemption, hourly polling of
    members, new seeds tagged for v2.
    *Built 2026-10-07 as the pilot's `cohort_v1` stage, together with step 5's power
