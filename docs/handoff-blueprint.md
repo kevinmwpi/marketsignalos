@@ -540,7 +540,11 @@ Retention, the recovery procedure and the billing alert are still open.
 the `PILOT_RECOVER` service variable, no shell needed; procedure in
 `docs/lean-pilot.md`). The kill-and-recover drill is still to be run. Entry-price
 storage is compressed (PR #67), but retention for score generations is still open,
-and so is the billing alert, which the owner sets.
+and so is the billing alert, which the owner sets. *2026-10-07: the owner set the $10
+alert and the $15 workspace compute limit* (owner-reported). Service metrics for the
+week to 2026-10-07 averaged 0.19 GB of memory, 0.001 vCPU and a 0.38 GB volume. At the
+list prices in §9 that is roughly $2 a month of usage, so the limit is far off. It is a
+projection from sampled averages, not an invoice.
 
 **Acceptance evidence.** `docs/benchmarks/<date>-pilot-live.md`: 14 consecutive days
 of receipts with laptop off; measured peak RSS, CPU-seconds, and wall time per cycle
