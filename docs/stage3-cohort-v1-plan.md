@@ -32,7 +32,13 @@ each case.
 - **Kill criterion 2.** If cohort v1 shows no edge over the price-only baseline after
   costs at the pre-declared date, stop and publish the null (blueprint §10).
 - **Substrate.** The existing `signal_ledger`, extended with the cohort ID and the
-  frozen config hash. No parallel mechanism.
+  frozen config hash. No parallel mechanism. *Amended 2026-10-07 at build step 2:*
+  the signal ledger is the API's record of feed signals. It takes tailable wallets only,
+  keeps one row per position ever, and settles at resolution. Cohort v1 needs a row per
+  signal, with the book and fee read when the pilot detects the buy, and the API does
+  not run in the pilot. So capture writes `cohort-v1/signals.jsonl` in the pilot, with
+  the cohort ID and config hash on every row. It is the only record of cohort-v1
+  signals.
 
 ## 2. The problem: the rule qualifies no one
 
@@ -173,6 +179,36 @@ the pilot, so they should land by about 2026-10-13 (S7).
 2. **Signal capture in the pilot.** Record each new BUY by a frozen member: detection
    time, order-book top and depth for the side bought, and the market's fee. Append to
    the ledger with the cohort ID and config hash. Log counts only, never performance.
+   *Built 2026-10-07 (`cohort_capture.py`, inside collection, before compaction).*
+   - **Signal.** A member's BUY fills of one market and outcome, first seen by one
+     collection. Only rows that collection appended are read, from a byte offset taken
+     before it. Fills more than 3 h old when seen are counted, not recorded. That
+     covers a wallet's first poll, or an outage longer than one skipped run.
+   - **Book.** `GET clob /book` for the token bought. It records the best bid and ask
+     and walks the asks for $100 of notional.
+   - **Fee.** From `GET clob /clob-markets/{condition}`, field `fd` (rate `r`, exponent
+     `e`). The fee is `shares × r × (p(1−p))^e` at each level, added on top, as
+     Polymarket's own client computes it (clob-client-v2, `adjustBuyAmountForFees`).
+     That client charges nothing when `fd` is absent, and capture does the same.
+   - **Cross-checks.** Gamma's `feesEnabled` must agree with whether `r > 0`. Gamma's
+     `clobTokenIds` must name the same token as CLOB, because activity rows carry only
+     the outcome index, so a wrong token would price the other side.
+   - **Exclusions.** A signal is written as excluded, with its reasons, when it has:
+     no book or no asks; no fee details; fee or token sources that disagree; too thin
+     a book for the clip; a market not accepting orders; or the 120 s capture cap
+     reached.
+   - **Failures.** A capture failure is reported in the collection result and never
+     fails collection.
+   - **Not verified live.** The field names are checked against Polymarket's client
+     source, not against live responses, because this build environment cannot reach
+     Polymarket. The burn-in is the check: the exclusion counts by reason are in
+     every collection result.
+   - **Finding: fees are material.** Polymarket's 2026 schedule charges takers
+     r ≈ 0.03–0.07 on most categories; geopolitics is free. At p = 0.5 and r = 0.05
+     that is 1.25¢ a share, 2.5 times the +0.5¢ net effect S6 is powered for. Fees
+     move the mean, not the spread, so the power count stands. But a gross edge
+     smaller than the fee shows as a null. So the frozen outcome adds a secondary: the
+     same 1 h improvement before fees, to tell no edge from an edge the fees consume.
 3. **Prices after the follower's entry.** Fetch hourly prices for at least one hour
    after detection for each recorded signal, reusing the entry-price backfill.
 4. **Freeze the membership.** Implement S2: cohort-stage exemption, hourly polling of
