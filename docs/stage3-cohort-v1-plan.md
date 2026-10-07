@@ -167,6 +167,9 @@ the pilot, so they should land by about 2026-10-13 (S7).
      for 14 days before the cutoff (S7), but the final members exist only at the
      cutoff. A provisional list from the current generation runs during the burn-in,
      and the final list replaces it at the freeze, with no code change.
+   - The freeze reads the newest score generation that started at or before the
+     cutoff, not the current one: a generation scored after the cutoff carries
+     data the cutoff excludes.
 2. **Signal capture in the pilot.** Record each new BUY by a frozen member: detection
    time, order-book top and depth for the side bought, and the market's fee. Append to
    the ledger with the cohort ID and config hash. Log counts only, never performance.
@@ -174,6 +177,12 @@ the pilot, so they should land by about 2026-10-13 (S7).
    after detection for each recorded signal, reusing the entry-price backfill.
 4. **Freeze the membership.** Implement S2: cohort-stage exemption, hourly polling of
    members, new seeds tagged for v2.
+   *Built 2026-10-07 as the pilot's `cohort_v1` stage, together with step 5's power
+   count.*
+   - It runs in provisional mode until `cohort_v1_freeze_at`.
+   - At the first cycle after that time, it writes the frozen config once.
+   - New seeds are cohort v2 by construction: they are absent from the frozen
+     config.
 5. **Power count and freeze.** Count T2's events over the last 14 days and set the
    window (S6). Commit the frozen config, record its hash in the blueprint, and open
    the window.

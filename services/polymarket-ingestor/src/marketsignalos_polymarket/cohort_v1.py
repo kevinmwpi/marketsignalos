@@ -36,6 +36,8 @@ import argparse
 import hashlib
 import json
 import logging
+import math
+import os
 from collections.abc import Iterable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -43,7 +45,7 @@ from typing import Any
 
 from .cohort import excluded_wallets
 from .jsonl_archive import iter_lines
-from .score_snapshot import ENRICHMENT, load_current
+from .score_snapshot import ENRICHMENT, load_generation
 from .skill_computation import MIN_CLV_SAMPLE, MIN_RECENT_INDEPENDENT_EVENTS
 
 log = logging.getLogger("marketsignalos.polymarket.cohort_v1")
@@ -54,6 +56,10 @@ ACTIVITY_FILE = "polymarket_activity.jsonl"
 LEADERBOARD_FILE = "polymarket_leaderboard.jsonl"
 MEMBERS_FILE = "cohort_v1_members.json"
 ACTIVITY_DAYS = 30
+STAGE_DIR = "cohort-v1"  # on the pilot volume: members.json, frozen-config.json, state.json
+TARGET_EVENTS = 100  # S6: about 100 independent events detect +0.5c at sigma 2c
+MAX_WINDOW_DAYS = 42
+POWER_LOOKBACK_DAYS = 14
 
 # The gates as the scorer applies them (skill_computation._enrichment_from_rollup).
 # The frozen code hash pins the exact behaviour; this records it for readers.
@@ -164,10 +170,32 @@ def match_comparison(
     return pairs, quality
 
 
+def generation_at(snapshots: Path, cutoff: datetime) -> dict[str, Any]:
+    """The newest score generation that started at or before ``cutoff``, verified.
+
+    A generation started later would carry data the cutoff excludes. Taking the
+    newest earlier one, rather than refusing whenever the current one is later,
+    means a generation scored between the freeze time and the freeze cycle cannot
+    block the freeze. Every retained generation has a manifest written only after
+    its outputs were checked, so an unpublished one (its pointer swap interrupted)
+    is as complete as a published one.
+    """
+    started: dict[str, datetime] = {}
+    for manifest_path in snapshots.glob("*/manifest.json"):
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        when = datetime.fromisoformat(str(manifest["started_at"]))
+        if when <= cutoff:
+            started[manifest_path.parent.name] = when
+    if not started:
+        raise ValueError("no score generation started at or before the cutoff")
+    run_id = max(started, key=lambda name: (started[name], name))
+    return load_generation(snapshots, run_id)
+
+
 def build(data_dir: Path, *, cutoff: datetime, discovery: dict[str, Any]) -> dict[str, Any]:
-    """The frozen configuration for ``data_dir``'s current score generation."""
+    """The frozen configuration at ``cutoff``, from the generation scored before it."""
     snapshots = data_dir / "score-snapshots"
-    manifest = load_current(snapshots)
+    manifest = generation_at(snapshots, cutoff)
     run_id = manifest["run_id"]
     rows = [json.loads(line) for line in
             (snapshots / run_id / ENRICHMENT).read_text(encoding="utf-8").splitlines()
@@ -199,7 +227,7 @@ def build(data_dir: Path, *, cutoff: datetime, discovery: dict[str, Any]) -> dic
         "cohort_id": COHORT_ID,
         "cutoff": cutoff.astimezone(UTC).isoformat(),
         "discovery": discovery,
-        "score_generation": {"run_id": run_id,
+        "score_generation": {"run_id": run_id, "started_at": manifest.get("started_at"),
                              "manifest_sha256": hashlib.sha256(
                                  (snapshots / run_id / "manifest.json").read_bytes()
                              ).hexdigest(),
@@ -233,6 +261,111 @@ def members(config: dict[str, Any]) -> dict[str, Any]:
     return {"cohort_id": config["cohort_id"], "config_hash": config["config_hash"],
             "t2": t2, "comparison": comparison,
             "wallets": sorted(set(t2) | set(comparison))}
+
+
+def power_window(data_dir: Path, wallets: Iterable[str], cutoff: datetime) -> dict[str, Any]:
+    """Step 5 (S6): the window from T2's independent events in the 14 days before the
+    cutoff. An event is a distinct event slug a member bought into. Under-powered when
+    even the 42-day cap is not expected to reach the target."""
+    members_set = {wallet.lower() for wallet in wallets}
+    end = int(cutoff.timestamp())
+    start = int((cutoff - timedelta(days=POWER_LOOKBACK_DAYS)).timestamp())
+    events: set[str] = set()
+    for line in iter_lines(data_dir / ACTIVITY_FILE):
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if (not isinstance(row, dict) or row.get("type") != "TRADE"
+                or str(row.get("side", "")).upper() != "BUY"
+                or str(row.get("proxy_wallet", "")).lower() not in members_set):
+            continue
+        ts = row.get("timestamp")
+        if isinstance(ts, int) and not isinstance(ts, bool) and start <= ts < end:
+            events.add(str(row.get("event_slug", "")) or str(row.get("condition_id", "")))
+    per_day = len(events) / POWER_LOOKBACK_DAYS
+    needed = math.ceil(TARGET_EVENTS / per_day) if per_day > 0 else None
+    days = min(needed, MAX_WINDOW_DAYS) if needed is not None else MAX_WINDOW_DAYS
+    return {"opens": cutoff.astimezone(UTC).isoformat(),
+            "evaluation_date": (cutoff + timedelta(days=days)).astimezone(UTC).isoformat(),
+            "days": days, "events_last_14_days": len(events),
+            "events_per_day": round(per_day, 3), "target_events": TARGET_EVENTS,
+            "max_days": MAX_WINDOW_DAYS,
+            "under_powered": needed is None or needed > MAX_WINDOW_DAYS,
+            "set_by": "power count at the freeze (build step 5)"}
+
+
+def run(data_dir: Path, *, now: datetime, freeze_at: datetime | None,
+        discovery: dict[str, Any]) -> dict[str, Any]:
+    """Lean-pilot stage.
+
+    - **Frozen:** ``frozen-config.json`` exists. Membership is fixed, and only the
+      hash is checked.
+    - **Freeze due:** ``freeze_at`` is set and has passed. Build at that cutoff, set
+      the window from the power count, write the frozen config once and the member
+      list, and log the whole config so it can be committed and its hash recorded.
+    - **Otherwise provisional:** rebuild the member list from the current score
+      generation, so the hourly polling runs during the burn-in.
+    """
+    stage = data_dir / STAGE_DIR
+    frozen_path = stage / "frozen-config.json"
+    if frozen_path.exists():
+        config = json.loads(frozen_path.read_text(encoding="utf-8"))
+        if config_hash(config) != config.get("config_hash"):
+            raise ValueError("frozen cohort config does not match its hash")
+        return {"status": "succeeded", "mode": "frozen", "config_hash": config["config_hash"],
+                "members": len(members(config)["wallets"])}
+    if freeze_at is not None and now >= freeze_at:
+        config = build(data_dir, cutoff=freeze_at, discovery=discovery)
+        config["window"] = power_window(data_dir, config["tiers"][PRIMARY_TIER], freeze_at)
+        config["config_hash"] = config_hash(config)
+        stage.mkdir(parents=True, exist_ok=True)
+        with frozen_path.open("x", encoding="utf-8") as out:  # write-once
+            out.write(json.dumps(config, indent=2, sort_keys=True) + "\n")
+            out.flush()
+            os.fsync(out.fileno())
+        _write_members(stage, members(config) | {"mode": "frozen"})
+        text = json.dumps(config, sort_keys=True, separators=(",", ":"))
+        for index in range(0, len(text), 8000):  # Railway lines stay readable
+            log.info("cohort v1 frozen config part %d: %s", index // 8000, text[index:index + 8000])
+        log.info("cohort v1 frozen config_hash=%s", config["config_hash"])
+        return {"status": "succeeded", "mode": "frozen_now", "config_hash": config["config_hash"],
+                "tiers": {t: len(w) for t, w in config["tiers"].items()},
+                "comparison": len(config["comparison"]["pairs"]), "window": config["window"]}
+    config = build(data_dir, cutoff=now, discovery=discovery)
+    _write_members(stage, members(config) | {"mode": "provisional",
+                                             "built_at": now.astimezone(UTC).isoformat()})
+    return {"status": "succeeded", "mode": "provisional",
+            "tiers": {t: len(w) for t, w in config["tiers"].items()},
+            "comparison": len(config["comparison"]["pairs"]),
+            "members": len(members(config)["wallets"])}
+
+
+def member_wallets(data_dir: Path) -> frozenset[str]:
+    """The wallets the pilot polls every run: frozen or provisional, else none."""
+    path = data_dir / STAGE_DIR / "members.json"
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return frozenset()
+    wallets = data.get("wallets") if isinstance(data, dict) else None
+    return frozenset(str(w).lower() for w in wallets) if isinstance(wallets, list) else frozenset()
+
+
+def frozen_members(data_dir: Path) -> frozenset[str]:
+    """Members protected from exclusion: only once the config is frozen (S2)."""
+    path = data_dir / STAGE_DIR / "frozen-config.json"
+    if not path.exists():
+        return frozenset()
+    return frozenset(members(json.loads(path.read_text(encoding="utf-8")))["wallets"])
+
+
+def _write_members(stage: Path, roster: dict[str, Any]) -> None:
+    stage.mkdir(parents=True, exist_ok=True)
+    path = stage / "members.json"
+    tmp = path.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(roster, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    tmp.replace(path)
 
 
 def _is_gate13(reason: str) -> bool:

@@ -23,5 +23,7 @@
   "leaderboard_window": "month",
   "leaderboard_metric": "profit",
   "gate13_every_seconds": 86400,
-  "score_version": "forecast-v5"
+  "score_version": "forecast-v5",
+  "cohort_v1_every_seconds": 86400,
+  "cohort_v1_freeze_at": ""
 }
