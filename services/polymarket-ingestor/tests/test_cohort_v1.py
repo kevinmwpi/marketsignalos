@@ -19,7 +19,9 @@ from marketsignalos_polymarket.cohort_v1 import (
 from marketsignalos_polymarket.runner import parse_activity_row, parse_market_row
 from marketsignalos_polymarket.storage import JsonlActivityStore, JsonlMarketStore
 
-CUTOFF = datetime(2026, 10, 27, tzinfo=UTC)
+# Relative to now: the fixture's score generation is computed at test time, and a
+# frozen config refuses a generation that started after its cutoff.
+CUTOFF = datetime.now(UTC).replace(microsecond=0) + timedelta(days=20)
 DAY = 86400
 WALLET = "0x" + "1" * 40
 CLV = "fewer than 10 1 h post-entry CLV observations"
@@ -128,6 +130,30 @@ def test_the_frozen_config_lists_every_screened_wallet_and_pins_its_inputs(
     assert roster["wallets"] == sorted(set(roster["t2"]) | set(roster["comparison"]))
 
 
+def test_the_newest_generation_scored_before_the_cutoff_is_used(
+    data: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # gen2 is scored a day after the cutoff, as when the daily score lands between
+    # the freeze time and the freeze cycle. It would carry post-cutoff data, so the
+    # freeze uses gen1 instead of refusing every cycle from then on.
+    class Later(datetime):
+        @classmethod
+        def now(cls, tz: Any = None) -> Later:
+            return cls.fromtimestamp((CUTOFF + timedelta(days=1)).timestamp(), tz)
+
+    monkeypatch.setattr(snapshot, "datetime", Later)
+    snapshot.score_snapshot(data, data / "score-snapshots", "gen2",
+                            score_version="forecast-v5")
+    monkeypatch.undo()
+    assert snapshot.load_current(data / "score-snapshots")["run_id"] == "gen2"
+    at_cutoff = build(data, cutoff=CUTOFF, discovery={})["score_generation"]
+    assert at_cutoff["run_id"] == "gen1" and at_cutoff["started_at"] < CUTOFF.isoformat()
+    later = build(data, cutoff=CUTOFF + timedelta(days=2), discovery={})
+    assert later["score_generation"]["run_id"] == "gen2"
+    with pytest.raises(ValueError, match="no score generation started"):
+        build(data, cutoff=datetime(2020, 1, 1, tzinfo=UTC), discovery={})
+
+
 def test_a_generation_that_is_not_forecast_v5_is_refused(data: Path) -> None:
     snapshot.score_snapshot(data, data / "score-snapshots", "gen2",
                             score_version="forecast-v4")
@@ -167,7 +193,7 @@ def test_members_are_polled_first_and_the_rest_rotates(tmp_path: Path) -> None:
 
 
 def test_the_stage_is_provisional_until_the_freeze_then_frozen_once(data: Path) -> None:
-    before = datetime(2026, 10, 20, tzinfo=UTC)
+    before = CUTOFF - timedelta(days=7)
     provisional = cohort_v1.run(data, now=before, freeze_at=CUTOFF, discovery={})
     assert provisional["mode"] == "provisional"
     roster = json.loads((data / "cohort-v1" / "members.json").read_text())
@@ -183,14 +209,15 @@ def test_the_stage_is_provisional_until_the_freeze_then_frozen_once(data: Path) 
     assert json.loads((data / "cohort-v1" / "members.json").read_text())["mode"] == "frozen"
 
     # Later runs only verify; a tampered config is refused, never rewritten.
-    later = cohort_v1.run(data, now=CUTOFF.replace(day=28), freeze_at=CUTOFF, discovery={})
+    later = cohort_v1.run(data, now=CUTOFF + timedelta(days=1), freeze_at=CUTOFF,
+                          discovery={})
     assert later == {"status": "succeeded", "mode": "frozen",
                      "config_hash": config["config_hash"], "members": frozen["comparison"]
                      + len(config["tiers"]["T2"])}
     config["primary_tier"] = "T3"
     (data / "cohort-v1" / "frozen-config.json").write_text(json.dumps(config))
     with pytest.raises(ValueError, match="hash"):
-        cohort_v1.run(data, now=CUTOFF.replace(day=29), freeze_at=CUTOFF, discovery={})
+        cohort_v1.run(data, now=CUTOFF + timedelta(days=2), freeze_at=CUTOFF, discovery={})
 
 
 def test_the_window_comes_from_the_members_recent_events(data: Path) -> None:
@@ -221,6 +248,6 @@ def test_the_pilot_freezes_at_the_first_cycle_after_the_freeze_time(tmp_path: Pa
     (tmp_path / "cohort-v1" / "frozen-config.json").write_text("{}")
     assert "cohort_v1" not in pilot.plan_cycle(tmp_path, config, now=CUTOFF)["due"]
     with pytest.raises(ValueError, match="timezone"):
-        pilot.PilotConfig(cohort_v1_every_seconds=1, cohort_v1_freeze_at="2026-10-27T00:00")
+        pilot.PilotConfig(cohort_v1_every_seconds=1, cohort_v1_freeze_at="2030-01-01T00:00")
     with pytest.raises(ValueError, match="enabled"):
         pilot.PilotConfig(cohort_v1_freeze_at=CUTOFF.isoformat())

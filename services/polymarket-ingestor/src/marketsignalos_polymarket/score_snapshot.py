@@ -247,6 +247,23 @@ def load_current(snapshots_dir: Path, *, verify_files: bool = True) -> dict[str,
     if pointer.get("schema_version") != 1 or (
             hashlib.sha256(raw).hexdigest() != pointer.get("manifest_sha256")):
         raise ValueError("Score snapshot manifest checksum mismatch")
+    return _verified(snapshots_dir, run_id, raw, verify_files=verify_files)
+
+
+def load_generation(snapshots_dir: Path, run_id: str, *,
+                    verify_files: bool = True) -> dict[str, Any]:
+    """A retained generation by run ID, verified like the current one.
+
+    There is no pointer to check its manifest against, so callers that pin a
+    generation record the manifest's own hash.
+    """
+    _validate_run_id(run_id)
+    raw = (snapshots_dir / run_id / "manifest.json").read_bytes()
+    return _verified(snapshots_dir, run_id, raw, verify_files=verify_files)
+
+
+def _verified(snapshots_dir: Path, run_id: str, raw: bytes, *,
+              verify_files: bool) -> dict[str, Any]:
     manifest: dict[str, Any] = json.loads(raw)
     if (manifest.get("schema_version") != 1 or manifest.get("run_id") != run_id
             or manifest.get("snapshot_kind") != "derived_scores"

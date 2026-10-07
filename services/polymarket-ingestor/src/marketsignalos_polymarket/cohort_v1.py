@@ -45,7 +45,7 @@ from typing import Any
 
 from .cohort import excluded_wallets
 from .jsonl_archive import iter_lines
-from .score_snapshot import ENRICHMENT, load_current
+from .score_snapshot import ENRICHMENT, load_generation
 from .skill_computation import MIN_CLV_SAMPLE, MIN_RECENT_INDEPENDENT_EVENTS
 
 log = logging.getLogger("marketsignalos.polymarket.cohort_v1")
@@ -170,10 +170,32 @@ def match_comparison(
     return pairs, quality
 
 
+def generation_at(snapshots: Path, cutoff: datetime) -> dict[str, Any]:
+    """The newest score generation that started at or before ``cutoff``, verified.
+
+    A generation started later would carry data the cutoff excludes. Taking the
+    newest earlier one, rather than refusing whenever the current one is later,
+    means a generation scored between the freeze time and the freeze cycle cannot
+    block the freeze. Every retained generation has a manifest written only after
+    its outputs were checked, so an unpublished one (its pointer swap interrupted)
+    is as complete as a published one.
+    """
+    started: dict[str, datetime] = {}
+    for manifest_path in snapshots.glob("*/manifest.json"):
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        when = datetime.fromisoformat(str(manifest["started_at"]))
+        if when <= cutoff:
+            started[manifest_path.parent.name] = when
+    if not started:
+        raise ValueError("no score generation started at or before the cutoff")
+    run_id = max(started, key=lambda name: (started[name], name))
+    return load_generation(snapshots, run_id)
+
+
 def build(data_dir: Path, *, cutoff: datetime, discovery: dict[str, Any]) -> dict[str, Any]:
-    """The frozen configuration for ``data_dir``'s current score generation."""
+    """The frozen configuration at ``cutoff``, from the generation scored before it."""
     snapshots = data_dir / "score-snapshots"
-    manifest = load_current(snapshots)
+    manifest = generation_at(snapshots, cutoff)
     run_id = manifest["run_id"]
     rows = [json.loads(line) for line in
             (snapshots / run_id / ENRICHMENT).read_text(encoding="utf-8").splitlines()
@@ -205,7 +227,7 @@ def build(data_dir: Path, *, cutoff: datetime, discovery: dict[str, Any]) -> dic
         "cohort_id": COHORT_ID,
         "cutoff": cutoff.astimezone(UTC).isoformat(),
         "discovery": discovery,
-        "score_generation": {"run_id": run_id,
+        "score_generation": {"run_id": run_id, "started_at": manifest.get("started_at"),
                              "manifest_sha256": hashlib.sha256(
                                  (snapshots / run_id / "manifest.json").read_bytes()
                              ).hexdigest(),
