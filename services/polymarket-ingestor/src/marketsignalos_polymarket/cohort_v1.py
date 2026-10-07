@@ -115,6 +115,23 @@ BASELINE = {
 MATCHING = ("per T2 member in address order: an unused T3 non-member with the same "
             "top_category and 30-day buy tercile, else the same tercile, else the "
             "nearest buy count; ties to the lower address")
+# Blueprint section 6 Stage 3 asks for these ablations in the result. Each is the
+# primary outcome on its own wallets; the CLV-only wallets are polled hourly with the
+# members so that their signals exist (added 2026-10-07, before the freeze).
+ABLATIONS = {
+    "price_only": "zero: buying at the market price expects no improvement",
+    "clv_only": "data gates 1-6 and gate 13, whatever gates 7-12 say",
+    "historical_edge": "T2: gates 1-12, gate 13 not required",
+    "combined": "T1: all 13 gates",
+}
+
+
+def passes_clv_only(row: dict[str, Any]) -> bool:
+    """The CLV-only ablation's rule: data trusted, and no gate-13 reason."""
+    reasons = [str(reason) for reason in row.get("tailability_reasons") or []]
+    return (row.get("tailability_status") == "tailable"
+            or (row.get("data_quality_status") == "trusted"
+                and not any(_is_gate13(reason) for reason in reasons)))
 
 
 def classify(row: dict[str, Any]) -> tuple[str, list[str]]:
@@ -220,6 +237,7 @@ def build(data_dir: Path, *, cutoff: datetime, discovery: dict[str, Any]) -> dic
         wallet = str(row.get("proxy_wallet", "")).lower()
         tier, reasons = classify(row)
         wallets[wallet] = {"tier": tier, "reasons": reasons,
+                           "clv_only": passes_clv_only(row),
                            "top_category": str(row.get("top_category", "")),
                            "buys_30d": buys.get(wallet, 0),
                            "style_archetype": str(row.get("style_archetype", ""))}
@@ -237,6 +255,8 @@ def build(data_dir: Path, *, cutoff: datetime, discovery: dict[str, Any]) -> dic
     pairs, quality = match_comparison(
         in_tier["T2"], in_tier["T3"],
         category={w: v.get("top_category", "") for w, v in wallets.items()}, buys=buys)
+    clv_only = sorted(w for w, v in wallets.items() if v.get("clv_only")
+                      and v["tier"] in ("T1", "T2", "T3"))
     config: dict[str, Any] = {
         "cohort_id": COHORT_ID,
         "cutoff": cutoff.astimezone(UTC).isoformat(),
@@ -254,6 +274,7 @@ def build(data_dir: Path, *, cutoff: datetime, discovery: dict[str, Any]) -> dic
         "outcome": OUTCOME,
         "cost_model": COST_MODEL,
         "baseline": BASELINE,
+        "ablations": {"rules": ABLATIONS, "clv_only": clv_only},
         "window": {"opens": None, "evaluation_date": None, "target_events": 100,
                    "max_days": 42, "set_by": "build step 5, the power count"},
         "screened": dict(sorted(wallets.items())),
@@ -269,12 +290,14 @@ def config_hash(config: dict[str, Any]) -> str:
 
 
 def members(config: dict[str, Any]) -> dict[str, Any]:
-    """What the pilot polls every hour: T2 plus its comparison set (S2)."""
+    """What the pilot polls every hour: T2, its comparison set (S2) and the CLV-only
+    ablation's wallets."""
     t2 = list(config["tiers"]["T2"])
     comparison = sorted(config["comparison"]["pairs"].values())
+    clv_only = list(config.get("ablations", {}).get("clv_only", []))
     return {"cohort_id": config["cohort_id"], "config_hash": config["config_hash"],
-            "t2": t2, "comparison": comparison,
-            "wallets": sorted(set(t2) | set(comparison))}
+            "t2": t2, "comparison": comparison, "clv_only": clv_only,
+            "wallets": sorted(set(t2) | set(comparison) | set(clv_only))}
 
 
 def power_window(data_dir: Path, wallets: Iterable[str], cutoff: datetime) -> dict[str, Any]:

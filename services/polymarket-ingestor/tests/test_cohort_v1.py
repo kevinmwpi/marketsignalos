@@ -15,6 +15,7 @@ from marketsignalos_polymarket.cohort_v1 import (
     config_hash,
     match_comparison,
     members,
+    passes_clv_only,
 )
 from marketsignalos_polymarket.runner import parse_activity_row, parse_market_row
 from marketsignalos_polymarket.storage import JsonlActivityStore, JsonlMarketStore
@@ -45,6 +46,14 @@ def test_tiers_follow_the_gates_and_nest() -> None:
     # Any data gate failing leaves the wallet out of every tier.
     assert classify(_row("blocked", "untrusted",
                          ["incomplete market metadata", CLV]))[0] == "none"
+
+
+def test_the_clv_only_ablation_ignores_gates_7_to_12() -> None:
+    model = "forecast confidence below 80%"
+    assert passes_clv_only(_row("blocked", "trusted", [model]))  # T3, but CLV passes
+    assert passes_clv_only(_row("tailable", "trusted", []))  # T1 passes everything
+    assert not passes_clv_only(_row("blocked", "trusted", [CLV]))  # T2: CLV fails
+    assert not passes_clv_only(_row("blocked", "untrusted", ["incomplete market metadata"]))
 
 
 # ── The comparison set ───────────────────────────────────────────────────────
@@ -127,7 +136,16 @@ def test_the_frozen_config_lists_every_screened_wallet_and_pins_its_inputs(
     assert config_hash(changed) != config["config_hash"]
     roster = members(config)
     assert roster["config_hash"] == config["config_hash"]
-    assert roster["wallets"] == sorted(set(roster["t2"]) | set(roster["comparison"]))
+    assert roster["wallets"] == sorted(set(roster["t2"]) | set(roster["comparison"])
+                                       | set(roster["clv_only"]))
+    assert set(config["ablations"]["rules"]) == {"price_only", "clv_only",
+                                                  "historical_edge", "combined"}
+    clv = config["ablations"]["clv_only"]
+    assert clv == sorted(w for w, v in screened.items() if v.get("clv_only")
+                         and v["tier"] in ("T1", "T2", "T3"))
+    # The CLV-only wallets are polled hourly and, once frozen, protected.
+    ablation = dict(config, ablations={"rules": {}, "clv_only": ["0x" + "9" * 40]})
+    assert "0x" + "9" * 40 in members(ablation)["wallets"]
 
 
 def test_the_newest_generation_scored_before_the_cutoff_is_used(

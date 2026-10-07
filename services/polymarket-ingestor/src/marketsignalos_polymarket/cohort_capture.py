@@ -149,7 +149,8 @@ def _signals(rows: list[dict[str, Any]], roster: dict[str, Any], *,
              now: datetime) -> tuple[list[dict[str, Any]], int]:
     """Fresh member BUY fills grouped by (wallet, market, outcome); and the number
     of fills too old to be followed."""
-    t2 = {str(w).lower() for w in roster.get("t2", [])}
+    sets = {name: {str(w).lower() for w in roster.get(name, [])}
+            for name in ("t2", "comparison", "clv_only")}
     members = {str(w).lower() for w in roster.get("wallets", [])}
     groups: dict[tuple[str, str, int], dict[str, Any]] = {}
     stale = 0
@@ -170,7 +171,7 @@ def _signals(rows: list[dict[str, Any]], roster: dict[str, Any], *,
             continue
         cid = str(row.get("condition_id", "")).lower()
         group = groups.setdefault((wallet, cid, index), {
-            "wallet": wallet, "group": "t2" if wallet in t2 else "comparison",
+            "wallet": wallet, "groups": [name for name, found in sets.items() if wallet in found],
             "condition_id": cid, "outcome_index": index,
             "event_slug": str(row.get("event_slug", "")), "fills": 0, "wallet_usdc": 0.0,
             "wallet_shares": 0.0, "first_fill_ts": ts, "last_fill_ts": ts})
