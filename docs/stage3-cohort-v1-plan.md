@@ -307,7 +307,7 @@ the pilot, so they should land by about 2026-10-13 (S7).
     Tracked storage fell to 195 MB from 292 MB. The runway now lasts well beyond a
     42-day window opening on 2026-10-27.
 - **Runtime.** Hourly polling of about 9 members plus signal capture must fit the
-  90-minute daily allowance. Measure it before the freeze. *2026-10-07:* 16
+  daily allowance (90 minutes, 120 from 2026-10-08). Measure it before the freeze. *2026-10-07:* 16
   provisional members and a 28-wallet batch. Read the day's runtime total from the
   receipts before the freeze.
 - **T2 can change during the window.** Membership is frozen at the cutoff, so a member

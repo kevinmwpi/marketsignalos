@@ -427,12 +427,16 @@ def test_the_deployed_allowance_fits_a_full_day_of_hourly_runs() -> None:
     # last 4-6 runs of each day were skipped (2026-10-03 to 2026-10-05).
     path = Path(__file__).resolve().parents[3] / "deploy" / "lean-pilot.json"
     config = pilot.PilotConfig(**json.loads(path.read_text(encoding="utf-8")))
-    hourly = 24 * 90  # collection measured at 63-122 s per run on 2026-10-05/06
+    # Collection measured at 86-154 s per run with the 28-wallet batch (2026-10-07).
+    hourly = 24 * 130
     backfills = sum(86400 // every * max_seconds for every, max_seconds in (
         (config.entry_prices_every_seconds, config.entry_prices_max_seconds),
         (config.closing_lines_every_seconds, config.closing_lines_max_seconds)))
     daily_stages = 300  # horizon, score, cohort and gate13 together, measured ~100 s
-    assert (hourly + backfills + daily_stages + config.cycle_timeout_seconds
+    # An interrupted run keeps its reservation. On 2026-10-07 one did (a deploy
+    # stopped it), and at 5,400 s the last two runs, 22:07 and 23:07, were skipped.
+    interrupted = config.cycle_timeout_seconds
+    assert (hourly + backfills + daily_stages + config.cycle_timeout_seconds + interrupted
             <= config.daily_runtime_seconds)
 
 
