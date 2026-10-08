@@ -133,8 +133,10 @@ def test_only_this_runs_fresh_member_buys_become_signals(data: Path) -> None:
     ])
     venue = _venue()
     result = capture(data, offset, "run1", get=venue.get, now_fn=lambda: NOW)
-    assert result == {"status": "succeeded", "signals": 2, "stale_fills": 1, "captured": 2,
-                      "excluded": {}, "seconds": 0.0}
+    assert {k: result[k] for k in ("status", "signals", "stale_fills", "captured",
+                                   "excluded", "seconds")} == {
+        "status": "succeeded", "signals": 2, "stale_fills": 1, "captured": 2,
+        "excluded": {}, "seconds": 0.0}
     first, second = _signals(data)
     assert (first["wallet"], first["groups"], first["fills"]) == (COMPARISON, ["comparison"], 1)
     assert (second["wallet"], second["groups"], second["fills"]) == (T2, ["t2"], 2)
@@ -148,6 +150,9 @@ def test_only_this_runs_fresh_member_buys_become_signals(data: Path) -> None:
     assert first["fee"]["details_present"] is False and first["clip"]["fee_usdc"] == 0
     assert first["token_id"] == f"{C2}-no" and first["token_outcome"] == "No"
     assert venue.calls.count("/markets") == 1  # one Gamma batch for both markets
+    assert result["by_group"] == {"t2": {"signals": 1, "captured": 1},
+                                  "comparison": {"signals": 1, "captured": 1},
+                                  "clv_only": {"signals": 0, "captured": 0}}
 
 
 @pytest.mark.parametrize(("override", "reason"), [
