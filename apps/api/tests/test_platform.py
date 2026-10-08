@@ -101,7 +101,7 @@ def test_deep_workload_configuration_reaches_pipeline(monkeypatch: pytest.Monkey
     monkeypatch.setenv("INGEST_DEEP_WALLET_BATCH_SIZE", "12")
     ingestor._run_deep_ingestor_sync()
     assert options["wallet_batch_size"] == 12
-    assert options["recent_trader_max_pages"] == 20
+    assert set(options) == {"wallet_batch_size", "leaderboard_depth"}
     monkeypatch.setenv("INGEST_DEEP_WALLET_BATCH_SIZE", "0")
     with pytest.raises(ValueError, match="positive integer"):
         ingestor._run_deep_ingestor_sync()

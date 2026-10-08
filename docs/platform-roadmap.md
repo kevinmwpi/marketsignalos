@@ -14,7 +14,7 @@ wins. The product should not claim to have identified insiders.
 
 | Capability | Current implementation | Gap to the intended platform |
 |---|---|---|
-| Discovery | Leaderboard sweeps plus recent orderbook-subgraph traders | Bounded samples; no durable cursor covering all recent chain events |
+| Discovery | Leaderboard sweeps only; the orderbook subgraph behind recent-trader discovery is shut down and its code removed | Leaderboard-shaped selection; no chain source or durable cursor covering recent chain events (blueprint Stage 4) |
 | History | Wallet activity, positions, hydration coverage and price snapshots | API pagination limits, growing file scans, no complete raw-event archive |
 | Scoring | Entry-price Bayesian edge, event grouping, recency, economics, CLV | Population selection correction and prospective validation |
 | Public product | Wallet ranking, open positions, dossiers, signal ledger and exits | Historical score versions and stronger cohort/evaluation explanations |

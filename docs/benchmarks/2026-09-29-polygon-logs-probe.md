@@ -103,6 +103,12 @@ budget on an error that will never clear, then fail. The lean pilot worker and t
 scheduled research snapshot do not touch the subgraph: collection calls
 `run_pipeline` with subgraph backfill off.
 
+*Update 2026-10-08:* both paths were removed, and no code calls the subgraph. The
+fallback was reachable only from the deep pipeline, which hydrates with
+`exhaust_activity=True`; there was no `--exhaust-activity` CLI flag. A deep run
+now says "subgraph discovery unavailable (deprecated 2026)" in its `warning`.
+This probe's subgraph check was removed too.
+
 ## What this means
 
 1. **The chain is not cheaper than the Data API; it is more complete.** The Data API

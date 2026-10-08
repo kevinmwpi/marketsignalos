@@ -4,10 +4,10 @@ Background ingest scheduler.
 When INGEST_EVERY_MINUTES is set (> 0) the API process dispatches the same
 in-process pipeline trigger the dashboard buttons use, on a fixed interval.
 INGEST_DEEP_EVERY_N_RUNS (> 0) makes every Nth scheduled run a deep
-discovery pass (categorized leaderboard sweep + recent-trader discovery)
-instead of a shallow refresh — e.g. INGEST_EVERY_MINUTES=60 with
-INGEST_DEEP_EVERY_N_RUNS=24 gives an hourly refresh and one discovery sweep
-per day.
+discovery pass (categorized leaderboard sweep; recent-trader discovery went
+with the Goldsky subgraph) instead of a shallow refresh — e.g.
+INGEST_EVERY_MINUTES=60 with INGEST_DEEP_EVERY_N_RUNS=24 gives an hourly
+refresh and one discovery sweep per day.
 
 The scheduler runs as a single asyncio task inside the FastAPI lifespan —
 no extra process, no cron infra. Overlap is impossible by construction:

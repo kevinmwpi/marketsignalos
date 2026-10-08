@@ -263,8 +263,6 @@ def _run_deep_ingestor_sync() -> None:
         return run_deep_pipeline(
             wallet_batch_size=positive_env("INGEST_DEEP_WALLET_BATCH_SIZE", 25),
             leaderboard_depth=positive_env("INGEST_DEEP_LEADERBOARD_DEPTH", 100),
-            recent_trader_limit=positive_env("INGEST_RECENT_TRADER_LIMIT", 1000),
-            recent_trader_max_pages=positive_env("INGEST_RECENT_TRADER_MAX_PAGES", 20),
             **kwargs,
         )
 

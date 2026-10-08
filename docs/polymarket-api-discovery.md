@@ -33,7 +33,7 @@ Returning 200 + JSON: 13/16
 - `GET /sampling-markets` → similar but only markets accepting orders
 - Use for: current best bid/ask, tick size, min order size
 
-**Goldsky subgraph**:
+**Goldsky subgraph** (shut down: since Polymarket's V2 migration it answers HTTP 429 `ENDPOINT_DEPRECATED`, see `benchmarks/2026-09-29-polygon-logs-probe.md`; the code that used it was removed on 2026-10-08):
 - URL: `https://api.goldsky.com/api/public/project_cl6mb8i9h0003e201j6li0diw/subgraphs/polymarket-orderbook-resync/prod/gn`
 - Entity confirmed: `orderFilledEvents { id maker taker makerAssetId takerAssetId makerAmountFilled takerAmountFilled fee timestamp transactionHash }`
 - Useful for: historical backfill of trade events (Data API may truncate beyond N days), or cross-validation of Data API output

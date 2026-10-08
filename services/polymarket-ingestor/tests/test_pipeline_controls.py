@@ -168,13 +168,10 @@ def _activity(timestamp: int, transaction: str) -> dict[str, Any]:
     }
 
 
-def test_request_cap_covers_boundary_calls_and_prevents_subgraph_escape(
-    pilot_data: Path,
-) -> None:
+def test_request_cap_covers_boundary_calls(pilot_data: Path) -> None:
     calls: list[httpx.Request] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
-        assert "goldsky" not in str(request.url)
         if request.url.path == "/activity":
             calls.append(request)
             return httpx.Response(200, json=[_activity(100, "a"), _activity(100, "b")])
@@ -192,6 +189,35 @@ def test_request_cap_covers_boundary_calls_and_prevents_subgraph_escape(
     assert not state.activity_history_complete
     assert state.oldest_activity_cursor_timestamp == 100  # boundary must be revisited
     assert "activity request budget reached" in state.errors
+
+
+def test_incomplete_exhaustive_history_stays_on_the_data_api(
+    pilot_data: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The deep sweep hydrates with exhaust_activity=True and no request budget.
+    When its page cap leaves a history incomplete, the wallet used to fall back
+    to the Goldsky subgraph, which is shut down. It must now keep its cursor
+    for the next run and record no subgraph error."""
+    monkeypatch.setenv("POLYMARKET_ACTIVITY_EXHAUST_PAGES", "1")
+    hosts: set[str] = set()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        hosts.add(request.url.host)
+        if request.url.path == "/activity" and "start" not in request.url.params:
+            return httpx.Response(200, json=[_activity(100, "a"), _activity(99, "b")])
+        return httpx.Response(200, json=[])  # boundary pages and other endpoints
+
+    stores = runner._build_stores(pilot_data)
+    with httpx.Client(transport=httpx.MockTransport(handler)) as http:
+        client = PolymarketClient(PolymarketClientConfig(max_retries=1), client=http)
+        runner.run_wallets(
+            client, stores, addresses=["0xabc"], activity_page_size=2, exhaust_activity=True,
+        )
+    assert "api.goldsky.com" not in hosts
+    state = stores.hydration.load_hydration()["0xabc"]
+    assert not state.activity_history_complete
+    assert state.oldest_activity_cursor_timestamp == 98  # resumes below 99 next run
+    assert state.errors == []
 
 
 def test_capped_recent_refresh_retains_checkpoint_and_blocks_trust(pilot_data: Path) -> None:
