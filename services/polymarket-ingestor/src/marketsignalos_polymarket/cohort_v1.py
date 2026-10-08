@@ -381,13 +381,15 @@ def run(data_dir: Path, *, now: datetime, freeze_at: datetime | None,
         log.info("cohort v1 frozen config_hash=%s", config["config_hash"])
         return {"status": "succeeded", "mode": "frozen_now", "config_hash": config["config_hash"],
                 "tiers": {t: len(w) for t, w in config["tiers"].items()},
-                "comparison": len(config["comparison"]["pairs"]), "window": config["window"]}
+                "comparison": len(config["comparison"]["pairs"]),
+                "clv_only": len(config["ablations"]["clv_only"]), "window": config["window"]}
     config = build(data_dir, cutoff=now, discovery=discovery)
     _write_members(stage, members(config) | {"mode": "provisional",
                                              "built_at": now.astimezone(UTC).isoformat()})
     return {"status": "succeeded", "mode": "provisional",
             "tiers": {t: len(w) for t, w in config["tiers"].items()},
             "comparison": len(config["comparison"]["pairs"]),
+            "clv_only": len(config["ablations"]["clv_only"]),
             "members": len(members(config)["wallets"])}
 
 
