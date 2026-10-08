@@ -152,6 +152,18 @@ freeze, and capped.*
   100 independent events.
 - Before the freeze, count T2's buys per day over the last 14 days. Set the window to
   the days needed for 100 events, at most 42 days.
+  - *Amended 2026-10-08 (owner's decision):* count T2's **captured** events in the
+    burn-in's own signals, not its raw buys.
+  - Raw buys overstate what the test records. Excluded signals, one signal per run
+    and stale fills all drop out: 4 of the first 9 signals were excluded for empty
+    asks.
+  - A window sized on raw buys could end with far fewer than 100 events while
+    declared powered. A null would then trigger kill criterion 2 when it should read
+    inconclusive.
+  - The raw-buy count is reported alongside. With under 7 days of capture in the
+    lookback, the raw-buy rate is used, and the config says which basis applied.
+  - Each hourly capture result now counts signals by group (T2, comparison and
+    CLV-only), so the yield can be watched during the burn-in.
 - If 42 days cannot reach 100 events, say so in the frozen config. The test then
   stands as under-powered, and its null is reported as inconclusive, not as evidence
   of no edge.
