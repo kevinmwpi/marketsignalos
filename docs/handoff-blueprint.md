@@ -664,7 +664,9 @@ this non-goal holds:
   before 2026 needs one, as a line item in §9, decided after Stage 3.
 - **Chain discovery now fills a gap.** The Goldsky orderbook subgraph that supplied
   recent-trader discovery is shut down (`ENDPOINT_DEPRECATED`). A head-following
-  `OrderFilled` reader is its replacement.
+  `OrderFilled` reader is its replacement. The code that called the subgraph was
+  removed on 2026-10-08, so until this stage lands discovery is leaderboard-only and
+  every deep run's `warning` says so.
 
 ---
 

@@ -1006,61 +1006,6 @@ def _fetch_wallet_economics(
             state.economic_month_complete = True
 
 
-def _extend_activity_via_subgraph(
-    client: PolymarketClient,
-    addr: str,
-    state: PolymarketWalletHydration,
-    *,
-    activity_page_size: int,
-    max_pages: int,
-    rate_limiter: HostRateLimiter | None,
-    on_page: Callable[[list[PolymarketActivity]], None] | None = None,
-) -> list[PolymarketActivity]:
-    if state.activity_history_complete:
-        return []
-    try:
-        if rate_limiter is not None:
-            rate_limiter.wait()
-        fills = client.get_wallet_order_fills_from_subgraph(
-            addr,
-            before_timestamp=state.oldest_activity_cursor_timestamp,
-        )
-    except Exception as exc:  # noqa: BLE001
-        state.errors.append(f"subgraph: {exc}")
-        return []
-    if not fills:
-        return []
-    timestamps = [
-        int(fill.get("timestamp", 0) or 0)
-        for fill in fills
-        if fill.get("timestamp") not in (None, "")
-    ]
-    if not timestamps:
-        return []
-    oldest = min(timestamps)
-    if (
-        state.oldest_activity_cursor_timestamp is not None
-        and oldest >= state.oldest_activity_cursor_timestamp
-    ):
-        return []
-    state.oldest_activity_cursor_timestamp = oldest - 1
-    if rate_limiter is not None:
-        rate_limiter.wait()
-    extra = _paginate_activity_window(
-        client,
-        addr,
-        page_size=activity_page_size,
-        max_pages=max_pages,
-        since_timestamp=None,
-        end_timestamp=state.oldest_activity_cursor_timestamp,
-        on_page=on_page,
-    )
-    state.activity_history_complete = extra.exhausted and extra.boundary_complete
-    if not extra.boundary_complete:
-        state.errors.append("activity boundary exceeded offset safety bound")
-    return extra.events
-
-
 @dataclass(slots=True)
 class _WalletHydrationTotals:
     activity: int = 0
@@ -1079,7 +1024,6 @@ def _hydrate_single_wallet(
     max_pages: int,
     full_backfill: bool,
     exhaust_activity: bool,
-    try_subgraph_backfill: bool,
     rate_limiter: HostRateLimiter | None,
     write_lock: threading.Lock | None,
     max_activity_requests: int | None = None,
@@ -1165,19 +1109,6 @@ def _hydrate_single_wallet(
             ):
                 state.errors.append("activity boundary exceeded offset safety bound")
 
-        if (
-            try_subgraph_backfill and activity_budget is None
-            and not state.activity_history_complete
-        ):
-            _extend_activity_via_subgraph(
-                client,
-                addr,
-                state,
-                activity_page_size=activity_page_size,
-                max_pages=max_pages,
-                rate_limiter=rate_limiter,
-                on_page=_sink,
-            )
         if activity_budget is not None:
             if not recent_complete:
                 state.activity_history_complete = False
@@ -1316,16 +1247,15 @@ def run_wallets(
     max_pages_per_wallet: int = 20,
     full_backfill: bool = False,
     exhaust_activity: bool = False,
-    try_subgraph_backfill: bool = False,
     wallet_concurrency: int | None = None,
     max_activity_requests_per_wallet: int | None = None,
     progress_cb: ProgressCallback | None = None,
 ) -> tuple[int, int, int]:
     """Hydrate wallets while persisting fail-closed trust inputs.
 
-    An explicit activity request budget covers recent/history/boundary calls,
-    disables subgraph fallback, and retains a checkpoint after a partial recent
-    refresh. It does not cap other endpoints, retries, wall time, or RAM.
+    An explicit activity request budget covers recent/history/boundary calls
+    and retains a checkpoint after a partial recent refresh. It does not cap
+    other endpoints, retries, wall time, or RAM.
     """
     if max_activity_requests_per_wallet is not None and max_activity_requests_per_wallet < 1:
         raise ValueError("max_activity_requests_per_wallet must be positive")
@@ -1354,7 +1284,6 @@ def run_wallets(
             max_pages=max_pages,
             full_backfill=full_backfill,
             exhaust_activity=exhaust_activity,
-            try_subgraph_backfill=try_subgraph_backfill or exhaust_activity,
             rate_limiter=rate_limiter,
             write_lock=write_lock,
             max_activity_requests=max_activity_requests_per_wallet,
@@ -2359,7 +2288,7 @@ def _build_parser() -> argparse.ArgumentParser:
                     help="Activity timestamp windows per recent/history pass (not a request cap)")
     pl.add_argument("--max-activity-requests-per-wallet", type=int, default=None,
                     help="Cap activity API calls including boundary pages; excludes HTTP retries "
-                         "and other endpoints; disables subgraph fallback")
+                         "and other endpoints")
     pl.add_argument("--include-kalshi", action="store_true",
                     help="Also run the Kalshi fetch + match step "
                          "(off by default — Polymarket-only otherwise)")
@@ -2383,22 +2312,9 @@ def _build_parser() -> argparse.ArgumentParser:
                     help="Max activity pages per net-new wallet (existing wallets short-circuit on checkpoint)")
     dp.add_argument("--dormant-days", type=int, default=DEEP_DEFAULT_DORMANT_DAYS,
                     help="Wallets with no activity in this many days are archive candidates")
-    dp.add_argument("--recent-trader-limit", type=int, default=_DEEP_DEFAULT_RECENT_TRADERS,
-                    help="Max distinct recent on-chain wallets to fold into the sweep")
-    dp.add_argument("--no-recent-traders", action="store_true",
-                    help="Skip subgraph recent-trader discovery (leaderboard sweep only)")
     dp.add_argument("--include-kalshi", action="store_true",
                     help="Also run the Kalshi fetch + match step "
                          "(off by default — Polymarket-only otherwise)")
-
-    rt = sub.add_parser(
-        "recent-traders",
-        help="Seed deep-review state with the most-recent on-chain traders (subgraph)",
-    )
-    rt.add_argument("--limit", type=int, default=_DEEP_DEFAULT_RECENT_TRADERS,
-                    help="Max distinct wallets to discover")
-    rt.add_argument("--pages", type=int, default=_DEEP_DEFAULT_RECENT_MAX_PAGES,
-                    help="Max subgraph pages to walk")
 
     pw = sub.add_parser(
         "prune-wallets",
@@ -2469,15 +2385,16 @@ class PipelineResult:
     metadata_complete_wallets: int = 0
     # Deep-pipeline-only counters (default 0 for shallow runs).
     discovered_this_run: int = 0
-    recent_traders_discovered: int = 0
     deep_slices_attempted: int = 0
     deep_slices_succeeded: int = 0
     active_wallets: int = 0
     archived_wallets: int = 0
     pinned_wallets: int = 0
     pruned_this_run: int = 0
-    # Set when a deep run completes as a *partial success* (circuit breaker
-    # tripped mid-sweep). Surfaced to the UI; exit code stays 0.
+    # Set when a run completes as a *partial success*: a leaderboard seed
+    # failed, the deep sweep's circuit breaker tripped, or (every deep run)
+    # recent-trader discovery is unavailable. Surfaced to the UI; exit code
+    # stays 0.
     warning: str | None = None
     # False means existing enrichment and quality counters were not refreshed.
     enrichment_performed: bool = True
@@ -2518,7 +2435,6 @@ class PipelineResult:
             "backfill_complete_wallets": self.backfill_complete_wallets,
             "metadata_complete_wallets": self.metadata_complete_wallets,
             "discovered_this_run": self.discovered_this_run,
-            "recent_traders_discovered": self.recent_traders_discovered,
             "deep_slices_attempted": self.deep_slices_attempted,
             "deep_slices_succeeded": self.deep_slices_succeeded,
             "active_wallets": self.active_wallets,
@@ -2624,10 +2540,9 @@ def run_pipeline(
            pool. Pass include_profit_leaderboard=True to opt back in, or
            ``seed_metrics`` to name the metrics outright, in order: the lean
            pilot seeds from ``("profit",)`` since 2026-10-03, because the volume
-           leaderboard brought in mostly automated wallets. Recent
-           on-chain trader discovery lives in run_deep_pipeline, not here: this
-           path re-hydrates the entire watchlist every run, so its seed must
-           stay bounded. Unsupported windows are skipped with a warning (the
+           leaderboard brought in mostly automated wallets. This path
+           re-hydrates the entire watchlist every run, so its seed must stay
+           bounded. Unsupported windows are skipped with a warning (the
            Polymarket public leaderboard API silently rejects some windows).
         2. Pull each wallet's recent activity, current positions, and value.
         3. Fetch resolved-market metadata (closed=True) for skill scoring,
@@ -2894,10 +2809,13 @@ _DEEP_DEFAULT_BATCH_SIZE = 500       # wallets hydrated per invocation
 _DEEP_DEFAULT_ACTIVITY_PAGES = 5     # cap for net-new wallets
 _DEEP_LIMIT_PER_REQUEST = 50         # API max
 _DEEP_DEFAULT_ORDERS: tuple[str, ...] = ("VOL",)  # PnL excluded — see run_deep_leaderboard
-_DEEP_DEFAULT_RECENT_TRADERS = 1000  # distinct recent on-chain wallets folded into the sweep
-_DEEP_DEFAULT_RECENT_PAGE_SIZE = 500
-_DEEP_DEFAULT_RECENT_MAX_PAGES = 20
 _DEEP_BREAKER_THRESHOLD = 6          # consecutive degraded slices → abort sweep
+# Recent-trader discovery read the Goldsky orderbook subgraph, which Goldsky shut
+# down after Polymarket's V2 migration (HTTP 429 ENDPOINT_DEPRECATED, see
+# docs/benchmarks/2026-09-29-polygon-logs-probe.md). The code is gone, and every
+# deep run says so in its result until chain-log discovery (blueprint Stage 4)
+# replaces it.
+_SUBGRAPH_DISCOVERY_WARNING = "subgraph discovery unavailable (deprecated 2026)"
 
 
 @dataclass(slots=True)
@@ -2906,7 +2824,9 @@ class _WalletSweepMeta:
     categories: set[str] = field(default_factory=set)
     time_periods: set[str] = field(default_factory=set)
     orders: set[str] = field(default_factory=set)
-    sources: set[str] = field(default_factory=set)  # "leaderboard" | "subgraph"
+    # "leaderboard". Review-state rows written before 2026-10-08 may also carry
+    # "subgraph", the removed recent-trader source.
+    sources: set[str] = field(default_factory=set)
     best_rank: int | None = None  # 1-indexed; lower = better
 
 
@@ -3109,41 +3029,6 @@ def run_deep_leaderboard(
     )
 
 
-def run_recent_traders(
-    client: PolymarketClient,
-    *,
-    limit: int = _DEEP_DEFAULT_RECENT_TRADERS,
-    page_size: int = _DEEP_DEFAULT_RECENT_PAGE_SIZE,
-    max_pages: int = _DEEP_DEFAULT_RECENT_MAX_PAGES,
-) -> list[str]:
-    """Most-recently-active wallet addresses from the orderbook subgraph.
-
-    Thin wrapper over the client method so the deep pipeline and the
-    `recent-traders` CLI share one entry point + log line. This is the
-    de-biasing source: it surfaces wallets actively trading on-chain right
-    now, independent of whether they ever ranked on a leaderboard.
-    """
-    wallets = client.get_recent_trader_wallets(
-        max_wallets=limit, page_size=page_size, max_pages=max_pages,
-    )
-    log.info("recent_traders discovered=%d limit=%d", len(wallets), limit)
-    return wallets
-
-
-def _fold_recent_traders_into_sweep(
-    sweep: _DeepSweepResult, wallets: list[str]
-) -> None:
-    """Union subgraph-discovered wallets into a leaderboard sweep result so the
-    rest of the deep pipeline (review-state refresh, prune protection,
-    hydration cursor) treats them uniformly. Wallets also seen on the
-    leaderboard simply gain an extra 'subgraph' source; net-new ones get a
-    meta carrying no leaderboard appearances."""
-    for addr in wallets:
-        sweep.discovered.add(addr)
-        meta = sweep.per_wallet.setdefault(addr, _WalletSweepMeta())
-        meta.sources.add("subgraph")
-
-
 def _merge_unique(existing: list[str], incoming: set[str]) -> list[str]:
     """Sorted, deduped union — keeps the review-state file deterministic."""
     return sorted(set(existing) | incoming)
@@ -3174,8 +3059,8 @@ def _apply_sweep_to_review_state(
             record.archived_at = None
             record.archived_reason = None
         # Only a genuine leaderboard appearance bumps the leaderboard-seen
-        # clock; a wallet surfaced purely from recent on-chain fills hasn't
-        # been "seen on a leaderboard".
+        # clock; a wallet surfaced by any other discovery source hasn't been
+        # "seen on a leaderboard".
         if "leaderboard" in meta.sources:
             record.last_leaderboard_seen_at = now
         record.appearances += meta.appearances
@@ -3282,10 +3167,6 @@ def run_deep_pipeline(
     *,
     leaderboard_depth: int = _DEEP_DEFAULT_DEPTH,
     leaderboard_orders: tuple[str, ...] = _DEEP_DEFAULT_ORDERS,
-    seed_recent_traders: bool = True,
-    recent_trader_limit: int = _DEEP_DEFAULT_RECENT_TRADERS,
-    recent_trader_page_size: int = _DEEP_DEFAULT_RECENT_PAGE_SIZE,
-    recent_trader_max_pages: int = _DEEP_DEFAULT_RECENT_MAX_PAGES,
     wallet_batch_size: int = _DEEP_DEFAULT_BATCH_SIZE,
     activity_pages: int = _DEEP_DEFAULT_ACTIVITY_PAGES,
     activity_page_size: int = 500,
@@ -3303,10 +3184,10 @@ def run_deep_pipeline(
 
       1. Sweep the categorized leaderboard matrix (top-N per slice). `orders`
          defaults to VOL-only — the PnL ranking is dropped to keep lucky
-         single-win wallets out of the seed.
-      1b. Fold in the most-recent on-chain traders from the orderbook subgraph
-         (de-biased discovery: wallets trading now, regardless of any
-         leaderboard standing). Disable with seed_recent_traders=False.
+         single-win wallets out of the seed. This is the only discovery
+         source: recent-trader discovery from the Goldsky subgraph was
+         removed when Goldsky shut it down, and the result's `warning` says
+         so on every run.
       2. Refresh review-state: add new wallets, bump observation metadata,
          reactivate any previously-archived wallet that reappears.
       3. Prune: archive wallets that are dormant AND absent from the latest
@@ -3351,36 +3232,6 @@ def run_deep_pipeline(
         )
         _write_economics_cache(economics_cache)
         log.info("deep_pipeline economics_cache wallets=%d", len(economics_cache))
-
-        # 1b. Fold in recent on-chain traders (de-biased discovery source).
-        # Non-fatal: a subgraph blip should not kill an otherwise-good run,
-        # and a sweep that just tripped the breaker shouldn't get killed
-        # here by the same outage.
-        recent_count = 0
-        if seed_recent_traders:
-            log.info(
-                "deep_pipeline step=recent_traders limit=%d", recent_trader_limit
-            )
-            _emit({"stage": "recent_traders"})
-            try:
-                recent = run_recent_traders(
-                    client,
-                    limit=recent_trader_limit,
-                    page_size=recent_trader_page_size,
-                    max_pages=recent_trader_max_pages,
-                )
-            except (httpx.HTTPStatusError, httpx.TransportError, ValueError) as exc:
-                # ValueError covers GraphQL query errors (e.g. a server-side
-                # subgraph statement-timeout), which arrive as an HTTP 200 body
-                # and so never tripped the client's status-based retry.
-                log.warning(
-                    "recent_traders failed (non-fatal): %s — sweep proceeds "
-                    "without subgraph wallets",
-                    exc,
-                )
-                recent = []
-            _fold_recent_traders_into_sweep(sweep, recent)
-            recent_count = len(recent)
 
         # 2. Apply sweep observations to review-state
         log.info("deep_pipeline step=refresh_review_state")
@@ -3444,7 +3295,6 @@ def run_deep_pipeline(
                 activity_page_size=activity_page_size,
                 max_pages_per_wallet=activity_pages,
                 exhaust_activity=True,
-                try_subgraph_backfill=True,
                 progress_cb=progress_cb,
             )
             # Stamp last_polled_at on every wallet in the batch so the cursor
@@ -3527,65 +3377,23 @@ def run_deep_pipeline(
             backfill_complete_wallets=quality["backfill_complete_wallets"],
             metadata_complete_wallets=quality["metadata_complete_wallets"],
             discovered_this_run=len(sweep.discovered),
-            recent_traders_discovered=recent_count,
             deep_slices_attempted=sweep.slices_attempted,
             deep_slices_succeeded=sweep.slices_succeeded,
             active_wallets=active,
             archived_wallets=archived,
             pinned_wallets=pinned,
             pruned_this_run=pruned_this_run,
-            warning=sweep.abort_reason,
+            warning="; ".join(
+                reason
+                for reason in (sweep.abort_reason, _SUBGRAPH_DISCOVERY_WARNING)
+                if reason
+            ),
         )
         log.info("deep_pipeline complete %s", result.to_dict())
         return result
     finally:
         if owns_client:
             client.close()
-
-
-def run_recent_traders_seed(
-    *,
-    limit: int = _DEEP_DEFAULT_RECENT_TRADERS,
-    page_size: int = _DEEP_DEFAULT_RECENT_PAGE_SIZE,
-    max_pages: int = _DEEP_DEFAULT_RECENT_MAX_PAGES,
-    client: PolymarketClient | None = None,
-) -> dict[str, int]:
-    """CLI entry point for `recent-traders`: pull the most-recent on-chain
-    traders and merge them into the deep-review state (so the next deep
-    hydration picks them up) without running a full sweep. Reuses
-    `_apply_sweep_to_review_state` by wrapping the addresses in a synthetic
-    subgraph-only sweep result."""
-    review_path = _review_state_path()
-    state = _load_review_state(review_path)
-    owns_client = client is None
-    client = client or PolymarketClient(PolymarketClientConfig.from_env())
-    try:
-        wallets = run_recent_traders(
-            client, limit=limit, page_size=page_size, max_pages=max_pages,
-        )
-    finally:
-        if owns_client:
-            client.close()
-
-    sweep = _DeepSweepResult(
-        discovered=set(wallets),
-        leaderboard_entries=0,
-        slices_attempted=0,
-        slices_succeeded=0,
-        per_wallet={w: _WalletSweepMeta(sources={"subgraph"}) for w in wallets},
-    )
-    added = _apply_sweep_to_review_state(state, sweep)
-    _write_review_state(review_path, state)
-    active = sum(1 for r in state.values() if r.status == "active")
-    log.info(
-        "recent_traders_seed discovered=%d added=%d active=%d",
-        len(wallets), added, active,
-    )
-    return {
-        "recent_traders_discovered": len(wallets),
-        "added": added,
-        "active_wallets": active,
-    }
 
 
 def run_prune_wallets(
@@ -3780,16 +3588,9 @@ def main(argv: list[str] | None = None) -> int:
                 wallet_batch_size=args.wallet_batch_size,
                 activity_pages=args.activity_pages,
                 dormant_days=args.dormant_days,
-                seed_recent_traders=not args.no_recent_traders,
-                recent_trader_limit=args.recent_trader_limit,
                 skip_kalshi=not args.include_kalshi,
                 client=client,
             )
-        elif args.mode == "recent-traders":
-            counts = run_recent_traders_seed(
-                limit=args.limit, max_pages=args.pages, client=client,
-            )
-            log.info("recent_traders %s", counts)
         elif args.mode == "prune-wallets":
             counts = run_prune_wallets(
                 dormant_days=args.dormant_days, dry_run=args.dry_run,

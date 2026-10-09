@@ -2,8 +2,8 @@ name: Probe Polygon on-chain trades (read-only)
 
 # Measures whether Polymarket fills can be read directly from Polygon: public RPC
 # range limits, fill density for the V1 (2022 to April 2026) and V2 (April 2026 on)
-# exchanges, decoded fills cross-checked against the Data API, and whether the
-# Goldsky orderbook subgraph still receives trades. Read-only; writes nothing.
+# exchanges, decoded fills cross-checked against the Data API, and per-wallet
+# range limits. Read-only; writes nothing.
 on:
   workflow_dispatch:
 
