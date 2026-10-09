@@ -228,10 +228,27 @@ the pilot, so they should land by about 2026-10-13 (S7).
      reached.
    - **Failures.** A capture failure is reported in the collection result and never
      fails collection.
-   - **Not verified live.** The field names are checked against Polymarket's client
-     source, not against live responses, because this build environment cannot reach
-     Polymarket. The burn-in is the check: the exclusion counts by reason are in
-     every collection result.
+   - **Interrupted collections** *(found 2026-10-09; not fixed)*.
+     - **The loss.** Capture reads only the rows its own collection appended. A
+       collection that stops after storing member fills, whether killed or by an
+       exception, never reaches capture. Recovery keeps the stored rows and rebuilds
+       the dedupe index, so later runs never store them again and no capture reads
+       them. Those fills never become signals, and nothing counts them.
+     - **Why it is not fixed.** Fixing capture changes what the pilot collects, which
+       restarts the 14-day count (S7). Bundle the fix with the next collection change.
+     - **Its size.** At most one run's member fills per incident: about 0.2 signals
+       an hour at the yield of the first two days (10 signals). Its timing is
+       unrelated to outcomes, so it costs power, not validity.
+     - **Disclosure.** The evaluation counts these collections (`collections_stopped`,
+       step 6).
+   - **Verified live** *(2026-10-07)*. The field names were first checked against
+     Polymarket's client source, because this build environment cannot reach
+     Polymarket.
+     - The first three live signals (12:07–14:07 UTC) were captured in full. None hit
+       "no fee details", "fee sources disagree" or "token sources disagree".
+     - By 2026-10-09 01:07 there were 10 signals: 6 captured and 4 excluded, all for an
+       empty ask side at detection ("no book: no asks").
+     - The exclusion counts by reason stay in every collection result.
    - **Finding: fees are material.** Polymarket's 2026 schedule charges takers
      r ≈ 0.03–0.07 on most categories; geopolitics is free. At p = 0.5 and r = 0.05
      that is 1.25¢ a share, 2.5 times the +0.5¢ net effect S6 is powered for. Fees
@@ -253,6 +270,10 @@ the pilot, so they should land by about 2026-10-13 (S7).
    - **Fidelity.** It requests 5 minutes. Each receipt records the points returned
      and their median spacing. Before the freeze, check that the frozen tolerance
      (15 minutes before the horizon) fits the spacing the API actually returns.
+     *Checked 2026-10-08:*
+     - The first 3 windows returned 126 points with a median spacing of 300 s, so
+       5-minute detail is honoured and the tolerance holds.
+     - By 2026-10-09 all 10 windows due had been fetched cleanly.
 4. **Freeze the membership.** Implement S2: cohort-stage exemption, hourly polling of
    members, new seeds tagged for v2.
    *Built 2026-10-07 as the pilot's `cohort_v1` stage, together with step 5's power
@@ -300,6 +321,18 @@ the pilot, so they should land by about 2026-10-13 (S7).
        forecast is the mid at detection.
      - An exclusion check: the 1 h mark move of captured signals against excluded
        ones.
+   - **Collection** *(added 2026-10-09, before the freeze)*. Read from the pilot's run
+     and recovery receipts, for runs started in the window:
+     - finished collections, and how many were partial;
+     - collections that stopped before finishing, meaning the runs recovery repaired.
+       Their stored member fills are lost and not counted (step 2);
+     - the longest gap between finished collections, and how many gaps exceed the
+       3 h detection lag;
+     - stale fills;
+     - capture passes by status.
+
+     It reads only receipts and changes no outcome. It is analysis only, so it does
+     not restart the 14-day count (S7).
 
 ## 5. Constraints and risks
 
