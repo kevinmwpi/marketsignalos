@@ -145,6 +145,56 @@ on its own. A state written before run ids were recorded takes the id `unrecorde
 Checkpoint and watchlist files are now replaced atomically, so new incidents can
 leave only torn JSONL rows and a stale index.
 
+### Kill-and-recover drill, 2026-10-11 (Stage 2 evidence)
+
+**Method.** The supervisor kills any run that exceeds `cycle_timeout_seconds`.
+- A config-only PR (#84) set the timeout to 40 s. It also set the backfill caps to 10 s,
+  only so the config still validates.
+- Collection takes about 85 s, so the 06:07 run was killed mid-collection, with no
+  reaction timing needed.
+- #85 restored the config before the next run.
+
+| Time (UTC) | Event |
+|---|---|
+| 05:30 | #84 merged; its deployment went live at 05:31. |
+| 06:08:05 | The 06:07 run `d4db656eef114309aedbd0e439f57a97` started. |
+| 06:08:44 | The supervisor killed it: `stop_reason` timeout, 40.03 s, return code −9, peak RSS 126 MB, 1.2 CPU-seconds. |
+| 06:30 | #85 merged; the config is identical to before the drill. Live at 06:30:35. |
+| 07:08:57 | The 07:07 run reported `recovery_required` with `recovery_run_id` d4db656e…, and the collect stage `interrupted`. The day's `runtime_remaining_seconds` (6,376) includes the killed run's retained 40 s reservation. |
+| 07:07–15:07 | Nine runs refused to collect (`recovery_required`). |
+| 15:23:51 | `PILOT_RECOVER` set. |
+| 16:10:30–16:10:36 | Recovery `recovered`: no torn tails, no invalid lines, checkpoints valid, activity index rebuilt. |
+| 16:10:36–16:18:03 | The same container's run succeeded, with every due stage: collect, entry prices, closing lines, horizon, score, cohort and gate 13. |
+| 16:23 | `PILOT_RECOVER` cleared. |
+
+**Acceptance.** Blueprint §6 Stage 2 asks for a deliberately killed worker with the
+reservation retained and `recovery_required` set, and for one successful recovery.
+Both are shown above.
+
+**The gap was far longer than planned.**
+- The plan allowed two runs: 06:07 killed, 07:07 refused. In fact no collection ran
+  from 05:10 to 16:10, ten runs.
+- The 07:30 step, setting `PILOT_RECOVER`, was missed: the agent answered its timer
+  wake-up with no action.
+- When the agent caught it at 08:23, the variable change waited for the owner's
+  approval until 15:23.
+- Two earlier attempts, on 10-09 and 10-10, tried to kill the run with a redeploy. Both
+  missed: the agent saw the container start but never issued the redeploy. The method
+  was marginal anyway, because a deploy took 43–54 s to stop the old container and
+  collection lasts about 85 s.
+
+**Cost.**
+- The 16:10 run saw 100 member fills older than the 3-hour detection lag. They are
+  counted as stale, not recorded as signals.
+- Member fills the killed run had already stored are lost and not counted (see above).
+- The gap fell in the burn-in, before the cohort-v1 freeze.
+
+**Finding: nothing bounds time-to-recover.** Recovery is manual by design.
+- Each refused run exits non-zero, so Railway shows it as failed, but nothing alerts
+  anyone. An incident lasts until someone looks.
+- Before the evaluation window opens, a stuck pilot needs an alert: Railway crash
+  notifications, or a scheduled check of the "Pilot result" status.
+
 ## Budget envelope, not a cost guarantee
 
 Reserve a planning allowance of $4 for the worker, $7 for public serving, $2 for

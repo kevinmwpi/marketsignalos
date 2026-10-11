@@ -538,7 +538,12 @@ dedupe-index risk (the index starts empty; the receipts' peak RSS tracks its gro
 Retention, the recovery procedure and the billing alert are still open.
 *2026-10-07:* the recovery procedure exists (`pilot_recovery.py`; operator-triggered by
 the `PILOT_RECOVER` service variable, no shell needed; procedure in
-`docs/lean-pilot.md`). The kill-and-recover drill is still to be run. Entry-price
+`docs/lean-pilot.md`). *2026-10-11: the kill-and-recover drill passed.* A temporary
+40 s run timeout made the supervisor kill the 06:07 run mid-collection. The next run
+reported `recovery_required` with the reservation retained, and `PILOT_RECOVER`
+recovered it at 16:10. Operator misses stretched the planned two-run gap to ten runs.
+The finding: nothing alerts on a stuck pilot, so time-to-recover depends on someone
+noticing. Details are in `docs/lean-pilot.md`, "Kill-and-recover drill". Entry-price
 storage is compressed (PR #67), but retention for score generations is still open,
 and so is the billing alert, which the owner sets. *2026-10-07: the owner set the $10
 alert and the $15 workspace compute limit* (owner-reported). Service metrics for the
