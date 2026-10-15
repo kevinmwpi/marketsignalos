@@ -190,6 +190,7 @@ Manual decisions (`matched_by="manual"`) override auto decisions on subsequent m
 3. **Activity sample depth.** Default `max-pages-per-wallet=40` (~20k events). Historical depth beyond that requires `--full-backfill`.
 4. **Postgres backend not wired.** All stores fall through to JSONL. Postgres stubs exist in `storage.py` for the eventual migration. Tracked as Phase 7.5.
 5. **TF-IDF over neural embeddings.** Picked for zero-dependency simplicity. Recall on long paraphrases ("Will Donald Trump win the 2024 election?" vs "2024 US Presidential winner: Trump?") is below ideal. Tracked for Phase 8 as a swap to `sentence-transformers` if precision/recall numbers demand it.
+6. **Wallet discovery is leaderboard-only.** The deep pipeline (`deep-pipeline`, `POST /ingestor/run/deep`) used to add recent on-chain traders from the Goldsky orderbook subgraph, and to fall back to that subgraph when a wallet's Data API history hit its page cap. Goldsky shut the subgraph down after Polymarket's V2 migration (`ENDPOINT_DEPRECATED`, see `benchmarks/2026-09-29-polygon-logs-probe.md`), so both paths were removed on 2026-10-08, along with the `recent-traders` subcommand and the `--recent-trader-limit` and `--no-recent-traders` flags. Every deep run's `warning` now reads "subgraph discovery unavailable (deprecated 2026)", and an incomplete history resumes from its cursor on the next run. Chain-log discovery (blueprint Stage 4) is the planned replacement.
 
 ---
 

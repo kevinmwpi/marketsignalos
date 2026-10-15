@@ -242,7 +242,9 @@ class PolymarketWalletReviewState:
     orders: list[str] = field(default_factory=list)
     # Discovery provenance: which sources surfaced this wallet, e.g.
     # "leaderboard" (categorized matrix sweep) and/or "subgraph" (recent
-    # on-chain fills). Empty on rows written before this field existed.
+    # on-chain fills; that source was removed on 2026-10-08 when Goldsky shut
+    # the subgraph down, so only older rows carry it). Empty on rows written
+    # before this field existed.
     sources: list[str] = field(default_factory=list)
     archived_at: str | None = None
     archived_reason: str | None = None

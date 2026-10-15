@@ -874,9 +874,7 @@ def test_run_pipeline_seeds_the_day_window_from_the_ranked_leaderboard(
 def test_run_pipeline_seeds_volume_only_by_default(
     tmp_path: Path, monkeypatch: Any,
 ) -> None:
-    """The shallow pipeline must drop the profit/PnL leaderboard (luck bias)
-    and must NOT touch the subgraph — recent-trader discovery lives only in the
-    deep pipeline, which can absorb an unbounded wallet set."""
+    """The shallow pipeline must drop the profit/PnL leaderboard (luck bias)."""
     orders_called: list[str] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -888,8 +886,6 @@ def test_run_pipeline_seeds_volume_only_by_default(
             ])
         if "gamma-api.polymarket.com" in url:
             return httpx.Response(200, json=[])
-        if "api.goldsky.com" in url:
-            raise AssertionError("shallow pipeline must not call the subgraph")
         return httpx.Response(200, json=[])
 
     monkeypatch.setenv("POLYMARKET_DATA_DIR", str(tmp_path))
