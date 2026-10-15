@@ -289,6 +289,16 @@ the pilot, so they should land by about 2026-10-13 (S7).
      neither polled nor tiered unless it is a frozen member, which the cohort stage
      never excludes. The fix changes what the pilot collects, so it restarts the
      14-day count (S7).
+   - *Fixed 2026-10-15:* from 2026-10-14 08:11, one or two polled wallets, most
+     likely members, could not finish their recent activity refresh. A collection
+     fetches two pages per wallet, newest first, and kept the checkpoint until a walk
+     reached it, so a backlog bigger than two pages restarted below itself every hour.
+     The newest pages were still stored, so all 19 signals of the 24 hours to 10-15
+     09:40 were captured. The backlog's older trades were never collected. Now the
+     checkpoint passes the stored pages and later collections fill the skipped range
+     (`docs/lean-pilot.md`). Late-filled trades are more than 3 h old, so capture
+     counts them as stale fills, not signals. The fix changes what the pilot
+     collects, so it restarts the 14-day count (S7).
 5. **Power count and freeze.** Count T2's events over the last 14 days and set the
    window (S6). Commit the frozen config, record its hash in the blueprint, and open
    the window.

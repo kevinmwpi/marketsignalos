@@ -79,6 +79,11 @@ class WalletCheckpointStore(Protocol):
     def set_last_timestamp(self, wallet: str, timestamp: int) -> None: ...
 
 
+class ActivityGapStore(Protocol):
+    def get_gap(self, wallet: str) -> tuple[int, int] | None: ...
+    def set_gap(self, wallet: str, gap: tuple[int, int] | None) -> None: ...
+
+
 class EnrichmentStore(Protocol):
     def write_enrichment(self, enrichments: list[PolymarketWalletEnrichment]) -> int: ...
 
@@ -582,6 +587,60 @@ class JsonWalletCheckpointStore:
         # _read would reject on every later run (pilot_recovery repairs old files).
         tmp = self._path.with_suffix(self._path.suffix + ".tmp")
         tmp.write_text(json.dumps(self._state, indent=2, sort_keys=True), encoding="utf-8")
+        tmp.replace(self._path)
+
+
+ACTIVITY_GAPS_FILE = "polymarket_activity_gaps.json"
+
+
+class JsonActivityGapStore:
+    """
+    Per-wallet activity a request-capped refresh skipped, filled top-down by later runs.
+
+    A gap ``(floor, cursor)`` means trades with ``floor < timestamp <= cursor`` may be
+    missing, while everything newer, up to the wallet's checkpoint, is stored. It lives
+    apart from the hydration rows on purpose: that loader drops a row with an unknown
+    key, so a new hydration field would make a rollback discard every wallet's state.
+    """
+
+    def __init__(self, path: Path) -> None:
+        self._path = path
+        self._path.parent.mkdir(parents=True, exist_ok=True)
+        self._state: dict[str, tuple[int, int]] = self._read()
+
+    def __len__(self) -> int:
+        return len(self._state)
+
+    def get_gap(self, wallet: str) -> tuple[int, int] | None:
+        return self._state.get(wallet.lower())
+
+    def set_gap(self, wallet: str, gap: tuple[int, int] | None) -> None:
+        key = wallet.lower()
+        if self._state.get(key) == gap:
+            return
+        if gap is None:
+            del self._state[key]
+        else:
+            self._state[key] = gap
+        self._write()
+
+    def _read(self) -> dict[str, tuple[int, int]]:
+        if not self._path.exists():
+            return {}
+        raw = json.loads(self._path.read_text(encoding="utf-8"))
+        if not isinstance(raw, dict):
+            raise ValueError(f"{self._path} must contain a JSON object")
+        return {
+            str(wallet).lower(): (int(gap[0]), int(gap[1]))
+            for wallet, gap in raw.items()
+            if isinstance(gap, list) and len(gap) == 2
+        }
+
+    def _write(self) -> None:
+        # Atomic like the checkpoints: a kill leaves the old or the new file.
+        tmp = self._path.with_suffix(self._path.suffix + ".tmp")
+        state = {wallet: list(gap) for wallet, gap in self._state.items()}
+        tmp.write_text(json.dumps(state, indent=2, sort_keys=True), encoding="utf-8")
         tmp.replace(self._path)
 
 

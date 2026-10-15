@@ -70,6 +70,8 @@ from .polymarket_client import PolymarketClient, PolymarketClientConfig
 from .rate_limiter import HostRateLimiter
 from .skill_computation import compute_enrichment_outputs_streaming
 from .storage import (
+    ACTIVITY_GAPS_FILE,
+    ActivityGapStore,
     ActivityStore,
     ClosedPositionStore,
     DualActivityStore,
@@ -86,6 +88,7 @@ from .storage import (
     DualWalletHydrationStore,
     DualWalletValueStore,
     EnrichmentStore,
+    JsonActivityGapStore,
     JsonlActivityStore,
     JsonlClosedPositionStore,
     JsonlEnrichmentStore,
@@ -330,6 +333,7 @@ class _Stores:
     markets: MarketStore
     values: WalletValueStore
     checkpoints: WalletCheckpointStore
+    activity_gaps: ActivityGapStore
     enrichment: EnrichmentStore
     wallet_bets: WalletBetStore
     price_snapshots: PriceSnapshotStore
@@ -433,6 +437,7 @@ def _build_stores(data_dir: Path) -> _Stores:
         markets=markets,
         values=values,
         checkpoints=checkpoints,
+        activity_gaps=JsonActivityGapStore(data_dir / ACTIVITY_GAPS_FILE),
         enrichment=enrichment,
         wallet_bets=wallet_bets,
         price_snapshots=price_snapshots,
@@ -609,6 +614,22 @@ def _paginate_activity_window(
         oldest_timestamp=oldest_seen,
         boundary_complete=boundary_complete,
     )
+
+
+def _gap_top(
+    oldest: int,
+    boundary_complete: bool,
+    budget: _ActivityRequestBudget | None,
+    errors: list[str],
+) -> int:
+    """Newest timestamp a stopped walk may not have stored, given its oldest page."""
+    if boundary_complete:
+        return oldest - 1
+    if budget is not None and budget.hit_limit:
+        return oldest  # the budget ran out inside that timestamp: revisit it
+    # More trades share that timestamp than the offset bound can page through.
+    errors.append("activity boundary exceeded offset safety bound")
+    return oldest - 1
 
 
 def _paginate_activity(
@@ -1100,6 +1121,10 @@ def _hydrate_single_wallet(
         if max_activity_requests is not None else None
     )
     recent_complete = since is None
+    # Trades an earlier capped refresh skipped (JsonActivityGapStore). A full
+    # backfill walks everything again, so it drops the record.
+    gap = None if full_backfill else stores.activity_gaps.get_gap(addr)
+    gap_opened = False
 
     def _sink(events: list[PolymarketActivity]) -> None:
         nonlocal activity_written, newest_ts
@@ -1136,6 +1161,42 @@ def _hydrate_single_wallet(
                 request_budget=activity_budget,
             )
             recent_complete = recent.exhausted and recent.boundary_complete
+            if (
+                not recent_complete and activity_budget is not None
+                and gap is None and recent.oldest_timestamp is not None
+            ):
+                # The newest pages are stored but the walk stopped above the
+                # checkpoint. Retaining the checkpoint restarted every later run below
+                # a backlog that only grew, so from 2026-10-14 one wallet failed every
+                # run. Record the skipped range instead and let the checkpoint pass.
+                gap = (since, _gap_top(
+                    recent.oldest_timestamp, recent.boundary_complete,
+                    activity_budget, state.errors,
+                ))
+                gap_opened = True
+
+        if gap is not None:
+            # One gap at a time: a wallet that overflows again while it is open keeps
+            # its checkpoint, so this walk always resumes where the last one stopped.
+            if rate_limiter is not None:
+                rate_limiter.wait()
+            fill = _paginate_activity_window(
+                client,
+                addr,
+                page_size=activity_page_size,
+                max_pages=max_pages,
+                since_timestamp=gap[0],
+                end_timestamp=gap[1],
+                on_page=_sink,
+                request_budget=activity_budget,
+            )
+            if fill.exhausted and fill.boundary_complete:
+                gap = None
+            elif fill.oldest_timestamp is not None:
+                gap = (gap[0], _gap_top(
+                    fill.oldest_timestamp, fill.boundary_complete,
+                    activity_budget, state.errors,
+                ))
 
         if full_backfill:
             state.activity_history_complete = False
@@ -1178,8 +1239,12 @@ def _hydrate_single_wallet(
                 rate_limiter=rate_limiter,
                 on_page=_sink,
             )
+        if gap is not None:
+            state.activity_history_complete = False  # trades missing until it is filled
         if activity_budget is not None:
-            if not recent_complete:
+            if gap_opened and gap is not None:
+                state.errors.append("recent activity overflow; gap queued for backfill")
+            elif not recent_complete and not gap_opened:
                 state.activity_history_complete = False
                 state.errors.append("recent activity refresh incomplete; checkpoint retained")
             if activity_budget.hit_limit:
@@ -1197,8 +1262,12 @@ def _hydrate_single_wallet(
     def _write() -> None:
         nonlocal positions_written, values_written
         # Activity rows were already streamed to disk during pagination; here we
-        # only advance the checkpoint to the newest timestamp we saw.
-        if newest_ts is not None and (activity_budget is None or recent_complete):
+        # only advance the checkpoint to the newest timestamp we saw. The gap is
+        # saved first, so a kill between the two writes cannot lose the skipped range.
+        stores.activity_gaps.set_gap(addr, gap)
+        if newest_ts is not None and (
+            activity_budget is None or recent_complete or gap_opened
+        ):
             stores.checkpoints.set_last_timestamp(addr, newest_ts)
             state.newest_activity_timestamp = max(
                 state.newest_activity_timestamp or 0, newest_ts
@@ -1323,9 +1392,11 @@ def run_wallets(
 ) -> tuple[int, int, int]:
     """Hydrate wallets while persisting fail-closed trust inputs.
 
-    An explicit activity request budget covers recent/history/boundary calls,
-    disables subgraph fallback, and retains a checkpoint after a partial recent
-    refresh. It does not cap other endpoints, retries, wall time, or RAM.
+    An explicit activity request budget covers recent/gap/history/boundary calls
+    and disables subgraph fallback. After a partial recent refresh the checkpoint
+    passes the stored newest pages and the skipped range is filled by later runs,
+    one range per wallet at a time (JsonActivityGapStore). It does not cap other
+    endpoints, retries, wall time, or RAM.
     """
     if max_activity_requests_per_wallet is not None and max_activity_requests_per_wallet < 1:
         raise ValueError("max_activity_requests_per_wallet must be positive")

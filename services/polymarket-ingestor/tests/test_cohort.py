@@ -12,6 +12,8 @@ from marketsignalos_polymarket.models import PolymarketWalletHydration
 from marketsignalos_polymarket.runner import parse_activity_row
 from marketsignalos_polymarket.score_snapshot import ENRICHMENT
 from marketsignalos_polymarket.storage import (
+    ACTIVITY_GAPS_FILE,
+    JsonActivityGapStore,
     JsonlActivityStore,
     JsonlWalletHydrationStore,
     JsonWalletCheckpointStore,
@@ -51,6 +53,9 @@ def data_dir(tmp_path: Path) -> Path:
     checkpoints = JsonWalletCheckpointStore(tmp_path / "polymarket_wallet_checkpoints.json")
     for wallet in (KEEP, DROP):
         checkpoints.set_last_timestamp(wallet, 1_790_000_000)
+    gaps = JsonActivityGapStore(tmp_path / ACTIVITY_GAPS_FILE)
+    for wallet in (KEEP, DROP):
+        gaps.set_gap(wallet, (1_789_000_000, 1_789_500_000))
     (tmp_path / "polymarket_wallet_economics_cache.json").write_text(json.dumps(
         {KEEP: {"ALL": {"pnl_usdc": 1.0}}, DROP: {"ALL": {"pnl_usdc": 2.0}}}))
     for name in ("polymarket_positions.jsonl", "polymarket_wallet_values.jsonl"):
@@ -86,7 +91,7 @@ def test_purging_removes_the_wallet_everywhere_and_keeps_dedupe_exact(data_dir: 
         cohort.WATCHLIST_FILE: 1, cohort.ACTIVITY_FILE: 3,
         "polymarket_positions.jsonl": 2, "polymarket_wallet_hydration.jsonl": 1,
         "polymarket_wallet_values.jsonl": 2, "polymarket_wallet_checkpoints.json": 1,
-        "polymarket_wallet_economics_cache.json": 1,
+        "polymarket_wallet_economics_cache.json": 1, ACTIVITY_GAPS_FILE: 1,
     }
     assert (data_dir / cohort.WATCHLIST_FILE).read_text() == f"# watchlist\n{KEEP}\n"
     for name in (cohort.ACTIVITY_FILE, "polymarket_positions.jsonl",

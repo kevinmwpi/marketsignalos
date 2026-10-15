@@ -39,7 +39,7 @@ from typing import Any
 
 from .jsonl_archive import finish_pending, iter_lines, segment_paths
 from .score_snapshot import ENRICHMENT, load_current
-from .storage import _write_index
+from .storage import ACTIVITY_GAPS_FILE, _write_index
 
 log = logging.getLogger("marketsignalos.polymarket.cohort")
 
@@ -58,6 +58,7 @@ WALLET_JSONL = (
 WALLET_JSON_OBJECTS = (
     "polymarket_wallet_checkpoints.json",
     "polymarket_wallet_economics_cache.json",
+    ACTIVITY_GAPS_FILE,
 )
 EXCLUDED_ARCHETYPES = frozenset({"systematic"})
 
