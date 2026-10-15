@@ -18,7 +18,11 @@ from marketsignalos_polymarket.cohort_capture import (
     walk_asks,
 )
 from marketsignalos_polymarket.runner import parse_activity_row
-from marketsignalos_polymarket.storage import JsonlActivityStore
+from marketsignalos_polymarket.storage import (
+    ACTIVITY_GAPS_FILE,
+    JsonActivityGapStore,
+    JsonlActivityStore,
+)
 
 NOW = datetime(2026, 10, 20, 12, 0, tzinfo=UTC)
 T2 = "0x" + "a" * 40
@@ -256,8 +260,10 @@ def test_collection_captures_its_own_new_rows_before_compaction(
     monkeypatch.setattr(runner, "run_pipeline", fake_pipeline)
     monkeypatch.setattr(cohort_capture, "capture", fake_capture)
     monkeypatch.setattr(pilot, "ACTIVITY_COMPACT_MIN_BYTES", 1)  # compaction follows
+    JsonActivityGapStore(data / ACTIVITY_GAPS_FILE).set_gap("0xgap", (1, 2))
     result = pilot._execute_stage("collect", data, pilot.PilotConfig(), "run7")
     assert result["cohort_v1_capture"]["captured"] == 1
+    assert result["activity_gaps_open"] == 1
     assert result["activity_compaction"]["segments"] == 1
     assert [row["signal_id"] for row in _signals(data)] == [f"run7:{T2}:{C1}:0"]
 
