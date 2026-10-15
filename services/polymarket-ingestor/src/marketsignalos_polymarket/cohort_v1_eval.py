@@ -28,6 +28,10 @@ the CLV-only ablation; T2's settlement ROI (unresolved in the analysed data:
 censored); T2's calibration, Brier score and log loss, for the model's forecast
 (the wallet's entry price moved by its frozen posterior edge) and for the market's mid
 at detection; and whether excluded signals moved differently from captured ones.
+
+**Collection.** How completely the pilot collected during the window, from its run
+and recovery receipts, so that signals that never existed are not mistaken for none
+(see ``collection``).
 """
 from __future__ import annotations
 
@@ -38,10 +42,12 @@ import random
 from collections import Counter, defaultdict
 from collections.abc import Iterable
 from datetime import UTC, datetime, timedelta
+from itertools import pairwise
 from pathlib import Path
 from typing import Any
 
 from .closing_lines import _parse_time, _read_jsonl
+from .cohort_capture import MAX_DETECTION_LAG_SECONDS
 from .cohort_prices import load_signal_prices
 from .cohort_v1 import config_hash
 
@@ -50,6 +56,7 @@ SIGNALS_FILE = "signals.jsonl"
 RESULT_FILE = "result.json"
 MARKETS_FILE = "polymarket_markets.jsonl"
 ENRICHMENT = "polymarket_wallet_enrichment.jsonl"
+CONTROL_DIR = ".lean-pilot"  # lean_pilot's run receipts and pilot_recovery's receipts
 EVAL_LAG = timedelta(hours=24)  # step 3 fetches a window 7 h after detection, 6-hourly
 HORIZONS = {"1h": 3600, "6h": 6 * 3600}
 TOLERANCE_SECONDS = 15 * 60
@@ -237,6 +244,81 @@ def calibration_bins(pairs: list[tuple[float, int]]) -> list[dict[str, Any]]:
             for b, rows in sorted(bins.items())]
 
 
+# ── Collection coverage ──────────────────────────────────────────────────────
+
+def _json_object(path: Path) -> dict[str, Any] | None:
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return value if isinstance(value, dict) else None
+
+
+def collection(data_dir: Path, config: dict[str, Any]) -> dict[str, Any]:
+    """How completely the pilot collected during the window, from its receipts.
+
+    A member's fill becomes a signal only if a collection stores it and that run's
+    capture reads it within ``MAX_DETECTION_LAG_SECONDS``. What escapes is counted:
+
+    - ``stale_fills``: fills first seen too late, summed over the capture results;
+    - ``capture_by_status``: capture passes, by status (a failed pass lost its signals);
+    - ``collections_stopped``: collections that stopped before finishing, which are
+      the runs ``pilot_recovery`` repaired. Fills such a run had stored are never read
+      by a later capture, and how many there were is unknown;
+    - gaps between the starts of finished collections, and the window's ends. Fills go
+      stale only in a gap longer than the lag.
+
+    Runs count by start time in ``[opens, evaluation_date)``.
+    """
+    opens = datetime.fromisoformat(str(config["window"]["opens"]))
+    ends = evaluation_date(config)
+    control = data_dir / CONTROL_DIR
+    started_by_run: dict[str, datetime] = {}
+    starts: list[datetime] = []
+    partial = stale = unreadable = 0
+    capture: Counter[str] = Counter()
+    for path in sorted((control / "runs").glob("*/receipt.json")):
+        receipt = _json_object(path)
+        started = _parse_time(receipt.get("started_at")) if receipt else None
+        if receipt is None or started is None:
+            unreadable += 1
+            continue
+        started_by_run[path.parent.name] = started
+        stages = receipt.get("stages")
+        collect = stages.get("collect") if isinstance(stages, dict) else None
+        if not opens <= started < ends or not isinstance(collect, dict):
+            continue
+        starts.append(started)
+        if collect.get("status") == "partial":
+            partial += 1
+        result = collect.get("result")
+        passed = result.get("cohort_v1_capture") if isinstance(result, dict) else None
+        if not isinstance(passed, dict):
+            capture["missing"] += 1
+            continue
+        fills = passed.get("stale_fills")
+        if isinstance(fills, int):
+            stale += fills
+        detail = passed.get("reason") or passed.get("error_type")
+        status = str(passed.get("status", "missing"))
+        capture[f"{status}: {detail}" if detail else status] += 1
+    stopped = sum(
+        1 for path in (control / "recoveries").glob("*.json")
+        if (started := started_by_run.get(path.stem)) is not None and opens <= started < ends)
+    gaps = [(b - a).total_seconds() for a, b in pairwise([opens, *sorted(starts), ends])]
+    return {
+        "window_hours": round((ends - opens).total_seconds() / 3600, 1),
+        "collections": len(starts),
+        "collections_partial": partial,
+        "collections_stopped": stopped,
+        "longest_gap_hours": round(max(gaps) / 3600, 2),
+        "gaps_over_detection_lag": sum(gap > MAX_DETECTION_LAG_SECONDS for gap in gaps),
+        "stale_fills": stale,
+        "capture_by_status": dict(sorted(capture.items())),
+        "unreadable_receipts": unreadable,
+    }
+
+
 # ── The evaluation ───────────────────────────────────────────────────────────
 
 def evaluate(data_dir: Path, config: dict[str, Any], *, now: datetime) -> dict[str, Any]:
@@ -334,6 +416,7 @@ def evaluate(data_dir: Path, config: dict[str, Any], *, now: datetime) -> dict[s
         "calibration": {"model": {**scores(model), "bins": calibration_bins(model)},
                         "market_mid": {**scores(market), "bins": calibration_bins(market)}},
         "exclusion_check_1h_move": {k: summarize(v) for k, v in moves.items()},
+        "collection": collection(data_dir, config),
         "method": {"bootstrap_draws": BOOTSTRAP_DRAWS, "seed": BOOTSTRAP_SEED,
                    "tolerance_seconds": TOLERANCE_SECONDS, "horizons": HORIZONS},
     }

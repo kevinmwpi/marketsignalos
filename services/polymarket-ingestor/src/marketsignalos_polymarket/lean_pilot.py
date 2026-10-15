@@ -399,6 +399,7 @@ def _execute_stage(stage: str, data_dir: Path, config: PilotConfig,
     from .cohort_capture import activity_offset
     from .cohort_v1 import frozen_members, member_wallets
     from .runner import run_pipeline
+    from .storage import ACTIVITY_GAPS_FILE, JsonActivityGapStore
     # Frozen members are never excluded (plan S2). A provisional member the cohort
     # stage has since excluded is not polled: its rows were purged, and polling it
     # would refetch its whole history only for the next cohort run to purge again
@@ -417,6 +418,8 @@ def _execute_stage(stage: str, data_dir: Path, config: PilotConfig,
         priority_wallets=members,  # Stage 3 members: polled every run (plan S2)
     ).to_dict()
     result["cohort_v1_members_polled"] = len(members)
+    # Wallets whose skipped trades later runs are still filling (JsonActivityGapStore).
+    result["activity_gaps_open"] = len(JsonActivityGapStore(data_dir / ACTIVITY_GAPS_FILE))
     result["status"] = (
         "partial" if not result["windows_succeeded"] or result.get("wallets_with_errors", 0)
         else "succeeded"

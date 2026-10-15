@@ -28,8 +28,8 @@ The default configuration is committed in `deploy/lean-pilot.json`:
 | Wallet batch | 20 | Oldest-polled first within the shallow cohort plus seeds never polled, which go first |
 | Position snapshots | Latest 2 per wallet | Older snapshots are dropped after each collection; the exit-signal watermark is kept |
 | Cohort v1 (Stage 3) | Daily in `deploy/lean-pilot.json`, freeze time unset; off in code | `cohort_v1.py` stage. Until `cohort_v1_freeze_at`, it rebuilds a provisional member list (T2, its matched comparison set, and the CLV-only ablation's wallets) from the current forecast-v5 generation. Collection polls those members first in every run (they count toward the wallet batch, 28 since 2026-10-07 so that about 12 places a run stay in the rotation). At the first cycle after the freeze time, it writes `cohort-v1/frozen-config.json` once, from the newest score generation that started at or before the freeze time (a later one would carry post-cutoff data), with the window from the power count. It logs the whole config and its hash, to be committed and recorded in the blueprint. Frozen members are never excluded by the cohort stage. Before the freeze, a member the cohort stage excludes is no longer polled, and it leaves the list at the next rebuild. Excluded overrides any tier (fixed 2026-10-07: an excluded member had been polled again, its whole history refetched and purged again). The owner sets the freeze time (plan S7) |
-| Cohort v1 evaluation (Stage 3 step 6) | Once, from the frozen `cohort_v1` stage | `cohort_v1_eval.py`. At the first frozen-stage run at least 24 h after the window's evaluation date, it computes the pre-registered result: T2's event-weighted net 1 h improvement against zero (event-cluster bootstrap), the secondaries and the ablations. It writes `cohort-v1/result.json` once and logs it in parts. It refuses to run before the evaluation date |
-| Cohort v1 signal capture (Stage 3 step 2) | Whenever a member list exists | `cohort_capture.py`, inside collection and before compaction. Each member's BUY fills of one market and outcome, first seen by this collection and at most 3 h old, become one signal. For each signal it reads the CLOB book (a $100 clip walked through the asks) and the taker fee (`/clob-markets` `fd`, cross-checked against Gamma), and appends a row to `cohort-v1/signals.jsonl` with the cohort ID and config hash. A signal without a measured cost is written as excluded, with its reasons. The collection result carries counts only (`cohort_v1_capture`). A capture failure is reported, never raised. Field names are not yet verified against live responses |
+| Cohort v1 evaluation (Stage 3 step 6) | Once, from the frozen `cohort_v1` stage | `cohort_v1_eval.py`. At the first frozen-stage run at least 24 h after the window's evaluation date, it computes the pre-registered result: T2's event-weighted net 1 h improvement against zero (event-cluster bootstrap), the secondaries and the ablations. It also reports collection coverage from the run and recovery receipts (`collection`): finished, partial and stopped collections, gaps, stale fills and capture status. It writes `cohort-v1/result.json` once and logs it in parts. It refuses to run before the evaluation date |
+| Cohort v1 signal capture (Stage 3 step 2) | Whenever a member list exists | `cohort_capture.py`, inside collection and before compaction. Each member's BUY fills of one market and outcome, first seen by this collection and at most 3 h old, become one signal. For each signal it reads the CLOB book (a $100 clip walked through the asks) and the taker fee (`/clob-markets` `fd`, cross-checked against Gamma), and appends a row to `cohort-v1/signals.jsonl` with the cohort ID and config hash. A signal without a measured cost is written as excluded, with its reasons. The collection result carries counts only (`cohort_v1_capture`). A capture failure is reported, never raised. Field names were confirmed on live runs on 2026-10-07. Member fills stored by a collection that stops before capture are lost and not counted (see recovery below) |
 | Cohort v1 signal prices (Stage 3 step 3) | With the entry-price stage (every 6 h) | `cohort_prices.py` runs first in that stage, capped at 60 s. For each signal with a token, it fetches the bought token's `/prices-history` from 1 h before detection to 6 h after, at 5-minute fidelity. A window is fetched once it has ended and an hour has passed. Rows go to `cohort-v1/price_observations.jsonl` and receipts to `cohort-v1/price_receipts.jsonl`. A final window is never fetched again, and a failed one is retried after an hour. The result (`cohort_v1_prices`) carries counts and the median point spacing. A failure is reported, never raised, and the backfill still runs |
 | Activity archive | Compacted at 32 MiB in code (`ACTIVITY_COMPACT_MIN_BYTES`) | Since Stage 3 step 0, a collection that leaves `polymarket_activity.jsonl` at 32 MiB or more moves its rows into a gzip segment under `polymarket_activity.jsonl.archive/` (`jsonl_archive.py`). Every reader goes through `iter_lines`, so rows, order and scores are unchanged; a test rescoring forecast-v5 before and after confirms it. A duplicated activity row is a fill counted twice, so compaction is exactly-once under a crash at any step (rename to a pending file, then a segment whose rename is the commit). The cohort purge also drops excluded wallets' rows from segments. Estimated 4× smaller from a pessimistic sample; the collection result's `activity_compaction` and `storage_mb` give the real figure |
 | Watchlist cap | 64 wallets | The Railway Hobby volume is capped at 5 GB and every wallet keeps its activity history, so seeding stops adding wallets at the cap (`seeds_over_cap` counts the ones skipped). Nobody is removed. Raise it only with `storage_mb` evidence |
@@ -37,7 +37,7 @@ The default configuration is committed in `deploy/lean-pilot.json`:
 | Gate-13 power diagnostic | Daily in `deploy/lean-pilot.json`; off in code | Plan step 3 (`gate13_power.py`): scores forecast-v4 and forecast-v5 into a scratch directory (deleted afterwards), and writes `diagnostics/gate13/<date>.json` with per-wallet v5 CLV power and every excluded fill by reason (an unpriced hour split into `not_ended`, `fetch_failed` and `not_fetched`). The log line carries gate-13 and tailable counts under both versions, including the wallets the sample minimum alone blocks. Changes no score or threshold |
 | Score version | `forecast-v5` in `deploy/lean-pilot.json` since 2026-10-05; `forecast-v4` in code | `forecast-v5` measures gate 13's CLV 1 h after each buy from the entry-price store (`post_entry_clv.py`, `docs/gate13-clv-v5-plan.md`). The switch changed no counts: 2 gate-13 passes, 0 tailable (`docs/benchmarks/2026-10-05-gate13-power.md`) |
 | Cohort | Daily in `deploy/lean-pilot.json`, and in every cycle that scores or follows a score it has not acted on; off in code | Wallets the scorer labels `systematic` go to `excluded_wallets.txt` for good and their rows are deleted from every per-wallet store (activity dedupe index rebuilt); freed watchlist slots refill from the leaderboard |
-| Activity budget | 10 calls/wallet | Shared across recent, historical, and boundary pagination |
+| Activity budget | 10 calls/wallet | Shared across recent, gap, historical and boundary pagination, at most two pages per walk. When a wallet's newest two pages do not reach its checkpoint, the checkpoint passes them and the skipped range goes to `polymarket_activity_gaps.json`, which later collections fill top-down, one range per wallet at a time (since 2026-10-15; see below). The collection result counts open ranges (`activity_gaps_open`) |
 | Cycle deadline | 20 minutes | Collection plus scoring together, including subprocess startup |
 | Daily runtime allowance | 120 minutes in `deploy/lean-pilot.json` since 2026-10-08 (90 from 2026-10-06); 60 in code | Local UTC-day accounting, with a full cycle reserved before work. At 60 minutes the last 4–6 hourly runs of every day from 2026-10-03 to 2026-10-05 (18:00–23:59 UTC) exited as `budget_exhausted`: a day's work used about 2,600 s by 18:00, leaving less than the 1,200 s reservation. At the measured 0.34 GB peak, the extra 30 minutes costs an estimated under $0.50/month at the rates below. At 90 minutes, on 2026-10-07 a run stopped by a deploy kept its 1,200 s reservation, and the last two runs (22:07, 23:07) were skipped. Skips always fall at the end of the UTC day, which is US evening, so they would under-sample evening signals. The owner raised it to 120 minutes on 2026-10-08, enough for a full day plus one interrupted run |
 | Disk guard | 512 MiB free | No cycle starts below this; the run exits nonzero as `disk_low` so Railway marks it failed. Every plan reports `disk_free_mb`, and each collection reports `storage_mb` per store |
@@ -50,8 +50,9 @@ conditions/eight actual HTTP attempts, durable cooldowns, and partial-work recei
 Positions, economics, generic catalog pagination, and other endpoints are bounded
 by the whole-cycle deadline. Two concurrent wallets and the existing 2-RPS
 pacing setting reduce pressure; that setting is not a hard per-request RPS cap.
-Historical coverage remains incomplete when a cap is reached. Recent checkpoint
-and timestamp-boundary handling retain unfinished work for later collection.
+Historical coverage remains incomplete when a cap is reached. The history cursor,
+the gap ranges and timestamp-boundary handling keep unfinished work for later
+collections.
 
 The worker owns an OS file lock for its entire cycle, preventing another pilot
 worker from overlapping even if the supervisor exits. A child-side deadline
@@ -133,10 +134,98 @@ unused generation for inspection.
    `.lean-pilot/recoveries/<run id>.json`, and the cut bytes sit beside it.
 4. Remove the variable afterwards.
 
+**What recovery cannot restore: cohort-v1 signals.** Capture reads only the rows its
+own collection appended (Stage 3 plan, step 2). An interrupted collection's stored
+member fills are kept, and the rebuilt dedupe index stops later runs storing them
+again, so they never become signals and nothing counts them. Fixing this would restart
+the burn-in, so it is disclosed instead, and the cohort-v1 evaluation counts these
+collections (`collections_stopped`).
+
 A different run id is refused, so a variable left set never repairs a later incident
 on its own. A state written before run ids were recorded takes the id `unrecorded`.
 Checkpoint and watchlist files are now replaced atomically, so new incidents can
 leave only torn JSONL rows and a stale index.
+
+### Kill-and-recover drill, 2026-10-11 (Stage 2 evidence)
+
+**Method.** The supervisor kills any run that exceeds `cycle_timeout_seconds`.
+- A config-only PR (#84) set the timeout to 40 s. It also set the backfill caps to 10 s,
+  only so the config still validates.
+- Collection takes about 85 s, so the 06:07 run was killed mid-collection, with no
+  reaction timing needed.
+- #85 restored the config before the next run.
+
+| Time (UTC) | Event |
+|---|---|
+| 05:30 | #84 merged; its deployment went live at 05:31. |
+| 06:08:05 | The 06:07 run `d4db656eef114309aedbd0e439f57a97` started. |
+| 06:08:44 | The supervisor killed it: `stop_reason` timeout, 40.03 s, return code −9, peak RSS 126 MB, 1.2 CPU-seconds. |
+| 06:30 | #85 merged; the config is identical to before the drill. Live at 06:30:35. |
+| 07:08:57 | The 07:07 run reported `recovery_required` with `recovery_run_id` d4db656e…, and the collect stage `interrupted`. The day's `runtime_remaining_seconds` (6,376) includes the killed run's retained 40 s reservation. |
+| 07:07–15:07 | Nine runs refused to collect (`recovery_required`). |
+| 15:23:51 | `PILOT_RECOVER` set. |
+| 16:10:30–16:10:36 | Recovery `recovered`: no torn tails, no invalid lines, checkpoints valid, activity index rebuilt. |
+| 16:10:36–16:18:03 | The same container's run succeeded, with every due stage: collect, entry prices, closing lines, horizon, score, cohort and gate 13. |
+| 16:23 | `PILOT_RECOVER` cleared. |
+
+**Acceptance.** Blueprint §6 Stage 2 asks for a deliberately killed worker with the
+reservation retained and `recovery_required` set, and for one successful recovery.
+Both are shown above.
+
+**The gap was far longer than planned.**
+- The plan allowed two runs: 06:07 killed, 07:07 refused. In fact no collection ran
+  from 05:10 to 16:10, ten runs.
+- The 07:30 step, setting `PILOT_RECOVER`, was missed: the agent answered its timer
+  wake-up with no action.
+- When the agent caught it at 08:23, the variable change waited for the owner's
+  approval until 15:23.
+- Two earlier attempts, on 10-09 and 10-10, tried to kill the run with a redeploy. Both
+  missed: the agent saw the container start but never issued the redeploy. The method
+  was marginal anyway, because a deploy took 43–54 s to stop the old container and
+  collection lasts about 85 s.
+
+**Cost.**
+- The 16:10 run saw 100 member fills older than the 3-hour detection lag. They are
+  counted as stale, not recorded as signals.
+- Member fills the killed run had already stored are lost and not counted (see above).
+- The gap fell in the burn-in, before the cohort-v1 freeze.
+
+**Finding: nothing bounds time-to-recover.** Recovery is manual by design.
+- Each refused run exits non-zero, so Railway shows it as failed, but nothing alerts
+  anyone. An incident lasts until someone looks.
+- Before the evaluation window opens, a stuck pilot needs an alert: Railway crash
+  notifications, or a scheduled check of the "Pilot result" status.
+
+### Stuck activity checkpoint, 2026-10-14 (fixed 2026-10-15)
+
+The daily health check of 2026-10-15 found 15 of 24 collections partial. One or two
+wallets reported `recent activity refresh incomplete; checkpoint retained` in every
+run from 00:10, and now and then since 2026-10-14 08:11. Members are polled in every
+run, so they were most likely cohort members. The logs give counts, not addresses.
+
+- **Cause.** A collection fetches at most two activity pages per wallet, newest
+  first, and the checkpoint advanced only when the walk reached it. Once a wallet had
+  more than two pages of new activity, every later run restarted from the same
+  checkpoint below a backlog that only grew. The wallet never caught up.
+- **Effect.** The newest pages were still stored in every run, so capture saw new
+  member fills: 19 signals in the 24 hours to 10-15 09:40, all captured, none stale.
+  The backlog's older trades were never collected. That left a hole in the wallet's
+  history and kept it untrusted. A wallet trading more than two pages within an hour
+  would also have lost fills without any count.
+- **Fix.** When the walk stops above the checkpoint, the skipped range is written to
+  `polymarket_activity_gaps.json`, and only then does the checkpoint pass the stored
+  pages. A kill between the two writes therefore keeps the range. Later collections
+  fill it top-down after the recent walk, within the same request budget. Each wallet
+  has at most one range: a wallet that overflows again while its range is open keeps
+  its checkpoint, so the fill always resumes where it stopped. The cohort purge
+  removes excluded wallets' ranges.
+- **Capture.** Filled trades are more than 3 h old, so capture counts them as stale
+  fills, never as signals. Stale fills rise while a range fills.
+- **Rollback.** The ranges live outside the hydration rows, because that loader drops
+  any row with an unknown key. A rollback leaves the file unread: hydration stays
+  readable, but trades in any open range are never collected.
+- **Watch.** `activity_gaps_open` in the collection result should fall to 0 within a
+  few runs.
 
 ## Budget envelope, not a cost guarantee
 

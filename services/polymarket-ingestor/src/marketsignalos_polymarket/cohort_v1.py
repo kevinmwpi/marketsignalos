@@ -43,6 +43,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+from .closing_lines import _parse_time, _read_jsonl
 from .cohort import excluded_wallets
 from .jsonl_archive import iter_lines
 from .score_snapshot import ENRICHMENT, load_generation
@@ -60,6 +61,8 @@ STAGE_DIR = "cohort-v1"  # on the pilot volume: members.json, frozen-config.json
 TARGET_EVENTS = 100  # S6: about 100 independent events detect +0.5c at sigma 2c
 MAX_WINDOW_DAYS = 42
 POWER_LOOKBACK_DAYS = 14
+CAPTURE_MIN_DAYS = 7  # less capture than this in the lookback: fall back to raw buys
+SIGNALS_FILE = "signals.jsonl"
 
 # The gates as the scorer applies them (skill_computation._enrichment_from_rollup).
 # The frozen code hash pins the exact behaviour; this records it for readers.
@@ -301,13 +304,22 @@ def members(config: dict[str, Any]) -> dict[str, Any]:
 
 
 def power_window(data_dir: Path, wallets: Iterable[str], cutoff: datetime) -> dict[str, Any]:
-    """Step 5 (S6): the window from T2's independent events in the 14 days before the
-    cutoff. An event is a distinct event slug a member bought into. Under-powered when
-    even the 42-day cap is not expected to reach the target."""
+    """Step 5 (S6, amended 2026-10-08): the window from T2's captured events.
+
+    The basis is the burn-in's own record: distinct events (event slug, else market)
+    among captured signals by the T2 wallets, detected in the 14 days before the
+    cutoff, per day of capture in that span. Raw buys, S6 as first written,
+    overstate what the test records, because excluded signals, one signal per run
+    and stale fills all drop out (4 of the first 9 signals were excluded). They are
+    reported alongside. With under ``CAPTURE_MIN_DAYS`` of capture in the span, the
+    raw-buy rate is used, and ``basis`` says so. Under-powered when even the 42-day cap
+    is not expected to reach the target.
+    """
     members_set = {wallet.lower() for wallet in wallets}
     end = int(cutoff.timestamp())
-    start = int((cutoff - timedelta(days=POWER_LOOKBACK_DAYS)).timestamp())
-    events: set[str] = set()
+    lookback = cutoff - timedelta(days=POWER_LOOKBACK_DAYS)
+    start = int(lookback.timestamp())
+    raw: set[str] = set()
     for line in iter_lines(data_dir / ACTIVITY_FILE):
         try:
             row = json.loads(line)
@@ -319,17 +331,44 @@ def power_window(data_dir: Path, wallets: Iterable[str], cutoff: datetime) -> di
             continue
         ts = row.get("timestamp")
         if isinstance(ts, int) and not isinstance(ts, bool) and start <= ts < end:
-            events.add(str(row.get("event_slug", "")) or str(row.get("condition_id", "")))
-    per_day = len(events) / POWER_LOOKBACK_DAYS
+            raw.add(str(row.get("event_slug", "")) or str(row.get("condition_id", "")))
+    captured, began = _captured_events(data_dir, members_set, lookback, cutoff)
+    capture_days = ((cutoff - max(lookback, began)).total_seconds() / 86400
+                    if began is not None and began < cutoff else 0.0)
+    if capture_days >= CAPTURE_MIN_DAYS:
+        basis, per_day = "captured_signals", len(captured) / capture_days
+    else:
+        basis, per_day = "raw_buys", len(raw) / POWER_LOOKBACK_DAYS
     needed = math.ceil(TARGET_EVENTS / per_day) if per_day > 0 else None
     days = min(needed, MAX_WINDOW_DAYS) if needed is not None else MAX_WINDOW_DAYS
     return {"opens": cutoff.astimezone(UTC).isoformat(),
             "evaluation_date": (cutoff + timedelta(days=days)).astimezone(UTC).isoformat(),
-            "days": days, "events_last_14_days": len(events),
-            "events_per_day": round(per_day, 3), "target_events": TARGET_EVENTS,
-            "max_days": MAX_WINDOW_DAYS,
+            "days": days, "basis": basis, "events_per_day": round(per_day, 3),
+            "captured_events": len(captured), "capture_days": round(capture_days, 2),
+            "raw_buy_events_last_14_days": len(raw),
+            "raw_buy_events_per_day": round(len(raw) / POWER_LOOKBACK_DAYS, 3),
+            "target_events": TARGET_EVENTS, "max_days": MAX_WINDOW_DAYS,
             "under_powered": needed is None or needed > MAX_WINDOW_DAYS,
             "set_by": "power count at the freeze (build step 5)"}
+
+
+def _captured_events(data_dir: Path, wallets: set[str], start: datetime,
+                     end: datetime) -> tuple[set[str], datetime | None]:
+    """Distinct events among captured signals by ``wallets`` detected in [start, end),
+    and when capture began, taken as its first signal row of any status. That is a
+    little after capture went live if members were quiet at first, which shortens the
+    covered span; the burn-in is 14 days, so it does not bind at the freeze."""
+    events: set[str] = set()
+    began: datetime | None = None
+    for row in _read_jsonl(data_dir / STAGE_DIR / SIGNALS_FILE):
+        detected = _parse_time(row.get("detected_at"))
+        if detected is None:
+            continue
+        began = detected if began is None else min(began, detected)
+        if (row.get("status") == "captured" and start <= detected < end
+                and str(row.get("wallet", "")).lower() in wallets):
+            events.add(str(row.get("event_slug") or row.get("condition_id") or ""))
+    return events, began
 
 
 def run(data_dir: Path, *, now: datetime, freeze_at: datetime | None,

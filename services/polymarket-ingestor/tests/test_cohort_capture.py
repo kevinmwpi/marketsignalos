@@ -18,7 +18,11 @@ from marketsignalos_polymarket.cohort_capture import (
     walk_asks,
 )
 from marketsignalos_polymarket.runner import parse_activity_row
-from marketsignalos_polymarket.storage import JsonlActivityStore
+from marketsignalos_polymarket.storage import (
+    ACTIVITY_GAPS_FILE,
+    JsonActivityGapStore,
+    JsonlActivityStore,
+)
 
 NOW = datetime(2026, 10, 20, 12, 0, tzinfo=UTC)
 T2 = "0x" + "a" * 40
@@ -133,8 +137,10 @@ def test_only_this_runs_fresh_member_buys_become_signals(data: Path) -> None:
     ])
     venue = _venue()
     result = capture(data, offset, "run1", get=venue.get, now_fn=lambda: NOW)
-    assert result == {"status": "succeeded", "signals": 2, "stale_fills": 1, "captured": 2,
-                      "excluded": {}, "seconds": 0.0}
+    assert {k: result[k] for k in ("status", "signals", "stale_fills", "captured",
+                                   "excluded", "seconds")} == {
+        "status": "succeeded", "signals": 2, "stale_fills": 1, "captured": 2,
+        "excluded": {}, "seconds": 0.0}
     first, second = _signals(data)
     assert (first["wallet"], first["groups"], first["fills"]) == (COMPARISON, ["comparison"], 1)
     assert (second["wallet"], second["groups"], second["fills"]) == (T2, ["t2"], 2)
@@ -148,6 +154,9 @@ def test_only_this_runs_fresh_member_buys_become_signals(data: Path) -> None:
     assert first["fee"]["details_present"] is False and first["clip"]["fee_usdc"] == 0
     assert first["token_id"] == f"{C2}-no" and first["token_outcome"] == "No"
     assert venue.calls.count("/markets") == 1  # one Gamma batch for both markets
+    assert result["by_group"] == {"t2": {"signals": 1, "captured": 1},
+                                  "comparison": {"signals": 1, "captured": 1},
+                                  "clv_only": {"signals": 0, "captured": 0}}
 
 
 @pytest.mark.parametrize(("override", "reason"), [
@@ -251,8 +260,10 @@ def test_collection_captures_its_own_new_rows_before_compaction(
     monkeypatch.setattr(runner, "run_pipeline", fake_pipeline)
     monkeypatch.setattr(cohort_capture, "capture", fake_capture)
     monkeypatch.setattr(pilot, "ACTIVITY_COMPACT_MIN_BYTES", 1)  # compaction follows
+    JsonActivityGapStore(data / ACTIVITY_GAPS_FILE).set_gap("0xgap", (1, 2))
     result = pilot._execute_stage("collect", data, pilot.PilotConfig(), "run7")
     assert result["cohort_v1_capture"]["captured"] == 1
+    assert result["activity_gaps_open"] == 1
     assert result["activity_compaction"]["segments"] == 1
     assert [row["signal_id"] for row in _signals(data)] == [f"run7:{T2}:{C1}:0"]
 

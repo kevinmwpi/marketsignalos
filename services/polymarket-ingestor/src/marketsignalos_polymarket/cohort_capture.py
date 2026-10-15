@@ -349,6 +349,11 @@ def _capture_all(data_dir: Path, signals: list[dict[str, Any]], roster: dict[str
         for row in rows:
             out.write(json.dumps(row, sort_keys=True, separators=(",", ":")) + "\n")
     result["captured"] = sum(1 for row in rows if row["status"] == "captured")
+    result["by_group"] = {name: {"signals": sum(name in row["groups"] for row in rows),
+                                 "captured": sum(name in row["groups"]
+                                                 and row["status"] == "captured"
+                                                 for row in rows)}
+                          for name in ("t2", "comparison", "clv_only")}
     result["excluded"] = dict(sorted(excluded.items()))
     result["seconds"] = round(monotonic() - started, 1)
     log.info("cohort capture: %d signals, %d captured, %d stale fills, exclusions %s",

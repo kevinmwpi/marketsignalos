@@ -149,6 +149,89 @@ def test_the_primary_outcome_is_t2s_event_weighted_net_improvement(data: Path) -
     assert model["n"] == 2 and model["brier"] < result["calibration"]["market_mid"]["brier"]
     # The excluded signal's mark moved too: it is checked, never priced.
     assert result["exclusion_check_1h_move"]["excluded"]["signals"] == 1
+    assert result["collection"]["collections"] == 0  # this fixture has no run receipts
+
+
+def _receipt(data: Path, run_id: str, started: datetime, *, status: str = "succeeded",
+             stages: dict[str, Any] | None = None) -> Path:
+    path = data / ".lean-pilot" / "runs" / run_id / "receipt.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({"run_id": run_id, "status": status,
+                                "started_at": started.isoformat(), "stages": stages or {}}))
+    return path
+
+
+def _collect(capture_status: str = "succeeded", *, stage: str = "succeeded",
+             **capture: Any) -> dict[str, Any]:
+    return {"collect": {"status": stage, "result": {
+        "cohort_v1_capture": {"status": capture_status, **capture}}}}
+
+
+def _recovered(data: Path, run_id: str) -> None:
+    path = data / ".lean-pilot" / "recoveries" / f"{run_id}.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({"run_id": run_id, "status": "recovered"}))
+
+
+def test_collection_counts_what_could_not_become_a_signal(tmp_path: Path) -> None:
+    config = _config(evaluation_date=(OPENS + timedelta(hours=10)).isoformat())
+    hour = timedelta(hours=1)
+    _receipt(tmp_path, "before", OPENS - hour, stages=_collect(stale_fills=9))
+    _receipt(tmp_path, "old", OPENS - 2 * hour, status="interrupted")
+    _recovered(tmp_path, "old")  # stopped before the window opened
+    _recovered(tmp_path, "unrecorded")  # no run receipt to place it in time
+    _receipt(tmp_path, "r1", OPENS + hour, stages=_collect(stale_fills=2))
+    _receipt(tmp_path, "killed", OPENS + 2 * hour, status="interrupted")
+    _recovered(tmp_path, "killed")
+    _receipt(tmp_path, "r2", OPENS + 6 * hour,
+             stages=_collect("failed", stage="partial", error_type="HTTPStatusError"))
+    _receipt(tmp_path, "r3", OPENS + 7 * hour, stages=_collect("skipped", reason="no members"))
+    # A run in which collection was not due is not a collection.
+    _receipt(tmp_path, "prices", OPENS + 7.5 * hour,
+             stages={"entry_prices": {"status": "succeeded", "result": {}}})
+    _receipt(tmp_path, "torn", OPENS + 8 * hour).write_text("{")
+    assert cohort_v1_eval.collection(tmp_path, config) == {
+        "window_hours": 10.0, "collections": 3, "collections_partial": 1,
+        "collections_stopped": 1,
+        # Gaps of 1, 5, 1 and 3 hours: only the one across the killed run exceeds 3 h.
+        "longest_gap_hours": 5.0, "gaps_over_detection_lag": 1,
+        "stale_fills": 2,
+        "capture_by_status": {"failed: HTTPStatusError": 1, "skipped: no members": 1,
+                              "succeeded": 1},
+        "unreadable_receipts": 1}
+
+
+def test_collection_reads_the_receipts_the_pilot_and_recovery_write(tmp_path: Path) -> None:
+    from marketsignalos_polymarket import lean_pilot
+    from marketsignalos_polymarket.pilot_recovery import recover
+
+    def execute(stage: str, data: Path, cfg: lean_pilot.PilotConfig,
+                run: str) -> dict[str, Any]:
+        if run == "broken":
+            raise OSError("simulated kill during collection")
+        return {"status": "succeeded",
+                "cohort_v1_capture": {"status": "succeeded", "stale_fills": 1}}
+
+    pilot_config = lean_pilot.PilotConfig()
+    clock = [OPENS]
+    for run_id, minutes in (("ok1", 7), ("broken", 67), ("ok2", 247)):
+        clock[0] = OPENS + timedelta(minutes=minutes)
+        lean_pilot.run_cycle(tmp_path, pilot_config, run_id, execute=execute,
+                             now_fn=lambda: clock[0], monotonic=lambda: 0.0)
+        if run_id == "broken":
+            assert recover(tmp_path, run_id)["status"] == "recovered"
+    config = _config(evaluation_date=(OPENS + timedelta(hours=5)).isoformat())
+    coverage = cohort_v1_eval.collection(tmp_path, config)
+    assert (coverage["collections"], coverage["collections_stopped"]) == (2, 1)
+    assert (coverage["longest_gap_hours"], coverage["gaps_over_detection_lag"]) == (4.0, 1)
+    assert (coverage["stale_fills"], coverage["capture_by_status"]) == (2, {"succeeded": 2})
+
+
+def test_a_window_with_no_collection_is_one_gap(tmp_path: Path) -> None:
+    config = _config(evaluation_date=(OPENS + timedelta(hours=4)).isoformat())
+    coverage = cohort_v1_eval.collection(tmp_path, config)
+    assert (coverage["collections"], coverage["longest_gap_hours"],
+            coverage["gaps_over_detection_lag"]) == (0, 4.0, 1)
 
 
 def test_a_declared_under_powered_null_is_inconclusive(tmp_path: Path) -> None:

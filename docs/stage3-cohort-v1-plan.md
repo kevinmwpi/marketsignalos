@@ -152,6 +152,18 @@ freeze, and capped.*
   100 independent events.
 - Before the freeze, count T2's buys per day over the last 14 days. Set the window to
   the days needed for 100 events, at most 42 days.
+  - *Amended 2026-10-08 (owner's decision):* count T2's **captured** events in the
+    burn-in's own signals, not its raw buys.
+  - Raw buys overstate what the test records. Excluded signals, one signal per run
+    and stale fills all drop out: 4 of the first 9 signals were excluded for empty
+    asks.
+  - A window sized on raw buys could end with far fewer than 100 events while
+    declared powered. A null would then trigger kill criterion 2 when it should read
+    inconclusive.
+  - The raw-buy count is reported alongside. With under 7 days of capture in the
+    lookback, the raw-buy rate is used, and the config says which basis applied.
+  - Each hourly capture result now counts signals by group (T2, comparison and
+    CLV-only), so the yield can be watched during the burn-in.
 - If 42 days cannot reach 100 events, say so in the frozen config. The test then
   stands as under-powered, and its null is reported as inconclusive, not as evidence
   of no edge.
@@ -216,10 +228,27 @@ the pilot, so they should land by about 2026-10-13 (S7).
      reached.
    - **Failures.** A capture failure is reported in the collection result and never
      fails collection.
-   - **Not verified live.** The field names are checked against Polymarket's client
-     source, not against live responses, because this build environment cannot reach
-     Polymarket. The burn-in is the check: the exclusion counts by reason are in
-     every collection result.
+   - **Interrupted collections** *(found 2026-10-09; not fixed)*.
+     - **The loss.** Capture reads only the rows its own collection appended. A
+       collection that stops after storing member fills, whether killed or by an
+       exception, never reaches capture. Recovery keeps the stored rows and rebuilds
+       the dedupe index, so later runs never store them again and no capture reads
+       them. Those fills never become signals, and nothing counts them.
+     - **Why it is not fixed.** Fixing capture changes what the pilot collects, which
+       restarts the 14-day count (S7). Bundle the fix with the next collection change.
+     - **Its size.** At most one run's member fills per incident: about 0.2 signals
+       an hour at the yield of the first two days (10 signals). Its timing is
+       unrelated to outcomes, so it costs power, not validity.
+     - **Disclosure.** The evaluation counts these collections (`collections_stopped`,
+       step 6).
+   - **Verified live** *(2026-10-07)*. The field names were first checked against
+     Polymarket's client source, because this build environment cannot reach
+     Polymarket.
+     - The first three live signals (12:07–14:07 UTC) were captured in full. None hit
+       "no fee details", "fee sources disagree" or "token sources disagree".
+     - By 2026-10-09 01:07 there were 10 signals: 6 captured and 4 excluded, all for an
+       empty ask side at detection ("no book: no asks").
+     - The exclusion counts by reason stay in every collection result.
    - **Finding: fees are material.** Polymarket's 2026 schedule charges takers
      r ≈ 0.03–0.07 on most categories; geopolitics is free. At p = 0.5 and r = 0.05
      that is 1.25¢ a share, 2.5 times the +0.5¢ net effect S6 is powered for. Fees
@@ -241,6 +270,10 @@ the pilot, so they should land by about 2026-10-13 (S7).
    - **Fidelity.** It requests 5 minutes. Each receipt records the points returned
      and their median spacing. Before the freeze, check that the frozen tolerance
      (15 minutes before the horizon) fits the spacing the API actually returns.
+     *Checked 2026-10-08:*
+     - The first 3 windows returned 126 points with a median spacing of 300 s, so
+       5-minute detail is honoured and the tolerance holds.
+     - By 2026-10-09 all 10 windows due had been fetched cleanly.
 4. **Freeze the membership.** Implement S2: cohort-stage exemption, hourly polling of
    members, new seeds tagged for v2.
    *Built 2026-10-07 as the pilot's `cohort_v1` stage, together with step 5's power
@@ -256,6 +289,16 @@ the pilot, so they should land by about 2026-10-13 (S7).
      neither polled nor tiered unless it is a frozen member, which the cohort stage
      never excludes. The fix changes what the pilot collects, so it restarts the
      14-day count (S7).
+   - *Fixed 2026-10-15:* from 2026-10-14 08:11, one or two polled wallets, most
+     likely members, could not finish their recent activity refresh. A collection
+     fetches two pages per wallet, newest first, and kept the checkpoint until a walk
+     reached it, so a backlog bigger than two pages restarted below itself every hour.
+     The newest pages were still stored, so all 19 signals of the 24 hours to 10-15
+     09:40 were captured. The backlog's older trades were never collected. Now the
+     checkpoint passes the stored pages and later collections fill the skipped range
+     (`docs/lean-pilot.md`). Late-filled trades are more than 3 h old, so capture
+     counts them as stale fills, not signals. The fix changes what the pilot
+     collects, so it restarts the 14-day count (S7).
 5. **Power count and freeze.** Count T2's events over the last 14 days and set the
    window (S6). Commit the frozen config, record its hash in the blueprint, and open
    the window.
@@ -288,6 +331,18 @@ the pilot, so they should land by about 2026-10-13 (S7).
        forecast is the mid at detection.
      - An exclusion check: the 1 h mark move of captured signals against excluded
        ones.
+   - **Collection** *(added 2026-10-09, before the freeze)*. Read from the pilot's run
+     and recovery receipts, for runs started in the window:
+     - finished collections, and how many were partial;
+     - collections that stopped before finishing, meaning the runs recovery repaired.
+       Their stored member fills are lost and not counted (step 2);
+     - the longest gap between finished collections, and how many gaps exceed the
+       3 h detection lag;
+     - stale fills;
+     - capture passes by status.
+
+     It reads only receipts and changes no outcome. It is analysis only, so it does
+     not restart the 14-day count (S7).
 
 ## 5. Constraints and risks
 

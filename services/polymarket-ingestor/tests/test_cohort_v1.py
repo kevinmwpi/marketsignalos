@@ -238,12 +238,39 @@ def test_the_stage_is_provisional_until_the_freeze_then_frozen_once(data: Path) 
         cohort_v1.run(data, now=CUTOFF + timedelta(days=2), freeze_at=CUTOFF, discovery={})
 
 
-def test_the_window_comes_from_the_members_recent_events(data: Path) -> None:
+def test_without_capture_the_window_falls_back_to_raw_buys(data: Path) -> None:
     window = cohort_v1.power_window(data, [WALLET], CUTOFF)
-    # Two buys in the 14 days before the cutoff, both in one event.
-    assert window["events_last_14_days"] == 1
+    # Two buys in the 14 days before the cutoff, both in one event; no signals yet.
+    assert window["basis"] == "raw_buys" and window["raw_buy_events_last_14_days"] == 1
     assert window["days"] == 42 and window["under_powered"] is True
     assert cohort_v1.power_window(data, [], CUTOFF)["under_powered"] is True
+
+
+def test_the_window_comes_from_the_burn_ins_captured_events(data: Path) -> None:
+    # S6 amended 2026-10-08: raw buys overstate what the test records, so the
+    # window is sized on captured T2 events, per day of capture in the lookback.
+    def signal(day: float, event: str, *, status: str = "captured",
+               wallet: str = WALLET) -> str:
+        detected = CUTOFF - timedelta(days=day)
+        return json.dumps({"wallet": wallet, "event_slug": event, "status": status,
+                           "detected_at": detected.isoformat()}) + "\n"
+
+    rows = [signal(10, "first"),  # capture began 10 days before the cutoff
+            *(signal(9 - i * 0.5, f"e{i % 5}") for i in range(10)),  # 5 events
+            signal(2, "x", status="excluded"),  # never priced: not counted
+            signal(1, "other", wallet="0x" + "9" * 40),  # not a T2 wallet
+            signal(-1, "after")]  # after the cutoff
+    stage = data / "cohort-v1"
+    stage.mkdir(exist_ok=True)
+    (stage / "signals.jsonl").write_text("".join(rows))
+    window = cohort_v1.power_window(data, [WALLET], CUTOFF)
+    assert window["basis"] == "captured_signals"
+    assert window["captured_events"] == 6 and window["capture_days"] == 10.0
+    assert window["events_per_day"] == 0.6 and window["days"] == 42  # 167 days needed
+    assert window["under_powered"] is True and window["raw_buy_events_last_14_days"] == 1
+    # Fewer than 7 days of capture in the lookback: back to raw buys.
+    (stage / "signals.jsonl").write_text(signal(3, "e0"))
+    assert cohort_v1.power_window(data, [WALLET], CUTOFF)["basis"] == "raw_buys"
 
 
 def test_the_pilot_freezes_at_the_first_cycle_after_the_freeze_time(tmp_path: Path) -> None:
