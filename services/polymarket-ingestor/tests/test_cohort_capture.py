@@ -14,6 +14,7 @@ from marketsignalos_polymarket.cohort_capture import (
     activity_offset,
     appended_rows,
     capture,
+    capture_start,
     taker_fee,
     walk_asks,
 )
@@ -233,6 +234,80 @@ def test_a_torn_signal_row_is_cut_before_the_next_append(data: Path) -> None:
     assert [row["status"] for row in _signals(data)] == ["captured"]
 
 
+# ── Where capture reads from ─────────────────────────────────────────────────
+
+def test_rows_a_stopped_collection_stored_are_captured_by_the_next_one(data: Path) -> None:
+    """2026-10-09: capture read only its own run's rows, so fills stored by a run that
+    stopped before capture were never read and never counted."""
+    _append(data, [_fill(T2, C4, 60)])
+    offset, place = capture_start(data)
+    assert place == "reset"  # nothing saved yet: this run's rows only, as before
+    capture(data, offset, "r1", get=_venue().get, now_fn=lambda: NOW)
+
+    offset, place = capture_start(data)
+    assert place == "continued"
+    _append(data, [_fill(T2, C1, 600)])  # stored, then the run stops before capture
+
+    offset, place = capture_start(data)
+    assert place == "resumed"
+    _append(data, [_fill(COMPARISON, C2, 300, index=1)])
+    assert capture(data, offset, "r3", get=_venue().get, now_fn=lambda: NOW)["captured"] == 2
+    assert [row["condition_id"] for row in _signals(data)] == [C1, C2]
+
+    offset, place = capture_start(data)
+    assert place == "continued"
+    assert capture(data, offset, "r4", get=_venue().get, now_fn=lambda: NOW)["signals"] == 0
+
+
+def test_a_capture_stopped_while_writing_never_records_a_signal_twice(
+    data: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _append(data, [_fill(T2, C4, 60)])
+    offset, _ = capture_start(data)
+    _append(data, [_fill(T2, C1, 600)])
+
+    def stopped(*args: Any, **kwargs: Any) -> dict[str, Any]:
+        raise RuntimeError("stopped while writing signals")
+
+    monkeypatch.setattr(cohort_capture, "_capture_all", stopped)
+    with pytest.raises(RuntimeError, match="stopped"):
+        capture(data, offset, "r1", get=_venue().get, now_fn=lambda: NOW)
+    monkeypatch.undo()
+    offset, place = capture_start(data)
+    assert place == "continued"  # the rows counted as read before any write
+    assert capture(data, offset, "r2", get=_venue().get, now_fn=lambda: NOW)["signals"] == 0
+
+
+def test_a_replaced_or_rewritten_activity_file_is_not_the_saved_place(data: Path) -> None:
+    _append(data, [_fill(T2, C1, 600)])
+    capture_start(data)
+    path = data / "polymarket_activity.jsonl"
+    replacement = path.with_suffix(".tmp")  # how compaction and the cohort purge write
+    replacement.write_bytes(path.read_bytes())
+    replacement.replace(path)
+    assert capture_start(data) == (path.stat().st_size, "reset")
+
+    assert capture_start(data)[1] == "continued"
+    with path.open("r+b") as handle:  # same file, different bytes before the place
+        handle.seek(path.stat().st_size - 10)
+        handle.write(b"#")
+    assert capture_start(data)[1] == "reset"
+
+
+def test_recovery_cutting_a_torn_row_keeps_the_place(data: Path) -> None:
+    from marketsignalos_polymarket.pilot_recovery import _cut_torn_tails
+
+    _append(data, [_fill(T2, C4, 60)])
+    offset, _ = capture_start(data)
+    _append(data, [_fill(T2, C1, 600)])
+    with (data / "polymarket_activity.jsonl").open("ab") as handle:
+        handle.write(b'{"proxy_wallet": "0xtorn')  # stopped mid-append
+    assert "polymarket_activity.jsonl" in _cut_torn_tails(data, data / "saved")
+    offset, place = capture_start(data)
+    assert place == "resumed"
+    assert capture(data, offset, "r2", get=_venue().get, now_fn=lambda: NOW)["captured"] == 1
+
+
 # ── In the pilot ─────────────────────────────────────────────────────────────
 
 def test_collection_captures_its_own_new_rows_before_compaction(
@@ -263,6 +338,7 @@ def test_collection_captures_its_own_new_rows_before_compaction(
     JsonActivityGapStore(data / ACTIVITY_GAPS_FILE).set_gap("0xgap", (1, 2))
     result = pilot._execute_stage("collect", data, pilot.PilotConfig(), "run7")
     assert result["cohort_v1_capture"]["captured"] == 1
+    assert result["capture_cursor"] == "reset"  # nothing saved before this run
     assert result["activity_gaps_open"] == 1
     assert result["activity_compaction"]["segments"] == 1
     assert [row["signal_id"] for row in _signals(data)] == [f"run7:{T2}:{C1}:0"]
@@ -274,6 +350,7 @@ def test_collection_captures_its_own_new_rows_before_compaction(
     result = pilot._execute_stage("collect", data, pilot.PilotConfig(), "run8")
     assert result["status"] == "succeeded"  # collection itself is unaffected
     assert result["cohort_v1_capture"] == {"status": "failed", "error_type": "KeyError"}
+    assert result["capture_cursor"] == "reset"  # compaction replaced the file
 
 
 def test_a_signal_records_every_group_its_wallet_is_in(data: Path) -> None:
