@@ -188,10 +188,11 @@ def _default_fetch(address: str, since_ts: int | None) -> list[dict[str, Any]]:
 
     client = PolymarketClient()
     try:
-        rows: list[dict[str, Any]] = client.get_wallet_activity(
+        page = client.get_wallet_activity_page(
             address, limit=_ACTIVITY_PAGE_LIMIT, start=since_ts
         )
-        return rows
+        # Combo (basket) trades are left out, as in the pipeline's own walk.
+        return [row for row in page.rows if row.get("is_combo") is not True]
     finally:
         client.close()
 
@@ -206,14 +207,14 @@ def _alert_from_event(wallet: _WatchedWallet, event: dict[str, Any]) -> dict[str
         "wallet_archetype": wallet.wallet_archetype,
         "title": str(event.get("title", "") or ""),
         "outcome": str(event.get("outcome", "") or ""),
-        "outcome_index": int(event.get("outcomeIndex", 0) or 0),
+        "outcome_index": int(event.get("outcome_index", 0) or 0),
         "price": _f(event.get("price")),
-        "usdc_size": _f(event.get("usdcSize")),
-        "condition_id": str(event.get("conditionId", "") or ""),
-        "transaction_hash": str(event.get("transactionHash", "") or ""),
+        "usdc_size": _f(event.get("usdc_size")),
+        "condition_id": str(event.get("condition_id", "") or ""),
+        "transaction_hash": str(event.get("transaction_hash", "") or ""),
         "timestamp": int(event.get("timestamp", 0) or 0),
         "polymarket_market_url": polymarket_market_url(
-            str(event.get("eventSlug", "") or "")
+            str(event.get("event_slug", "") or "")
         ),
     }
 
@@ -277,7 +278,7 @@ def run_fastlane_tick(
                 continue
             if int(event.get("timestamp", 0) or 0) <= since:
                 continue
-            if _f(event.get("usdcSize")) < min_usdc:
+            if _f(event.get("usdc_size")) < min_usdc:
                 continue
             side = str(event.get("side", "") or "").upper()
             if side == "BUY":

@@ -3,9 +3,14 @@ Sync HTTP client for Polymarket's public APIs.
 
 All endpoints are unauthenticated. We hit four hostnames:
   - lb-api.polymarket.com   (leaderboards)
-  - data-api.polymarket.com (per-wallet activity, positions, value)
+  - data-api.polymarket.com (per-wallet activity, positions, value; v2 routes)
   - gamma-api.polymarket.com (market metadata)
   - api.goldsky.com         (subgraph for backfill — not yet wired)
+
+The Data API is v2 (``/v2/...``): v1 has answered HTTP 410 since 2026-11-02.
+v2 wraps every payload in ``data``, names fields in snake_case and pages
+listings by an opaque cursor instead of an offset
+(docs/benchmarks/2026-11-17-data-api-v2-probe.md).
 
 Retry semantics mirror the Kalshi client: exponential backoff on 429/5xx,
 respects Retry-After when present.
@@ -73,6 +78,14 @@ def _status_outcome(status_code: int) -> str:
 
 
 @dataclass(frozen=True, slots=True)
+class DataPage:
+    """One page of a Data API v2 listing; ``next_cursor`` is None on the last page."""
+
+    rows: list[dict[str, Any]]
+    next_cursor: str | None
+
+
+@dataclass(frozen=True, slots=True)
 class PolymarketClientConfig:
     timeout_seconds: float = 15.0
     max_retries: int = 3
@@ -136,62 +149,66 @@ class PolymarketClient:
     )
     LEADERBOARD_TIME_PERIODS: tuple[str, ...] = ("DAY", "WEEK", "MONTH", "ALL")
     LEADERBOARD_ORDERS: tuple[str, ...] = ("PNL", "VOL")
+    LEADERBOARD_MAX_LIMIT = 1000
 
-    def get_trader_leaderboard_rankings(
+    def get_trader_leaderboard_page(
         self,
         *,
         category: str = "OVERALL",
         time_period: str = "ALL",
         order_by: str = "PNL",
         limit: int = 50,
-        offset: int = 0,
-        user: str | None = None,
-    ) -> list[dict[str, Any]]:
-        """One slice of the official categorized leaderboard.
+        cursor: str | None = None,
+    ) -> DataPage:
+        """One page of the official categorized leaderboard, best rank first.
 
-        The response shape isn't formally documented; some Polymarket data-api
-        endpoints return a bare list while newer ones wrap a `data` array. We
-        accept either and unwrap. Caller is responsible for slicing the matrix
-        (category x time_period x order_by x offset).
+        Rows carry ``user_id`` (the proxy wallet), ``user_name``, ``rank``,
+        ``pnl`` in USDC and ``volume`` in shares. v1 reported volume in USDC:
+        a wallet's USDC volume now comes from ``get_wallet_volume``. Caller is
+        responsible for slicing the matrix (category x time_period x order_by)
+        and for following ``next_cursor``.
         """
+        self._check_leaderboard_slice(category, time_period)
+        if order_by not in self.LEADERBOARD_ORDERS:
+            raise ValueError(f"unknown order_by {order_by!r}")
+        if not 1 <= limit <= self.LEADERBOARD_MAX_LIMIT:
+            raise ValueError(f"limit must be in [1, {self.LEADERBOARD_MAX_LIMIT}]")
+        params: dict[str, Any] = {
+            "category": category,
+            "time_period": time_period.lower(),
+            # "VOL" is this codebase's name for the ordering; v2 rejects it.
+            "sort_by": "VOLUME" if order_by == "VOL" else order_by,
+            "limit": limit,
+        }
+        if cursor:
+            params["cursor"] = cursor
+        return self._get_data_page("/v2/leaderboard", params)
+
+    def get_wallet_leaderboard_standing(
+        self, address: str, *, time_period: str, category: str = "OVERALL"
+    ) -> dict[str, Any]:
+        """A wallet's official PnL (USDC) and volume (shares) for one period.
+
+        Empty when the leaderboard has no standing for the wallet.
+        """
+        self._check_leaderboard_slice(category, time_period)
+        data = self._get_data(
+            "/v2/leaderboard",
+            {"user": address, "category": category, "time_period": time_period.lower()},
+        )
+        if data is None:
+            return {}
+        if not isinstance(data, dict):
+            raise ValueError(
+                f"Expected an object or null in /v2/leaderboard data, got {type(data).__name__}"
+            )
+        return cast(dict[str, Any], data)
+
+    def _check_leaderboard_slice(self, category: str, time_period: str) -> None:
         if category not in self.LEADERBOARD_CATEGORIES:
             raise ValueError(f"unknown category {category!r}")
         if time_period not in self.LEADERBOARD_TIME_PERIODS:
             raise ValueError(f"unknown time_period {time_period!r}")
-        if order_by not in self.LEADERBOARD_ORDERS:
-            raise ValueError(f"unknown order_by {order_by!r}")
-        if not 1 <= limit <= 50:
-            raise ValueError("limit must be in [1, 50]")
-        if not 0 <= offset <= 1000:
-            raise ValueError("offset must be in [0, 1000]")
-
-        params: dict[str, Any] = {
-            "category": category,
-            "timePeriod": time_period,
-            "orderBy": order_by,
-            "limit": limit,
-        }
-        if offset:
-            params["offset"] = offset
-        if user:
-            params["user"] = user
-        payload = self._get_json(f"{DATA_API}/v1/leaderboard", params=params)
-        if isinstance(payload, list):
-            rows = payload
-        elif isinstance(payload, dict):
-            inner = payload.get("data")
-            if not isinstance(inner, list):
-                raise ValueError(
-                    "Expected list or {data: list} from /v1/leaderboard, "
-                    f"got dict with keys {sorted(payload.keys())[:5]}"
-                )
-            rows = inner
-        else:
-            raise ValueError(
-                f"Expected list or dict from /v1/leaderboard, "
-                f"got {type(payload).__name__}"
-            )
-        return cast(list[dict[str, Any]], rows)
 
     # ── Recent on-chain traders (Goldsky subgraph) ──────────────────────────────
 
@@ -271,87 +288,77 @@ class PolymarketClient:
 
     # ── Per-wallet ────────────────────────────────────────────────────────────
 
-    def get_wallet_activity(
+    def get_wallet_activity_page(
         self,
         address: str,
         *,
         limit: int = 500,
-        offset: int = 0,
+        cursor: str | None = None,
         start: int | None = None,
         end: int | None = None,
-    ) -> list[dict[str, Any]]:
-        """All trades + redemptions for a wallet, oldest-to-newest within a page."""
-        params: dict[str, Any] = {"user": address, "limit": limit}
-        if offset:
-            params["offset"] = offset
-        if start is not None:
-            params["start"] = start
+    ) -> DataPage:
+        """One page of a wallet's trades, redemptions and other events, newest first.
+
+        ``start`` and ``end`` are inclusive epoch seconds. Without ``start`` v2
+        serves only a recent window, so the default asks for all history.
+        Deposits and withdrawals are left out, as they were in v1. A cursor is
+        only valid with the filters and limit of the page that issued it.
+        """
+        params: dict[str, Any] = {
+            "user": address,
+            "limit": limit,
+            "sort_direction": "DESC",
+            "start": 1 if start is None else start,
+            "exclude_deposits_withdrawals": "true",
+        }
         if end is not None:
             params["end"] = end
-        payload = self._get_json(f"{DATA_API}/activity", params=params)
-        if not isinstance(payload, list):
-            raise ValueError(f"Expected list, got {type(payload).__name__}")
-        return cast(list[dict[str, Any]], payload)
+        if cursor:
+            params["cursor"] = cursor
+        return self._get_data_page("/v2/activity", params)
 
-    def get_wallet_positions(
-        self, address: str, *, limit: int = 500, offset: int = 0
-    ) -> list[dict[str, Any]]:
-        """Currently-open positions for a wallet."""
+    def get_wallet_positions_page(
+        self,
+        address: str,
+        *,
+        status: str | None = None,
+        limit: int = 500,
+        cursor: str | None = None,
+        min_shares: float | None = None,
+        sort_by: str | None = None,
+    ) -> DataPage:
+        """One page of a wallet's positions.
+
+        Without ``status`` the listing is every current holding, resolved but
+        unredeemed ones included, largest value first. ``status="CLOSED"`` lists
+        exited positions (v1 ``/closed-positions``), largest realized PnL first.
+        ``min_shares`` is the smallest holding returned: the server's own floor
+        is 0.1 shares and cannot be lowered. ``sort_by`` orders descending. A
+        cursor is bound to the status and ordering of the page that issued it.
+        """
         params: dict[str, Any] = {"user": address, "limit": limit}
-        if offset:
-            params["offset"] = offset
-        payload = self._get_json(f"{DATA_API}/positions", params=params)
-        if not isinstance(payload, list):
-            raise ValueError(f"Expected list, got {type(payload).__name__}")
-        return cast(list[dict[str, Any]], payload)
+        if status is not None:
+            params["status"] = status
+        if min_shares is not None:
+            params["filter_type"] = "TOKENS"
+            params["filter_amount"] = min_shares
+        if sort_by is not None:
+            params["sort_by"] = sort_by
+            params["sort_direction"] = "DESC"
+        if cursor:
+            params["cursor"] = cursor
+        return self._get_data_page("/v2/positions", params)
 
-    def get_wallet_closed_positions(
-        self, address: str, *, limit: int = 500, offset: int = 0
-    ) -> list[dict[str, Any]]:
-        """Closed or exited positions for audit and realized-performance summaries."""
-        params: dict[str, Any] = {"user": address, "limit": limit}
-        if offset:
-            params["offset"] = offset
-        payload = self._get_json(f"{DATA_API}/closed-positions", params=params)
-        if not isinstance(payload, list):
-            raise ValueError(f"Expected list, got {type(payload).__name__}")
-        return cast(list[dict[str, Any]], payload)
-
-    def get_wallet_economic_summary(
-        self, address: str, *, time_period: str
-    ) -> dict[str, Any]:
-        """Official PnL and volume summary for one wallet (VOL ranking row)."""
-        rows = self.get_trader_leaderboard_rankings(
-            category="OVERALL",
-            time_period=time_period,
-            order_by="VOL",
-            limit=1,
-            user=address,
-        )
-        return rows[0] if rows else {}
-
-    def get_wallet_economics_for_period(
-        self, address: str, *, time_period: str
-    ) -> tuple[dict[str, Any], dict[str, Any]]:
-        """Return (pnl_row, volume_row) from separate PNL and VOL leaderboard lookups."""
-        pnl_rows = self.get_trader_leaderboard_rankings(
-            category="OVERALL",
-            time_period=time_period,
-            order_by="PNL",
-            limit=1,
-            user=address,
-        )
-        vol_rows = self.get_trader_leaderboard_rankings(
-            category="OVERALL",
-            time_period=time_period,
-            order_by="VOL",
-            limit=1,
-            user=address,
-        )
-        return (
-            pnl_rows[0] if pnl_rows else {},
-            vol_rows[0] if vol_rows else {},
-        )
+    def get_wallet_volume(self, address: str) -> dict[str, Any]:
+        """All-time trading volume: ``volume`` in shares, ``volume_usdc`` and ``trade_count``."""
+        data = self._get_data("/v2/user-volume", {"user": address, "start": 1})
+        if data is None:
+            return {}
+        if not isinstance(data, dict):
+            raise ValueError(
+                f"Expected an object or null in /v2/user-volume data, got {type(data).__name__}"
+            )
+        return cast(dict[str, Any], data)
 
     def get_wallet_order_fills_from_subgraph(
         self,
@@ -412,14 +419,15 @@ class PolymarketClient:
         return cast(list[dict[str, Any]], payload)
 
     def get_wallet_value(self, address: str) -> dict[str, Any]:
-        """Current portfolio USD value. Returns a single-element list, we unwrap."""
-        payload = self._get_json(f"{DATA_API}/value", params={"user": address})
-        if not isinstance(payload, list) or not payload:
-            return {"user": address.lower(), "value": 0}
-        first = payload[0]
-        if not isinstance(first, dict):
-            raise ValueError("Expected dict in /value response")
-        return cast(dict[str, Any], first)
+        """Current portfolio USD value: ``{"proxy_wallet", "value"}``."""
+        data = self._get_data("/v2/value", {"user": address})
+        if data is None:
+            return {"proxy_wallet": address.lower(), "value": 0}
+        if not isinstance(data, dict):
+            raise ValueError(
+                f"Expected an object or null in /v2/value data, got {type(data).__name__}"
+            )
+        return cast(dict[str, Any], data)
 
     # ── Markets (Gamma) ───────────────────────────────────────────────────────
 
@@ -494,6 +502,32 @@ class PolymarketClient:
         return out
 
     # ── Internals ─────────────────────────────────────────────────────────────
+
+    def _get_data(self, path: str, params: dict[str, Any]) -> Any:
+        """The ``data`` member of a Data API v2 response."""
+        payload = self._get_json(f"{DATA_API}{path}", params=params)
+        if not isinstance(payload, dict) or "data" not in payload:
+            raise ValueError(f"Expected {{data: ...}} from {path}, got {type(payload).__name__}")
+        return payload["data"]
+
+    def _get_data_page(self, path: str, params: dict[str, Any]) -> DataPage:
+        """One page of a v2 listing: ``{data: [...], pagination: {has_more, next_cursor}}``."""
+        payload = self._get_json(f"{DATA_API}{path}", params=params)
+        rows = payload.get("data") if isinstance(payload, dict) else None
+        pagination = payload.get("pagination") if isinstance(payload, dict) else None
+        if not isinstance(rows, list) or not isinstance(pagination, dict):
+            raise ValueError(
+                f"Expected {{data: [...], pagination: {{...}}}} from {path}, "
+                f"got {type(payload).__name__}"
+            )
+        cursor = pagination.get("next_cursor")
+        if cursor is not None and (not isinstance(cursor, str) or not cursor):
+            raise ValueError(f"Invalid next_cursor from {path}")
+        # A page that says more rows exist but gives no way to reach them would
+        # silently truncate a history: fail instead.
+        if pagination.get("has_more") and cursor is None:
+            raise ValueError(f"{path} reports has_more without a next_cursor")
+        return DataPage(rows=cast(list[dict[str, Any]], rows), next_cursor=cursor)
 
     def _send_instrumented(
         self,
