@@ -678,17 +678,38 @@ def _paginate_activity(
     ).events
 
 
-_POSITION_PAGES_MAX = 200  # 100,000 holdings at the default page size
+# v1's offset paging stopped at 10,000, so a listing longer than 21 pages of 500
+# failed there too: the wallet's positions stay incomplete and nothing is stored.
+_POSITION_PAGES_MAX = 21
 # v1's default hid holdings below one share. v2's default floor is 0.1.
 _MIN_POSITION_SHARES = 1
+# The smallest value that is not nothing: see _paginate_positions.
+_MIN_POSITION_VALUE_USDC = 0.000001
 _CLOSED_POSITIONS_LIMIT = 50
+
+
+def _is_live_holding(row: dict[str, Any]) -> bool:
+    """At least one share in a market that has not resolved, which is what v1's
+    default listing held. A row without a size is kept so that the parser can
+    refuse it."""
+    if row.get("redeemable") is True or row.get("status") == "REDEEMABLE":
+        return False
+    size = _as_float_or_none(row.get("current_size"))
+    return size is None or size >= _MIN_POSITION_SHARES
 
 
 def _paginate_positions(
     client: PolymarketClient, address: str, *, page_size: int = 500
 ) -> list[dict[str, Any]]:
-    """Every current holding of at least one share, resolved-but-unredeemed
-    ones included, largest holding first.
+    """A wallet's holdings of at least one share in live markets, largest first.
+
+    v1's default listing was these. v2's also carries every holding in a
+    resolved market that the wallet never redeemed, tens of thousands of
+    worthless ones for a large wallet, and has no parameter that leaves
+    resolved markets out. Asking for holdings worth more than nothing drops
+    the worthless ones at the server; the resolved winners not yet redeemed
+    and the holdings below one share are dropped here. A live holding the
+    server values at exactly zero is lost with them.
 
     Ordered by size rather than by value (the v2 default): a cursor over a
     value ordering can step past a position whose price moved between two page
@@ -700,12 +721,12 @@ def _paginate_positions(
     for _page in range(_POSITION_PAGES_MAX):
         page = client.get_wallet_positions_page(
             address, limit=page_size, cursor=cursor,
-            min_shares=_MIN_POSITION_SHARES, sort_by="TOKENS",
+            min_value_usdc=_MIN_POSITION_VALUE_USDC, sort_by="TOKENS",
         )
         for row in page.rows:
             # A holding that changed between two page requests can be served twice.
             key = (str(row.get("condition_id", "")), str(row.get("outcome_index", "")))
-            if key not in seen:
+            if key not in seen and _is_live_holding(row):
                 seen.add(key)
                 rows.append(row)
         cursor = page.next_cursor

@@ -407,21 +407,39 @@ def test_paginate_activity_window_streaming_matches_accumulate() -> None:
     assert {e.transaction_hash for e in accumulate.events} == {"0xa", "0xb", "0xd"}
 
 
-def test_paginate_positions_follows_the_cursor_with_v1s_floor_ordered_by_size() -> None:
+def test_paginate_positions_lists_live_holdings_as_v1_did() -> None:
+    """v1's default listing: at least one share, in a market that has not resolved."""
     fake = FakeDataApi()
     fake.positions["0xabc"] = [
         position_row(f"0x{i}", size=1000.0 - i) for i in range(501)
-    ] + [position_row("0xdust", size=0.5)]  # v1's default hid holdings below one share
+    ] + [
+        position_row("0xdust", size=0.5),  # v1's default hid holdings below one share
+        # Resolved and never redeemed. v2 lists these; v1 did not.
+        position_row("0xlost", size=900.0, current_value=0.0, current_price=0.0,
+                     status="REDEEMABLE", redeemable=True),
+        position_row("0xwon", size=800.0, current_value=800.0, current_price=1.0,
+                     status="REDEEMABLE", redeemable=True),
+    ]
     client = _client_with_handler(fake)
     rows = _paginate_positions(client, "0xabc")
     client.close()
-    assert len(rows) == 501 and "0xdust" not in {row["condition_id"] for row in rows}
-    assert fake.calls("/v2/positions") == [
-        {"user": "0xabc", "limit": "500", "filter_type": "TOKENS", "filter_amount": "1",
-         "sort_by": "TOKENS", "sort_direction": "DESC"},
-        {"user": "0xabc", "limit": "500", "filter_type": "TOKENS", "filter_amount": "1",
-         "sort_by": "TOKENS", "sort_direction": "DESC", "cursor": "500:500"},
-    ]
+    assert len(rows) == 501
+    assert not {"0xdust", "0xlost", "0xwon"} & {row["condition_id"] for row in rows}
+    request = {"user": "0xabc", "limit": "500", "filter_type": "CASH",
+               "filter_amount": "1e-06", "sort_by": "TOKENS", "sort_direction": "DESC"}
+    assert fake.calls("/v2/positions") == [request, {**request, "cursor": "500:500"}]
+
+
+def test_a_listing_longer_than_v1_could_page_fails_instead_of_being_stored_short() -> None:
+    fake = FakeDataApi()
+    fake.positions["0xabc"] = [position_row(f"0x{i}", size=20000.0 - i) for i in range(10501)]
+    client = _client_with_handler(fake)
+    with pytest.raises(RuntimeError, match="safety bound"):
+        _paginate_positions(client, "0xabc")
+    assert len(fake.calls("/v2/positions")) == 21
+    fake.positions["0xabc"].pop()  # 10,500 holdings: exactly 21 pages
+    assert len(_paginate_positions(client, "0xabc")) == 10500
+    client.close()
 
 
 def test_a_holding_served_on_two_pages_is_kept_once() -> None:

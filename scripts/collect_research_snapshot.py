@@ -25,6 +25,9 @@ MAX_RESPONSE_BYTES = 1_000_000
 MAX_SNAPSHOT_BYTES = 2_000_000
 TRADE_LIMIT = 100
 POSITION_LIMIT = 50
+# v2 lists resolved, unredeemed holdings among the rest and has no request filter
+# for them, so more rows are read than are published.
+POSITION_FETCH_LIMIT = 200
 ADDRESS = re.compile(r"0x[0-9a-fA-F]{40}\Z")
 HASH = re.compile(r"0x[0-9a-fA-F]{64}\Z")
 LOG = logging.getLogger(__name__)
@@ -125,7 +128,7 @@ class Collector:
             receipt["observed_at"] = utc_now()
 
     def sample(self, address: str, kind: str) -> dict[str, Any]:
-        limit = TRADE_LIMIT if kind == "trades" else POSITION_LIMIT
+        limit = TRADE_LIMIT if kind == "trades" else POSITION_FETCH_LIMIT
         params: dict[str, Any] = {
             "user": address,
             "limit": limit,
@@ -198,14 +201,16 @@ class Collector:
         if kind == "trades":
             rows.sort(key=lambda item: item["timestamp"], reverse=True)
         receipt["rows_rejected"] = rejected
+        # Holdings are published largest first, up to the sample's own cap.
+        published = rows if kind == "trades" else rows[:POSITION_LIMIT]
         return {
             "status": receipt["status"],
             "observed_at": receipt["observed_at"],
             "rows_returned": len(raw),
             "rows_rejected": rejected,
             "rows_excluded": excluded,
-            "possibly_truncated": len(raw) >= limit,
-            "rows": rows,
+            "possibly_truncated": len(raw) >= limit or len(rows) > len(published),
+            "rows": published,
         }
 
     def collect(self) -> dict[str, Any]:

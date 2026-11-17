@@ -38,6 +38,7 @@ import json
 import logging
 import math
 import os
+from collections import Counter
 from collections.abc import Iterable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -63,6 +64,7 @@ MAX_WINDOW_DAYS = 42
 POWER_LOOKBACK_DAYS = 14
 CAPTURE_MIN_DAYS = 7  # less capture than this in the lookback: fall back to raw buys
 SIGNALS_FILE = "signals.jsonl"
+DIAGNOSTIC_FILE = "diagnostic-state.json"  # each wallet's tier at the last provisional build
 
 # The gates as the scorer applies them (skill_computation._enrichment_from_rollup).
 # The frozen code hash pins the exact behaviour; this records it for readers.
@@ -286,6 +288,61 @@ def build(data_dir: Path, *, cutoff: datetime, discovery: dict[str, Any]) -> dic
     return config
 
 
+def diagnostic(config: dict[str, Any], previous: dict[str, str] | None) -> dict[str, Any]:
+    """Counts behind the provisional tier sizes, for the log. It names no wallet
+    and carries no price or score, and nothing reads it back into the cohort.
+
+    - ``screened``: wallets per tier, each wallet in one tier only.
+    - ``blocking``: scored wallets each of the scorer's reasons applies to.
+    - ``one_gate_from_t2``: wallets that a single reason other than gate 13
+      keeps out of T2, by that reason.
+    - ``moves`` and ``left_t2``, given the tiers of the previous build: how many
+      wallets changed tier, and the reasons other than gate 13 now carried by
+      the wallets that were in T2 or T1 and are not any more.
+    """
+    screened: dict[str, dict[str, Any]] = config["screened"]
+    tiers = {wallet: str(entry["tier"]) for wallet, entry in screened.items()}
+    blocking: Counter[str] = Counter()
+    one_gate: Counter[str] = Counter()
+    for wallet, entry in screened.items():
+        if tiers[wallet] not in ("T2", "T3", "none"):
+            continue
+        reasons = {str(reason) for reason in entry["reasons"]}
+        blocking.update(reasons)
+        other = [reason for reason in reasons if not _is_gate13(reason)]
+        if len(other) == 1:
+            one_gate[other[0]] += 1
+    out: dict[str, Any] = {
+        "screened": dict(sorted(Counter(tiers.values()).items())),
+        "blocking": dict(sorted(blocking.items())),
+        "one_gate_from_t2": dict(sorted(one_gate.items())),
+    }
+    if previous is None:
+        return out
+    moves: Counter[str] = Counter()
+    left_t2: Counter[str] = Counter()
+    for wallet in sorted(set(tiers) | set(previous)):
+        before, after = previous.get(wallet, "absent"), tiers.get(wallet, "absent")
+        if before == after:
+            continue
+        moves[f"{before}->{after}"] += 1
+        if before in ("T1", "T2") and after not in ("T1", "T2"):
+            reasons = {str(r) for r in screened.get(wallet, {}).get("reasons", [])}
+            left_t2.update(r for r in reasons if not _is_gate13(r))
+    return out | {"moves": dict(sorted(moves.items())), "left_t2": dict(sorted(left_t2.items()))}
+
+
+def _previous_tiers(stage: Path) -> dict[str, str] | None:
+    try:
+        state = json.loads((stage / DIAGNOSTIC_FILE).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    tiers = state.get("tiers") if isinstance(state, dict) else None
+    if not isinstance(tiers, dict):
+        return None
+    return {str(wallet): str(tier) for wallet, tier in tiers.items()}
+
+
 def config_hash(config: dict[str, Any]) -> str:
     body = {key: value for key, value in config.items() if key != "config_hash"}
     canonical = json.dumps(body, sort_keys=True, separators=(",", ":"), allow_nan=False)
@@ -423,13 +480,23 @@ def run(data_dir: Path, *, now: datetime, freeze_at: datetime | None,
                 "comparison": len(config["comparison"]["pairs"]),
                 "clv_only": len(config["ablations"]["clv_only"]), "window": config["window"]}
     config = build(data_dir, cutoff=now, discovery=discovery)
-    _write_members(stage, members(config) | {"mode": "provisional",
-                                             "built_at": now.astimezone(UTC).isoformat()})
-    return {"status": "succeeded", "mode": "provisional",
-            "tiers": {t: len(w) for t, w in config["tiers"].items()},
-            "comparison": len(config["comparison"]["pairs"]),
-            "clv_only": len(config["ablations"]["clv_only"]),
-            "members": len(members(config)["wallets"])}
+    built_at = now.astimezone(UTC).isoformat()
+    _write_members(stage, members(config) | {"mode": "provisional", "built_at": built_at})
+    result = {"status": "succeeded", "mode": "provisional",
+              "tiers": {t: len(w) for t, w in config["tiers"].items()},
+              "comparison": len(config["comparison"]["pairs"]),
+              "clv_only": len(config["ablations"]["clv_only"]),
+              "members": len(members(config)["wallets"])}
+    try:  # the log line only: a failure here must not fail the stage
+        result["diagnostic"] = diagnostic(config, _previous_tiers(stage))
+        _write_json(stage / DIAGNOSTIC_FILE, {
+            "built_at": built_at,
+            "tiers": {wallet: entry["tier"] for wallet, entry in config["screened"].items()},
+        })
+    except (OSError, KeyError, TypeError, ValueError) as exc:
+        log.warning("cohort v1 diagnostic failed: %s", type(exc).__name__)
+        result["diagnostic"] = {"error_type": type(exc).__name__}
+    return result
 
 
 def member_wallets(data_dir: Path) -> frozenset[str]:
@@ -453,9 +520,12 @@ def frozen_members(data_dir: Path) -> frozenset[str]:
 
 def _write_members(stage: Path, roster: dict[str, Any]) -> None:
     stage.mkdir(parents=True, exist_ok=True)
-    path = stage / "members.json"
+    _write_json(stage / "members.json", roster)
+
+
+def _write_json(path: Path, value: dict[str, Any]) -> None:
     tmp = path.with_suffix(".json.tmp")
-    tmp.write_text(json.dumps(roster, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    tmp.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     tmp.replace(path)
 
 

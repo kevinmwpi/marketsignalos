@@ -137,8 +137,13 @@ class FakeDataApi:
         if path == "/v2/positions":
             if params.get("status") == "CLOSED":
                 return self._listing(self.closed_positions.get(wallet, []), params)
-            floor = float(params.get("filter_amount") or 0.1)
-            rows = [r for r in self.positions.get(wallet, []) if r["current_size"] >= floor]
+            held = [r for r in self.positions.get(wallet, []) if r["current_size"] >= 0.1]
+            if params.get("filter_type") == "CASH":
+                floor = float(params.get("filter_amount") or 0)
+                rows = [r for r in held if r["current_value"] >= floor]
+            else:
+                floor = float(params.get("filter_amount") or 0.1)
+                rows = [r for r in held if r["current_size"] >= floor]
             if params.get("sort_by") == "TOKENS":
                 rows.sort(key=lambda row: -row["current_size"])
             return self._listing(rows, params)

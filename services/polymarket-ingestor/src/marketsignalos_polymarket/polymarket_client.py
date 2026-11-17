@@ -325,23 +325,33 @@ class PolymarketClient:
         limit: int = 500,
         cursor: str | None = None,
         min_shares: float | None = None,
+        min_value_usdc: float | None = None,
         sort_by: str | None = None,
     ) -> DataPage:
         """One page of a wallet's positions.
 
-        Without ``status`` the listing is every current holding, resolved but
-        unredeemed ones included, largest value first. ``status="CLOSED"`` lists
-        exited positions (v1 ``/closed-positions``), largest realized PnL first.
-        ``min_shares`` is the smallest holding returned: the server's own floor
-        is 0.1 shares and cannot be lowered. ``sort_by`` orders descending. A
-        cursor is bound to the status and ordering of the page that issued it.
+        Without ``status`` the listing is every current holding, largest value
+        first. Unlike v1's it includes holdings in resolved markets that the
+        wallet has not redeemed (``redeemable``), worthless ones too, and v2 has
+        no parameter that leaves them out. ``status="CLOSED"`` lists exited
+        positions (v1 ``/closed-positions``), largest realized PnL first.
+
+        One floor per request: ``min_shares`` on the holding's size (the
+        server's own floor is 0.1 shares and cannot be lowered) or
+        ``min_value_usdc`` on its current value. ``sort_by`` orders descending.
+        A cursor is bound to the status and ordering of the page that issued it.
         """
+        if min_shares is not None and min_value_usdc is not None:
+            raise ValueError("v2 takes one position floor per request: shares or value")
         params: dict[str, Any] = {"user": address, "limit": limit}
         if status is not None:
             params["status"] = status
         if min_shares is not None:
             params["filter_type"] = "TOKENS"
             params["filter_amount"] = min_shares
+        if min_value_usdc is not None:
+            params["filter_type"] = "CASH"
+            params["filter_amount"] = min_value_usdc
         if sort_by is not None:
             params["sort_by"] = sort_by
             params["sort_direction"] = "DESC"
