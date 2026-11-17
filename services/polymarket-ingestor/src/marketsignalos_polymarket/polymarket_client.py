@@ -21,6 +21,7 @@ import logging
 import os
 import time
 from dataclasses import dataclass
+from decimal import Decimal
 from time import sleep
 from typing import Any, cast
 
@@ -64,6 +65,12 @@ def _graphql_errors_are_transient(errors: Any) -> bool:
             return True
     return False
 
+
+
+def _plain_decimal(value: float) -> str:
+    """``value`` without an exponent: a small float would otherwise go on the
+    wire as ``1e-06``, which not every query-string parser reads as a number."""
+    return format(Decimal(str(value)), "f")
 
 
 def _status_outcome(status_code: int) -> str:
@@ -348,10 +355,10 @@ class PolymarketClient:
             params["status"] = status
         if min_shares is not None:
             params["filter_type"] = "TOKENS"
-            params["filter_amount"] = min_shares
+            params["filter_amount"] = _plain_decimal(min_shares)
         if min_value_usdc is not None:
             params["filter_type"] = "CASH"
-            params["filter_amount"] = min_value_usdc
+            params["filter_amount"] = _plain_decimal(min_value_usdc)
         if sort_by is not None:
             params["sort_by"] = sort_by
             params["sort_direction"] = "DESC"

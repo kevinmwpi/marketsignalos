@@ -8,7 +8,8 @@ Runs the migrated client and collection code against Polymarket's public API:
 2. ``resume``: one long activity walk against the same range read as short walks
    that stop and resume, as the worker's page cap makes them.
 3. ``wallet_endpoints``: positions, closed positions, value and economics for the
-   wallet at the top of the month's PnL leaderboard.
+   wallet at the top of the month's PnL leaderboard. Positions are read with the
+   collector's own request (holdings worth more than nothing, largest first).
 4. ``pipeline``: two collection runs into an empty temporary directory with the
    worker's settings and a smaller wallet batch.
 5. ``snapshot``: the research-snapshot collector, and whether its output would
@@ -229,10 +230,10 @@ def wallet_endpoints(client: PolymarketClient, address: str) -> dict[str, Any]:
     raw_pages: list[int] = []
     served: list[dict[str, Any]] = []
     cursor: str | None = None
-    for _page in range(40):
+    for _page in range(runner._POSITION_PAGES_MAX):  # the collector's own request
         page = client.get_wallet_positions_page(
             address, limit=500, cursor=cursor,
-            min_shares=runner._MIN_POSITION_SHARES, sort_by="TOKENS",
+            min_value_usdc=runner._MIN_POSITION_VALUE_USDC, sort_by="TOKENS",
         )
         time.sleep(PAUSE)
         raw_pages.append(len(page.rows))
@@ -241,7 +242,9 @@ def wallet_endpoints(client: PolymarketClient, address: str) -> dict[str, Any]:
         if cursor is None:
             break
     sizes = [float(row.get("current_size") or 0) for row in served]
-    keys = [(row.get("condition_id"), row.get("outcome_index")) for row in served]
+    keys = [(row.get("token_id"), row.get("condition_id"), row.get("outcome_index"))
+            for row in served]
+    live = [row for row in served if runner._is_live_holding(row)]
 
     def near(row: dict[str, Any], basis: float) -> bool:
         expected = float(row["current_value"]) - basis
@@ -250,21 +253,23 @@ def wallet_endpoints(client: PolymarketClient, address: str) -> dict[str, Any]:
         )
 
     numeric = [
-        row for row in served
+        row for row in live
         if all(isinstance(row.get(name), int | float) for name in (
             "current_size", "avg_price", "current_value", "unrealized_pnl", "entry_cost_usdc"))
     ]
-
     out["positions"] = {
         "pages": raw_pages,
         "walk_finished": cursor is None,
         "rows": len(served),
         "rows_served_twice": len(keys) - len(set(keys)),
+        "worth_nothing": sum(not row.get("current_value") for row in served),
         "below_one_share": sum(size < 1 for size in sizes),
         "sizes_non_increasing": all(a >= b for a, b in pairwise(sizes)),
         "statuses": dict(Counter(str(row.get("status")) for row in served)),
         "redeemable_rows": sum(row.get("redeemable") is True for row in served),
         "null_current_size": sum(row.get("current_size") is None for row in served),
+        "live_holdings_kept": len(live),
+        "live_statuses": dict(Counter(str(row.get("status")) for row in live)),
         "rows_with_every_number": len(numeric),
         "unrealized_is_value_minus_size_times_avg_price": sum(
             near(row, float(row["current_size"]) * float(row["avg_price"])) for row in numeric
@@ -273,30 +278,23 @@ def wallet_endpoints(client: PolymarketClient, address: str) -> dict[str, Any]:
             near(row, float(row["entry_cost_usdc"])) for row in numeric
         ),
         "parsed": len([
-            runner.parse_position_row(row, proxy_wallet=address) for row in served
+            runner.parse_position_row(row, proxy_wallet=address) for row in live
         ]),
     }
-    # The same listing through the runner, against the default (value) ordering.
-    by_size = {
-        (str(row.get("condition_id")), str(row.get("outcome_index")))
+    # The same listing through the runner, twice: what one snapshot holds, and
+    # whether the next one holds the same positions.
+    first = {
+        (str(row.get("token_id")), str(row.get("condition_id")), str(row.get("outcome_index")))
         for row in runner._paginate_positions(client, address)
     }
-    by_value: set[tuple[str, str]] = set()
-    cursor = None
-    for _page in range(40):
-        page = client.get_wallet_positions_page(
-            address, limit=500, cursor=cursor, min_shares=runner._MIN_POSITION_SHARES,
-        )
-        time.sleep(PAUSE)
-        by_value.update(
-            (str(row.get("condition_id")), str(row.get("outcome_index"))) for row in page.rows
-        )
-        cursor = page.next_cursor
-        if cursor is None:
-            break
-    out["positions_ordering"] = {
-        "by_size": len(by_size), "by_value": len(by_value),
-        "only_by_size": len(by_size - by_value), "only_by_value": len(by_value - by_size),
+    time.sleep(20)
+    second = {
+        (str(row.get("token_id")), str(row.get("condition_id")), str(row.get("outcome_index")))
+        for row in runner._paginate_positions(client, address)
+    }
+    out["positions_through_runner"] = {
+        "first": len(first), "second": len(second),
+        "only_in_first": len(first - second), "only_in_second": len(second - first),
     }
 
     closed = runner._fetch_closed_positions(client, address)

@@ -52,6 +52,7 @@ def activity_row(
 def position_row(cond: str, oi: int = 0, *, size: float = 10.0, **extra: Any) -> dict[str, Any]:
     """One holding as /v2/positions serves it (the fields the collector reads)."""
     return {
+        "token_id": f"token-{cond}-{oi}",
         "condition_id": cond,
         "outcome_index": oi,
         "outcome": "Yes",

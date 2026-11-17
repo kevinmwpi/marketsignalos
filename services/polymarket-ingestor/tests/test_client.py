@@ -183,9 +183,11 @@ def test_positions_page_takes_one_floor_shares_or_value() -> None:
     client, captured = _capture(_page([]))
     client.get_wallet_positions_page("0xabc", min_value_usdc=0.000001, sort_by="TOKENS")
     assert captured["params"] == {
-        "user": "0xabc", "limit": "500", "filter_type": "CASH", "filter_amount": "1e-06",
+        "user": "0xabc", "limit": "500", "filter_type": "CASH", "filter_amount": "0.000001",
         "sort_by": "TOKENS", "sort_direction": "DESC",
     }
+    client.get_wallet_positions_page("0xabc", min_shares=0.5)
+    assert captured["params"]["filter_amount"] == "0.5"
     with pytest.raises(ValueError, match="one position floor"):
         client.get_wallet_positions_page("0xabc", min_shares=1, min_value_usdc=0.01)
     client.close()

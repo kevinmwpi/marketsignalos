@@ -426,7 +426,7 @@ def test_paginate_positions_lists_live_holdings_as_v1_did() -> None:
     assert len(rows) == 501
     assert not {"0xdust", "0xlost", "0xwon"} & {row["condition_id"] for row in rows}
     request = {"user": "0xabc", "limit": "500", "filter_type": "CASH",
-               "filter_amount": "1e-06", "sort_by": "TOKENS", "sort_direction": "DESC"}
+               "filter_amount": "0.000001", "sort_by": "TOKENS", "sort_direction": "DESC"}
     assert fake.calls("/v2/positions") == [request, {**request, "cursor": "500:500"}]
 
 
@@ -446,7 +446,9 @@ def test_a_holding_served_on_two_pages_is_kept_once() -> None:
     """A holding that changes between two page requests can move across the cursor."""
     bodies = [
         page([position_row("0xa"), position_row("0xb")], "c1"),
-        page([position_row("0xb"), position_row("0xb", oi=1), position_row("0xc")]),
+        page([position_row("0xb"), position_row("0xb", oi=1), position_row("0xc"),
+              # Two tokens of one market outcome are two holdings (seen live).
+              position_row("0xc", token_id="another-token")]),
     ]
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -455,8 +457,9 @@ def test_a_holding_served_on_two_pages_is_kept_once() -> None:
     client = _client_with_handler(handler)
     rows = _paginate_positions(client, "0xabc")
     client.close()
-    assert [(row["condition_id"], row["outcome_index"]) for row in rows] == [
-        ("0xa", 0), ("0xb", 0), ("0xb", 1), ("0xc", 0)]
+    assert [(row["condition_id"], row["outcome_index"], row["token_id"]) for row in rows] == [
+        ("0xa", 0, "token-0xa-0"), ("0xb", 0, "token-0xb-0"), ("0xb", 1, "token-0xb-1"),
+        ("0xc", 0, "token-0xc-0"), ("0xc", 0, "another-token")]
 
 
 def test_closed_positions_are_one_page() -> None:

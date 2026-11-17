@@ -706,17 +706,19 @@ def _paginate_positions(
     v1's default listing was these. v2's also carries every holding in a
     resolved market that the wallet never redeemed, tens of thousands of
     worthless ones for a large wallet, and has no parameter that leaves
-    resolved markets out. Asking for holdings worth more than nothing drops
-    the worthless ones at the server; the resolved winners not yet redeemed
-    and the holdings below one share are dropped here. A live holding the
-    server values at exactly zero is lost with them.
+    resolved markets out (v1's ``redeemable=false`` is accepted and ignored).
+    Asking for holdings worth more than nothing drops the worthless ones at
+    the server; the resolved winners not yet redeemed and the holdings below
+    one share are dropped here. A live holding the server values at exactly
+    zero is lost with them: one of 5,493 for the largest wallet probed
+    (docs/benchmarks/2026-11-17-data-api-v2-positions.md).
 
     Ordered by size rather than by value (the v2 default): a cursor over a
-    value ordering can step past a position whose price moved between two page
+    value ordering repeats and skips positions as prices move between two page
     requests, and a position missing from a snapshot reads as an exit.
     """
     rows: list[dict[str, Any]] = []
-    seen: set[tuple[str, str]] = set()
+    seen: set[tuple[str, str, str]] = set()
     cursor: str | None = None
     for _page in range(_POSITION_PAGES_MAX):
         page = client.get_wallet_positions_page(
@@ -725,7 +727,10 @@ def _paginate_positions(
         )
         for row in page.rows:
             # A holding that changed between two page requests can be served twice.
-            key = (str(row.get("condition_id", "")), str(row.get("outcome_index", "")))
+            # The token is part of the key: a wallet can hold two tokens of one
+            # market outcome, and those are two holdings.
+            key = (str(row.get("token_id", "")), str(row.get("condition_id", "")),
+                   str(row.get("outcome_index", "")))
             if key not in seen and _is_live_holding(row):
                 seen.add(key)
                 rows.append(row)
