@@ -187,4 +187,166 @@ the SDK changelog entries quoted above.
 
 ## Part 2 — distribution
 
-Pending: see the second commit.
+2026-11-17 09:46–09:48 UTC. 238 requests to `data-api.polymarket.com` (1 leaderboard,
+237 position pages): 237 × HTTP 200, 1 × 503 retried successfully, no 429, no
+`Retry-After`. No wallet failed. Counts only; numbers and the per-wallet count pairs
+(unordered, no identifiers) are in `2026-11-17-data-api-v1-positions-default.json`.
+
+**Request budget overrun.** A first attempt read the wallet address from the wrong
+leaderboard key (`proxy_wallet`; the key is `user_id`), collected no wallets and kept
+paging `/v2/leaderboard` for about 22 minutes (09:23–09:45 UTC) until it was noticed
+and stopped. Those requests were not counted; at 0.2 s pause plus latency they are an
+estimated 2,000–3,500, all to `/v2/leaderboard`, far above the 600 this task was
+allowed. No position data came from that run. The corrected script caps its own
+request count.
+
+Wallets: the 100 rows of
+`/v2/leaderboard?category=OVERALL&time_period=month&sort_by=PNL&limit=100`.
+
+- **LIVE** — `/v2/positions?user=W&limit=500&filter_type=CASH&filter_amount=0.000001&sort_by=TOKENS&sort_direction=DESC`,
+  at most 2 pages; rows with `redeemable: false` and `current_size >= 1`. Truncated
+  (a third page existed): 11 wallets, counted as 1,000, a floor.
+- **RESOLVED** — `/v2/positions?user=W&limit=1000&status=REDEEMABLE&filter_type=TOKENS&filter_amount=1`,
+  at most 2 pages. Truncated: 17 wallets, counted as 2,000, a floor.
+
+Means and maxima below are therefore floors wherever a group contains truncated
+wallets; medians and quartiles are not affected except where noted.
+
+### Row counts per wallet
+
+| group | wallets | measure | min | Q1 | median | Q3 | mean | max |
+|---|---|---|---|---|---|---|---|---|
+| all 100 | 100 | LIVE | 0 | 0 | 16 | 221.5 | ≥186.4 | ≥1000 |
+| | | RESOLVED | 0 | 1 | 53.5 | 794 | ≥516.6 | ≥2000 |
+| | | LIVE+RESOLVED | 0 | 15.75 | 187.5 | 1071 | ≥703.1 | ≥3000 |
+| LIVE < 200, LIVE not truncated | 74 | LIVE | 0 | 0 | 7 | 28 | 27.4 | 191 |
+| | | RESOLVED | 0 | 1 | 34.5 | 574.5 | ≥390.0 | ≥2000 |
+| | | LIVE+RESOLVED | 0 | 7 | 55.5 | 599 | ≥417.4 | ≥2191 |
+
+Quartiles are inclusive-method (linear interpolation).
+
+### Buckets (wallets)
+
+| group | measure | = 0 | ≤ 10 | ≤ 50 | ≤ 200 | > 200 | truncated |
+|---|---|---|---|---|---|---|---|
+| all 100 | LIVE | 27 | 43 | 62 | 74 | 26 | 11 (> 1000) |
+| | RESOLVED | 24 | 37 | 49 | 62 | 38 | 17 (> 2000) |
+| | LIVE+RESOLVED | 7 | 21 | 36 | 52 | 48 | 24 |
+| LIVE < 200 | LIVE | 27 | 43 | 62 | 74 | 0 | 0 |
+| | RESOLVED | 18 | 31 | 41 | 52 | 22 | 8 (> 2000) |
+| | LIVE+RESOLVED | 7 | 21 | 36 | 52 | 22 | 8 |
+
+The ≤ columns are cumulative; "truncated" wallets are inside "> 200".
+
+### Won and lost among RESOLVED rows
+
+| group | RESOLVED rows counted | `current_value == 0` (lost) | `current_value > 0` (won, unredeemed) | wallets with ≥ 1 unredeemed winner |
+|---|---|---|---|---|
+| all 100 | 51,661 | 51,459 | 202 | 10 |
+| LIVE < 200 | 28,859 | 28,740 | 119 | 9 |
+
+99.6% of resolved, still-held rows are worthless losers.
+
+### Which distribution fits "about 55 rows per wallet"?
+
+If v1's default listed resolved holdings, a wallet's v1 row count was about
+LIVE+RESOLVED; if not, about LIVE. For the 74-wallet proxy group today:
+
+| | LIVE | LIVE+RESOLVED |
+|---|---|---|
+| mean | 27.4 | ≥ 417.4 |
+| median | 7 | 55.5 |
+| wallets above 200 rows | 0 of 74 | 22 of 74 (8 of them above 2,000) |
+| chance that 28 wallets drawn from the 74 average ≤ 55 rows | — | 0.001% |
+| …≤ 110 rows | — | 0.03% |
+| …if every RESOLVED count is halved (stock was smaller before the midterms): ≤ 55 / ≤ 110 | — | 0.01% / 1.1% |
+| …if quartered: ≤ 55 / ≤ 110 | — | 0.3% / 30% |
+| chance that 28 wallets average ≥ 28 / ≥ 45 rows | 46% / 0.7% | — |
+
+(200,000 draws of 28 without replacement, seed 17.)
+
+Read plainly:
+
+- **An average of 55 (or 45 across 64 wallets) is far below LIVE+RESOLVED as it
+  stands today** for leaderboard wallets with modest live books: the mean is at least
+  417 because 30% of them carry hundreds to thousands of dead rows. A v1 store built
+  from a listing that included resolved holdings would be dominated by those wallets.
+  It is not: the pilot's whole position store is 5,789 rows
+  (`docs/lean-pilot.md`), fewer than three such wallets would write in one run.
+- **It is above LIVE as it stands today** (mean 27, median 7), by about a factor of
+  two. That direction is the expected one: these counts were taken two weeks after the
+  US midterm markets resolved, which moved holdings out of LIVE. The first v2 run's
+  3 rows per wallet sits at the low end of today's LIVE distribution (34 of 74 wallets
+  hold ≤ 5), not outside it.
+- So on averages the evidence favours "v1's default left resolved holdings out".
+
+**But it is not decisive, for one reason that matters.** "LIVE < 200" is a poor
+stand-in for the pilot's non-automated filter. The wallets that carry thousands of
+dead rows are mostly high-frequency ones (several hold 0–15 live rows and > 2,000
+resolved), which the pilot's style scoring would likely class as automated and never
+poll. Remove them — take the 52 of 74 wallets with LIVE+RESOLVED ≤ 200 — and
+LIVE+RESOLVED has mean 49.8 and median 18, against LIVE mean 18.8. That is as close
+to 55 and 45 as anything here. Under that selection the "included" reading explains
+both production numbers at once: 55 rows under v1 ≈ 3 live + about 50 dead, and 3
+under v2. The "left out" reading instead needs the same wallets' live books to have
+fallen from 55 to 3 across the midterms. Both are possible; this probe cannot tell
+which wallets the pilot polled.
+
+Other things that could produce 55 without settling the question: a few polled
+wallets with large live books before the election pulling the mean up (the median
+would then be much lower than 55); v1's `sizeThreshold` default of 1 against v2's 0.1
+dust floor (irrelevant here, both sides were counted at ≥ 1 share); v1 rows for
+markets closed but not yet resolved, which v2 may class differently (not measured);
+and the resolved stock itself being smaller on any given October day than it is now.
+
+## Answer
+
+**Not settled.** Probably v1's default left unredeemed resolved holdings out — I put
+it at roughly 60–65%, not higher.
+
+For "left out":
+
+1. v1 documented `redeemable` as defaulting to false, and an explicit
+   `redeemable=false` did exclude them. A server that applies its documented default
+   behaves the same with the parameter absent.
+2. Polymarket's own TypeScript SDK changelog lists "The default `Open` status
+   includes redeemable positions" under a breaking change in the release that moved
+   to v2.
+3. Averages: 55 rows per wallet is 2× today's LIVE mean and at most one-eighth of
+   today's LIVE+RESOLVED mean for comparable leaderboard wallets.
+
+For "included":
+
+1. The migration guide, otherwise explicit about changed behaviour, maps
+   `GET /positions` to `/v2/positions` with no warning that the default set grew.
+2. A server that treats an absent boolean as "no filter" and a present one as a
+   filter would show exactly what is known (explicit false excludes) and still include
+   them by default. Nothing here rules that out.
+3. Among wallets without a large dead book, LIVE+RESOLVED averages 50 — a better fit
+   to 55 than LIVE's 19 — and matches the drop to 3 without needing the live books to
+   have collapsed.
+
+**What remains unknown:** v1's actual behaviour; which of today's leaderboard wallets
+resemble the 28 the pilot polled; how much of each wallet's resolved stock existed
+before 2 November; the content of the one docs URL that only answered 403 and of the
+308 target `/market-data/public-analytics`.
+
+**What would settle it, without the API.** The v1-era position store already holds
+the answer. Each stored row keeps `size`, `current_outcome_price` and
+`current_value_usdc` (`PolymarketPosition`), and 99.6% of resolved, still-held rows
+are losers priced at exactly 0, while a live holding valued at exactly 0 is about 1 in
+5,500 (`2026-11-17-data-api-v2-positions.md`). So, over snapshots taken before
+2026-11-02:
+
+- count rows with `size >= 1` and `current_outcome_price == 0` (or
+  `current_value_usdc == 0`). A handful or none: v1 left resolved holdings out. A
+  large share of all rows (tens of percent): v1 included them.
+- cross-check with Gamma: stored rows whose market's resolution time is earlier than
+  the row's `snapshot_at`.
+- the per-wallet maximum and median of `position_count` in the snapshot manifests: a
+  median far below the mean of 55, with a few wallets in the hundreds, is the
+  signature of included dead books.
+
+Until that is run, treat "the migrated collector stores what v1 stored" as likely but
+unverified, and do not diff a v1-era snapshot against a v2-era one as if a missing key
+meant an exit.
