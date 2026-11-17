@@ -338,9 +338,9 @@ class PolymarketClient:
         """One page of a wallet's positions.
 
         Without ``status`` the listing is every current holding, largest value
-        first. Unlike v1's it includes holdings in resolved markets that the
-        wallet has not redeemed (``redeemable``), worthless ones too, and v2 has
-        no parameter that leaves them out. ``status="CLOSED"`` lists exited
+        first. It includes holdings in resolved markets that the wallet has
+        not redeemed (``redeemable``), worthless ones too, and v2 has no
+        parameter that leaves them out. ``status="CLOSED"`` lists exited
         positions (v1 ``/closed-positions``), largest realized PnL first.
 
         One floor per request: ``min_shares`` on the holding's size (the

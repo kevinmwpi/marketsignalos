@@ -241,9 +241,11 @@ provisional cohort lost its members, so capture was skipped, and the research
 snapshot stopped publishing on 2026-11-03. The post-mortem is in
 `docs/fix-lessons-learned.md`.
 
-Since 2026-11-17 the collector reads v2. What it stores is unchanged, with these
-differences in how it is read. The evidence is one live probe, two live smoke tests
-and one live check of the position filter
+Since 2026-11-17 the collector reads v2. The stored row formats are unchanged, and
+the activity rows are the same rows; the position rows may be a narrower set than
+before (see "Whether v1 stored the same holdings" below). The differences in how
+each is read follow. The evidence is one live probe, two live smoke tests and one
+live check of the position filter
 (`docs/benchmarks/2026-11-17-data-api-v2-probe.md`, `-smoke.md`, `-smoke-2.md`,
 `-positions.md`).
 
@@ -276,6 +278,40 @@ and one live check of the position filter
   one of the six wallets at the top of the month's PnL board holds 25,232 live
   holdings and is refused this way; the other five hold 39 to 6,925. A wallet that
   large is automated, and the cohort stage excludes it once it is scored.
+- **Whether v1 stored the same holdings is not known.** Until 2026-11-02 the walk
+  read v1's default listing (`/positions?user=…`, no `redeemable` parameter). The
+  migration took that listing to be live holdings only, because the pilot's whole
+  store (5,789 rows) was far smaller than one large wallet's v2 listing. That
+  compared different wallets and showed only that v2's listing was too long to
+  store. The first run on v2 polled 28 of the same 64 wallets and stored 80
+  position rows (2026-11-17 09:07 UTC), against 1,488 to 1,660 for each batch of
+  28 on 10-31 and 11-01. Either those wallets hold far less than they did before the
+  2026-11-03 elections, or v1 listed their resolved, unredeemed holdings and the
+  v2 walk leaves them out. Polymarket's documents do not say which, and v1 can no
+  longer be asked (`docs/benchmarks/2026-11-17-data-api-v1-positions-default.md`).
+  A count of live and resolved holdings for the 100 wallets of today's month board
+  fits either reading, depending on which of them resemble the pilot's wallets; the
+  last v1 research capture shows only that an explicit `redeemable=false` filtered.
+  The v1 rows still in the store would settle it: resolved losers are priced at
+  exactly 0. That count has not been run.
+  What depends on the answer:
+  - Scores, tiers and signal capture do not read position rows. The scorer reads
+    only whether the listing was read to its end (`positions_complete`).
+  - `active_pnl_usdc` on a score row is the unrealized PnL summed over the listed
+    holdings. Since 2026-11-17 that is live holdings only. It gates nothing.
+  - Which wallets are polled does depend on the store. A bounded run takes a
+    wallet again only while its latest position snapshot holds something
+    (`_select_shallow_wallet_targets`). An empty listing writes no snapshot, so a
+    wallet that already had one keeps it and stays in the rotation. A newly seeded
+    wallet whose first listing is empty, or fails, is polled once and never again,
+    and keeps its place on the capped watchlist. A listing of live holdings is
+    empty more often than one that includes old, unredeemed ones: of the 100
+    wallets on the month board on 2026-11-17, 27 held nothing live of a share or
+    more and 7 held nothing at all.
+  - Because an empty listing writes nothing, a wallet that sold everything keeps
+    its last holdings in the store as if it still held them. The API's feed and
+    exit detection (not deployed) read that snapshot: they would show the holdings
+    as current and never see the exit that emptied the wallet.
 - **Closed positions are one page.** The 50 with the largest realized PnL
   (`status=CLOSED`). Nothing reads these rows beyond the audit store, and a wallet can
   have thousands. `closed_positions_complete` therefore means that the request

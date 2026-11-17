@@ -350,3 +350,60 @@ are losers priced at exactly 0, while a live holding valued at exactly 0 is abou
 Until that is run, treat "the migrated collector stores what v1 stored" as likely but
 unverified, and do not diff a v1-era snapshot against a v2-era one as if a missing key
 meant an exit.
+
+## Part 3 — what this repository's own records add
+
+Added by the session that ran the migration, 2026-11-17 about 10:00 UTC. Counts only.
+
+**The last v1 research capture** (`generated_at` 2026-11-02T15:47:45Z,
+`codex/research-snapshots` @ `d62fe7b`). The collector then asked v1 for
+`/positions?user=W&limit=50&sortBy=CURRENT&sortDirection=DESC&sizeThreshold=0&redeemable=false`
+and rejected any row whose `redeemable` was not `false`. Ten wallets from the day's
+volume board: 350 rows returned, 0 rejected. Five listings were complete (2, 18, 20,
+22 and 38 rows, under the limit of 50), and none of their rows has a reported value
+or price of exactly 0. With `sizeThreshold=0`, a complete listing that included
+resolved holdings would have carried the wallet's losers, which are valued at 0 and
+which three in four leaderboard wallets hold today (Part 2). So an explicit
+`redeemable=false` did filter in v1. The capture never asked without the parameter,
+so it says nothing about the default.
+
+**"v1 documented `redeemable` as defaulting to false"** (Answer, "For left out",
+point 1) is the migrating session's recollection of the v1 reference, passed to the
+helper in its brief. The reference has been removed and nothing in this repository
+records it. Treat it as unverified. The same holds for v1's `sizeThreshold` default
+of 1, which the collector's one-share floor is meant to match.
+
+**The pilot's own runs.** The pilot asked v1 with neither `redeemable` nor
+`sizeThreshold`.
+
+- Before the outage: 1,488 to 1,660 position rows per run of 28 wallets (10-31 and
+  11-01), and 5,789 rows in the store for the two newest snapshots of 64 wallets.
+  That is about 45 to 55 rows per wallet and snapshot. No run was far from the
+  others, so no wallet in the rotation listed more than a few hundred rows.
+- First run on v2 (2026-11-17 09:07 UTC), live holdings of at least one share: 80
+  rows for 28 wallets. Retention keeps two snapshots per wallet, so it then dropped
+  the oldest snapshot of each wallet that had just written a third: 1,063 rows. A
+  wallet whose listing was empty wrote nothing and dropped nothing. The wallets that
+  still hold something therefore listed 1,063 rows on or before 2026-11-02 and at
+  most 80 today.
+- The cohort stage has excluded 101 wallets as automated and 64 remain. The pilot's
+  rotation is the non-automated minority of what the leaderboard seeded. That is the
+  caveat Part 2 raises about its 74-wallet group: the closer comparison is its 52
+  wallets without a large dead book (LIVE mean 18.8; LIVE+RESOLVED mean 49.8,
+  median 18).
+
+**Where that leaves it.** Unsettled, and closer to even than the 60–65% above. A
+thirteen-fold fall across the same wallets is what "included" predicts: about 3 live
+and 40 dead rows each. "Left out" needs the live books of those wallets to have
+shrunk that much across the 2026-11-03 elections, which wallets seeded from October's
+profit board may have done.
+
+The check under "What would settle it" is the one to run, and its input is leaving
+the store. A wallet's v1 snapshots are dropped after its second non-empty listing on
+v2, which for most wallets is within a day of the deploy. The v1 snapshots of wallets
+whose v2 listing is empty stay, because an empty listing writes nothing, and those
+are the informative ones: such a wallet either sold or redeemed everything since
+2026-11-02, or its v1 rows were dead.
+
+Nothing that is deployed depends on the answer. Scores, tiers and signal capture do
+not read position rows (`docs/lean-pilot.md`).

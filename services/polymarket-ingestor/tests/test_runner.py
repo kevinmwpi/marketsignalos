@@ -407,14 +407,14 @@ def test_paginate_activity_window_streaming_matches_accumulate() -> None:
     assert {e.transaction_hash for e in accumulate.events} == {"0xa", "0xb", "0xd"}
 
 
-def test_paginate_positions_lists_live_holdings_as_v1_did() -> None:
-    """v1's default listing: at least one share, in a market that has not resolved."""
+def test_paginate_positions_lists_live_holdings_of_a_share_or_more() -> None:
+    """At least one share, in a market that has not resolved."""
     fake = FakeDataApi()
     fake.positions["0xabc"] = [
         position_row(f"0x{i}", size=1000.0 - i) for i in range(501)
     ] + [
-        position_row("0xdust", size=0.5),  # v1's default hid holdings below one share
-        # Resolved and never redeemed. v2 lists these; v1 did not.
+        position_row("0xdust", size=0.5),  # below the one-share floor
+        # Resolved and never redeemed. v2 lists these and the walk drops them.
         position_row("0xlost", size=900.0, current_value=0.0, current_price=0.0,
                      status="REDEEMABLE", redeemable=True),
         position_row("0xwon", size=800.0, current_value=800.0, current_price=1.0,
