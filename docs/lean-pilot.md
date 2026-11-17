@@ -242,8 +242,10 @@ snapshot stopped publishing on 2026-11-03. The post-mortem is in
 `docs/fix-lessons-learned.md`.
 
 Since 2026-11-17 the collector reads v2. What it stores is unchanged, with these
-differences in how it is read. The evidence is one live probe and one live smoke test
-(`docs/benchmarks/2026-11-17-data-api-v2-probe.md`, `-smoke.md`, `-positions.md`).
+differences in how it is read. The evidence is one live probe, two live smoke tests
+and one live check of the position filter
+(`docs/benchmarks/2026-11-17-data-api-v2-probe.md`, `-smoke.md`, `-smoke-2.md`,
+`-positions.md`).
 
 - **Activity.** `/v2/activity`, newest first, joined by the server's cursor instead
   of timestamp windows and offsets. Every request asks for the whole history
@@ -267,8 +269,13 @@ differences in how it is read. The evidence is one live probe and one live smoke
   size, because a cursor over the default value ordering repeated and skipped rows
   as prices moved. A live holding the server values at exactly zero is lost: one of
   5,493 for that wallet, none for the three others probed. A listing longer than
-  10,500 rows fails, as it did when v1's offset stopped at 10,000: the wallet's
-  positions stay incomplete and nothing is stored for that run.
+  10,500 rows (21 pages) fails with `positions pagination exceeded safety bound`:
+  the wallet's positions stay incomplete and nothing is stored for that run.
+  Polymarket's migration notes say v1's offset stopped at 10,000 rows, and the same
+  error was logged once under v1 (2026-10-22 18:10 UTC). In the second smoke test
+  one of the six wallets at the top of the month's PnL board holds 25,232 live
+  holdings and is refused this way; the other five hold 39 to 6,925. A wallet that
+  large is automated, and the cohort stage excludes it once it is scored.
 - **Closed positions are one page.** The 50 with the largest realized PnL
   (`status=CLOSED`). Nothing reads these rows beyond the audit store, and a wallet can
   have thousands. `closed_positions_complete` therefore means that the request

@@ -314,6 +314,7 @@ Keep the $15/month target and the prepare-before-provisioning rule.
 | `docs/benchmarks/2026-09-29-polygon-logs-probe.md` | Live probe: V2 `OrderFilled` decodes to Data API trades exactly; ~2.9 GB/day to follow the chain, ~970 calls per wallet history on free RPC; Goldsky orderbook subgraph is deprecated |
 | `docs/benchmarks/2026-11-17-data-api-v2-probe.md` | Data API v2 as documented and as probed live: routes, envelope, cursor paging, field names, sentinels, limits. v1 was retired on 2026-11-02 and answers HTTP 410 |
 | `docs/benchmarks/2026-11-17-data-api-v2-smoke.md` | Live smoke test of the v2 migration: v2 returns the last v1 capture's 988 trades fill for fill; stop-and-resume walks lose nothing; position volume found |
+| `docs/benchmarks/2026-11-17-data-api-v2-smoke-2.md` | Second smoke test, of the final code: position rows per run down from 139,555 to 13,284; one wallet with 25,232 live holdings refused by the 10,500-row bound |
 | `docs/benchmarks/2026-11-17-data-api-v2-positions.md` | How `/v2/positions` can list holdings in live markets only, which v1 did by default and v2 has no parameter for |
 | `docs/prd.md` | Product requirements, MVP scope, success metrics |
 | `docs/architecture.md` | High-level data flow and key principles |

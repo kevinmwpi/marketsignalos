@@ -678,8 +678,11 @@ def _paginate_activity(
     ).events
 
 
-# v1's offset paging stopped at 10,000, so a listing longer than 21 pages of 500
-# failed there too: the wallet's positions stay incomplete and nothing is stored.
+# 10,500 holdings. A longer listing fails: the wallet's positions stay incomplete
+# and nothing is stored. Polymarket's migration notes say v1's offset stopped at
+# 10,000 rows, so v1 could not list more either, and a wallet that large ran into
+# this walk's bound then too (seen on 2026-10-22). A wallet with that many live
+# holdings is an automated one, which the cohort stage excludes once it is scored.
 _POSITION_PAGES_MAX = 21
 # v1's default hid holdings below one share. v2's default floor is 0.1.
 _MIN_POSITION_SHARES = 1
