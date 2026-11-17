@@ -11,11 +11,13 @@ measures, on live public infrastructure, what that would take:
      exchanges (April 2026 on) emit, to size a full-history backfill;
   3. whether fills decoded from transaction receipts match the same trades as
      reported by the Data API (wallet, token, side, size, price);
-  4. whether the Goldsky orderbook subgraph this repository already queries still
-     receives trades after the April 2026 move to the V2 exchanges;
-  5. how wide a block range one ``eth_getLogs`` call accepts when it is filtered to a
+  4. how wide a block range one ``eth_getLogs`` call accepts when it is filtered to a
      single wallet as maker, which decides whether one wallet's full V2 history is
      a handful of calls or thousands.
+
+The 2026-09-29 runs also queried the Goldsky orderbook subgraph and found it shut
+down (``ENDPOINT_DEPRECATED``). That check was removed with the subgraph code
+(report schema 2).
 
 Event layouts come from Polymarket's source, not memory:
   V1  ctf-exchange  src/exchange/interfaces/ITrading.sol
@@ -65,10 +67,6 @@ WALLET_RANGES = (5_000, 20_000, 100_000, 500_000, 2_000_000, 10_000_000)
 WALLETS_TO_TRACE = 3
 V1_SAMPLE_DATE = datetime(2025, 6, 2, tzinfo=UTC)
 DATA_API = "https://data-api.polymarket.com"
-GOLDSKY_ORDERBOOK = (
-    "https://api.goldsky.com/api/public/project_cl6mb8i9h0003e201j6li0diw/"
-    "subgraphs/polymarket-orderbook-resync/prod/gn"
-)
 V2_LAUNCH = datetime(2026, 4, 1, tzinfo=UTC)
 SPACING_SECONDS = 0.15
 AMOUNT_SCALE = 1_000_000  # collateral and outcome tokens both use 6 decimals
@@ -277,31 +275,13 @@ def cross_check(client: httpx.Client, rpc: Rpc, v1: str, v2: str) -> dict[str, A
     return {"data_api_status": response.status_code, "trade_keys": keys, "checked": results}
 
 
-def subgraph_freshness(client: httpx.Client) -> dict[str, Any]:
-    query = ("{ orderFilledEvents(first: 1, orderBy: timestamp, orderDirection: desc) "
-             "{ timestamp transactionHash } }")
-    try:
-        response = client.post(GOLDSKY_ORDERBOOK, json={"query": query})
-        body = response.json()
-    except (httpx.HTTPError, ValueError) as exc:
-        return {"error": f"{type(exc).__name__}: {exc}"}
-    events = (body.get("data") or {}).get("orderFilledEvents") or []
-    latest = int(events[0]["timestamp"]) if events else None
-    return {
-        "status": response.status_code, "errors": body.get("errors"),
-        "latest_fill": datetime.fromtimestamp(latest, UTC).isoformat() if latest else None,
-        "covers_v2_era": bool(latest and latest >= int(V2_LAUNCH.timestamp())),
-    }
-
-
 def main(argv: list[str] | None = None) -> int:
     argparse.ArgumentParser(description=__doc__).parse_args(argv)
-    report: dict[str, Any] = {"schema_version": 1, "started_at": datetime.now(UTC).isoformat()}
+    report: dict[str, Any] = {"schema_version": 2, "started_at": datetime.now(UTC).isoformat()}
     headers = {"User-Agent": "MarketSignalOS-polygon-probe/0.1"}
     with httpx.Client(timeout=30.0, headers=headers) as client:
         rpc, tried = choose_rpc(client)
         report["rpc_candidates"] = tried
-        report["subgraph"] = subgraph_freshness(client)
         if rpc is None:
             report["error"] = "no public RPC answered with a verified web3_sha3"
         else:
@@ -342,7 +322,7 @@ def main(argv: list[str] | None = None) -> int:
 def summarize(report: dict[str, Any]) -> str:
     lines = [(f"RPC: {report.get('rpc')}  head={report.get('head_block')}  "
               f"s/block={report.get('seconds_per_block')}"),
-             f"topics: {report.get('topics')}", f"subgraph: {report.get('subgraph')}"]
+             f"topics: {report.get('topics')}"]
     for row in report.get("range_limits_v2", []):
         lines.append(f"range {row['blocks']:>6}: ok={row['ok']} logs={row['logs']} "
                      f"bytes={row['bytes']} s={row['seconds']} err={row['error']}")

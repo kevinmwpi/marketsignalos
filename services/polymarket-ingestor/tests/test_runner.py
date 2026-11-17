@@ -64,8 +64,6 @@ def _pipeline_handler(fake: FakeDataApi) -> Handler:
     def handler(request: httpx.Request) -> httpx.Response:
         if "lb-api.polymarket.com" in str(request.url):
             raise AssertionError("the seed must not use lb-api, which rejects day/week/month")
-        if "api.goldsky.com" in str(request.url):
-            raise AssertionError("shallow pipeline must not call the subgraph")
         if request.url.host == HOST:
             return fake(request)
         return httpx.Response(200, json=[])
@@ -973,9 +971,7 @@ def test_a_longer_board_is_cut_at_the_seed_limit(tmp_path: Path, monkeypatch: An
 def test_run_pipeline_seeds_volume_only_by_default(
     tmp_path: Path, monkeypatch: Any,
 ) -> None:
-    """The shallow pipeline must drop the profit/PnL leaderboard (luck bias)
-    and must NOT touch the subgraph — recent-trader discovery lives only in the
-    deep pipeline, which can absorb an unbounded wallet set."""
+    """The shallow pipeline must drop the profit/PnL leaderboard (luck bias)."""
     fake = FakeDataApi()
     fake.leaderboards[("OVERALL", "all", "VOLUME")] = [leaderboard_row("0xVol", name="v")]
     monkeypatch.setenv("POLYMARKET_DATA_DIR", str(tmp_path))

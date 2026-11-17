@@ -89,8 +89,6 @@ pnpm install --frozen-lockfile   # Dashboard
 | `INGEST_DEEP_EVERY_N_RUNS` | API | With the scheduler on, every Nth scheduled run is a **deep** discovery pass instead of a shallow refresh (0/unset = never deep) |
 | `INGEST_DEEP_WALLET_BATCH_SIZE` | API deep run | Positive wallet batch size; default 25 |
 | `INGEST_DEEP_LEADERBOARD_DEPTH` | API deep run | Positive leaderboard depth; default 100 |
-| `INGEST_RECENT_TRADER_LIMIT` | API deep run | Positive discovery wallet limit; default 1000 |
-| `INGEST_RECENT_TRADER_MAX_PAGES` | API deep run | Positive discovery page limit; default 20 |
 | `DATA_STALE_AFTER_MINUTES` | API | Freshness limit exposed by `/platform/status`; see deployment defaults |
 | `ADMIN_API_TOKEN` | API | Bearer credential required for operator routes, including metrics; never expose to public frontend |
 | `ALLOW_UNAUTHENTICATED_ADMIN` | API development | Explicit local-only operator bypass; forbidden in cloud mode |
@@ -174,7 +172,7 @@ The pipeline runs JSONL-first. Postgres is opt-in via `DATABASE_URL` (`Dual*` st
 | `GET` | `/health` | Health check (used by Railway) |
 | `GET` | `/metrics` | Prometheus text exposition — request RED, pipeline stages, upstream client, model health, feed cache (see `docs/observability.md`) |
 | `POST` | `/ingestor/run` | Triggers one pass of `run_pipeline()`; returns 202 + started_at |
-| `POST` | `/ingestor/run/deep` | Triggers one deep discovery pass (categorized leaderboard sweep + recent-trader discovery); shares the single running flag with `/ingestor/run` |
+| `POST` | `/ingestor/run/deep` | Triggers one deep discovery pass (categorized leaderboard sweep); shares the single running flag with `/ingestor/run`. Recent-trader discovery and the activity fallback read the Goldsky subgraph, which is shut down, so both were removed and every deep run's `warning` says "subgraph discovery unavailable (deprecated 2026)" until chain-log discovery (blueprint Stage 4) |
 | `GET` | `/ingestor/status` | Live state: running flag, last_exit_code, last_error, log_tail, last_summary, schedule (background-scheduler state; null when off) |
 | `GET` | `/ingestor/watchlist` | Current wallet watchlist (manual + auto-seeded, merged) |
 | `POST` | `/ingestor/watchlist` | Manually add a wallet (`{"address": "0x…"}`) — validated, deduped, pinned so archival can never drop it; hydrated on the next pipeline run. 409 while a run is in flight |

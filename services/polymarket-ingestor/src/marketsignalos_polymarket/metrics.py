@@ -101,7 +101,7 @@ pipeline_records_written_total = Counter(
 
 upstream_requests_total = Counter(
     "msos_upstream_requests_total",
-    "Upstream Polymarket/Goldsky requests by host, endpoint and outcome.",
+    "Upstream Polymarket requests by host, endpoint and outcome.",
     ["host", "endpoint", "outcome"],
 )
 

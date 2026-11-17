@@ -189,17 +189,11 @@ class _Feed(FakeDataApi):
         return len(self.calls("/v2/activity"))
 
 
-def test_request_cap_covers_every_activity_page_and_prevents_subgraph_escape(
-    pilot_data: Path,
-) -> None:
+def test_request_cap_covers_every_activity_page(pilot_data: Path) -> None:
     feed = _Feed([100, 100, 99, 98, 97, 96])
 
-    def handler(request: httpx.Request) -> httpx.Response:
-        assert "goldsky" not in str(request.url)
-        return feed(request)
-
     stores = runner._build_stores(pilot_data)
-    with httpx.Client(transport=httpx.MockTransport(handler)) as http:
+    with httpx.Client(transport=httpx.MockTransport(feed)) as http:
         client = PolymarketClient(PolymarketClientConfig(max_retries=1), client=http)
         runner.run_wallets(
             client, stores, addresses=["0xabc"], activity_page_size=2,
@@ -211,6 +205,36 @@ def test_request_cap_covers_every_activity_page_and_prevents_subgraph_escape(
     # The walk may have stopped inside second 98: the next one starts there again.
     assert state.oldest_activity_cursor_timestamp == 98
     assert "activity request budget reached" in state.errors
+
+
+def test_incomplete_exhaustive_history_stays_on_the_data_api(
+    pilot_data: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The deep sweep hydrates with exhaust_activity=True and no request budget.
+    When its page cap leaves a history incomplete, the wallet used to fall back
+    to the Goldsky subgraph, which is shut down. It must now keep its cursor
+    for the next run and record no subgraph error."""
+    monkeypatch.setenv("POLYMARKET_ACTIVITY_EXHAUST_PAGES", "1")
+    feed = _Feed([100, 99, 98, 97])
+    hosts: set[str] = set()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        hosts.add(request.url.host)
+        return feed(request)
+
+    stores = runner._build_stores(pilot_data)
+    with httpx.Client(transport=httpx.MockTransport(handler)) as http:
+        client = PolymarketClient(PolymarketClientConfig(max_retries=1), client=http)
+        runner.run_wallets(
+            client, stores, addresses=["0xabc"], activity_page_size=2, exhaust_activity=True,
+        )
+    assert "api.goldsky.com" not in hosts
+    assert feed.activity_calls == 1  # the page cap stopped the walk
+    state = stores.hydration.load_hydration()["0xabc"]
+    assert not state.activity_history_complete
+    # The walk may have stopped inside second 99: the next one starts there again.
+    assert state.oldest_activity_cursor_timestamp == 99
+    assert state.errors == []
 
 
 def test_capped_recent_refresh_queues_the_skipped_range_and_blocks_trust(

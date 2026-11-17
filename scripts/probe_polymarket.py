@@ -1,9 +1,10 @@
 r"""
 Phase 0 discovery probe -- Polymarket public APIs.
 
-Hits candidate endpoints across Gamma, CLOB, Data, leaderboard, and Goldsky,
-reports which return JSON, and dumps top-level field names so we know the
-real shape before scaffolding the ingestor.
+Hits candidate endpoints across Gamma, CLOB, Data, and leaderboard, reports
+which return JSON, and dumps top-level field names so we know the real shape
+before scaffolding the ingestor. The Goldsky subgraph probes were dropped after
+Goldsky shut the subgraph down in 2026.
 
 Usage:
     .\.venv\Scripts\python.exe scripts\probe_polymarket.py
@@ -54,26 +55,6 @@ BASE_PROBES: list[tuple[str, str, str, dict[str, Any] | None]] = [
     ("data:activity", "GET", "https://data-api.polymarket.com/activity?user={wallet}&limit=5", None),
     ("data:value", "GET", "https://data-api.polymarket.com/value?user={wallet}", None),
     ("data:trades", "GET", "https://data-api.polymarket.com/trades?user={wallet}&limit=5", None),
-
-    # ── Goldsky subgraph (GraphQL) ──
-    (
-        "goldsky:meta",
-        "POST",
-        "https://api.goldsky.com/api/public/project_cl6mb8i9h0003e201j6li0diw/subgraphs/polymarket-orderbook-resync/prod/gn",
-        {"query": "{ _meta { block { number } deployment hasIndexingErrors } }"},
-    ),
-    (
-        "goldsky:trades_sample",
-        "POST",
-        "https://api.goldsky.com/api/public/project_cl6mb8i9h0003e201j6li0diw/subgraphs/polymarket-orderbook-resync/prod/gn",
-        {
-            "query": (
-                "{ orderFilledEvents(first: 3, orderBy: timestamp, orderDirection: desc) "
-                "{ id maker taker makerAssetId takerAssetId makerAmountFilled "
-                "takerAmountFilled fee timestamp transactionHash } }"
-            )
-        },
-    ),
 ]
 
 

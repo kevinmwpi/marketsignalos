@@ -22,7 +22,6 @@ from marketsignalos_polymarket.polymarket_client import (
 from marketsignalos_polymarket.runner import (
     _apply_sweep_to_review_state,
     _build_stores,
-    _fold_recent_traders_into_sweep,
     _load_review_state,
     _load_skilled_wallets,
     _load_wallets_with_open_positions,
@@ -33,7 +32,6 @@ from marketsignalos_polymarket.runner import (
     run_deep_pipeline,
     run_pin_wallet,
     run_prune_wallets,
-    run_recent_traders_seed,
 )
 
 from ._data_api import HOST, FakeDataApi, leaderboard_row
@@ -60,15 +58,11 @@ def _slice(request: httpx.Request) -> tuple[str, str, str]:
     return params["category"], params["time_period"], params["sort_by"]
 
 
-def _deep_handler(fake: FakeDataApi, subgraph: Any = None) -> Any:
-    """The fake Data API, ``subgraph`` for Goldsky, an empty list from other hosts."""
+def _deep_handler(fake: FakeDataApi) -> Any:
+    """The fake Data API, and an empty list from other hosts."""
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.host == HOST:
             return fake(request)
-        if request.url.host == "api.goldsky.com":
-            if subgraph is None:
-                return httpx.Response(200, json={"data": {"orderFilledEvents": []}})
-            return cast(httpx.Response, subgraph(request))
         return httpx.Response(200, json=[])
     return handler
 
@@ -576,25 +570,10 @@ def test_apply_sweep_does_not_unpin() -> None:
     assert state["0xpin"].status == "pinned"
 
 
-def test_fold_recent_traders_into_sweep_tags_subgraph_source() -> None:
-    from marketsignalos_polymarket.runner import _DeepSweepResult, _WalletSweepMeta
-    sweep = _DeepSweepResult(
-        discovered={"0xlb"},
-        leaderboard_entries=1,
-        slices_attempted=1,
-        slices_succeeded=1,
-        per_wallet={"0xlb": _WalletSweepMeta(appearances=1, sources={"leaderboard"})},
-    )
-    # 0xlb was already on the leaderboard; 0xnew is subgraph-only.
-    _fold_recent_traders_into_sweep(sweep, ["0xlb", "0xnew"])
-    assert sweep.discovered == {"0xlb", "0xnew"}
-    assert sweep.per_wallet["0xlb"].sources == {"leaderboard", "subgraph"}
-    assert sweep.per_wallet["0xnew"].sources == {"subgraph"}
-
-
 def test_apply_sweep_subgraph_only_wallet_has_no_leaderboard_clock() -> None:
-    """A wallet surfaced purely from recent fills records sources=['subgraph']
-    but must NOT get a last_leaderboard_seen_at stamp."""
+    """A wallet from a non-leaderboard source records that source but must NOT
+    get a last_leaderboard_seen_at stamp. 'subgraph' is the tag that rows
+    discovered before the recent-trader source was removed still carry."""
     from marketsignalos_polymarket.runner import _DeepSweepResult, _WalletSweepMeta
     state: dict[str, PolymarketWalletReviewState] = {}
     sweep = _DeepSweepResult(
@@ -774,7 +753,6 @@ def test_run_deep_pipeline_smoke(
     client.close()
 
     assert result.discovered_this_run == 1
-    assert result.recent_traders_discovered == 0  # subgraph returned no fills
     assert result.active_wallets == 1
     assert result.archived_wallets == 0
     assert result.pinned_wallets == 0
@@ -788,82 +766,35 @@ def test_run_deep_pipeline_smoke(
     assert (state.positions_complete, state.closed_positions_complete) == (True, True)
 
 
-def _ofe(maker: str, taker: str, ts: int) -> dict[str, Any]:
-    return {"maker": {"id": maker}, "taker": {"id": taker}, "timestamp": str(ts)}
-
-
-def test_run_deep_pipeline_folds_in_recent_traders(
+def test_run_deep_pipeline_reports_missing_subgraph_discovery(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Recent on-chain traders are unioned into the sweep: they enter
-    review-state tagged 'subgraph', are protected from prune (in discovered),
-    and get hydrated alongside leaderboard wallets."""
+    """Goldsky shut down the subgraph behind recent-trader discovery. A deep
+    run must not call it, and must say in its warning that the discovery is
+    missing instead of retrying a dead endpoint. Hosts are recorded rather
+    than asserted in the handler because hydration swallows handler errors."""
     monkeypatch.setenv("POLYMARKET_DATA_DIR", str(tmp_path))
     monkeypatch.setenv("POLYMARKET_WATCHLIST_PATH", str(tmp_path / "wl.txt"))
-
-    def subgraph(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, json={"data": {"orderFilledEvents": [
-            _ofe("0xRecent1", "0xRecent2", 100),
-        ]}})
-
-    client = _client_with_handler(_deep_handler(_board("0xlb"), subgraph))
-    result = run_deep_pipeline(
-        leaderboard_depth=50, wallet_batch_size=10, activity_pages=1,
-        recent_trader_limit=10, skip_kalshi=True, client=client,
-    )
-    client.close()
-
-    assert result.recent_traders_discovered == 2
-    assert result.discovered_this_run == 3  # 0xlb + the two subgraph wallets
-
-    review = _load_review_state(tmp_path / "polymarket_wallet_review_state.jsonl")
-    assert {"0xlb", "0xrecent1", "0xrecent2"} <= set(review)
-    assert "subgraph" in review["0xrecent1"].sources
-    assert "subgraph" in review["0xrecent2"].sources
-    assert "leaderboard" in review["0xlb"].sources
-    assert review["0xrecent1"].status == "active"
-
-
-def test_run_deep_pipeline_can_skip_recent_traders(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setenv("POLYMARKET_DATA_DIR", str(tmp_path))
-    monkeypatch.setenv("POLYMARKET_WATCHLIST_PATH", str(tmp_path / "wl.txt"))
-
-    def subgraph(request: httpx.Request) -> httpx.Response:
-        raise AssertionError("subgraph must not be called when disabled")
-
-    client = _client_with_handler(_deep_handler(_board("0xlb"), subgraph))
-    result = run_deep_pipeline(
-        leaderboard_depth=50, wallet_batch_size=10, activity_pages=1,
-        seed_recent_traders=False, skip_kalshi=True, client=client,
-    )
-    client.close()
-    assert result.recent_traders_discovered == 0
-
-
-def test_run_recent_traders_seed_writes_subgraph_wallets(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setenv("POLYMARKET_DATA_DIR", str(tmp_path))
+    hosts: set[str] = set()
+    route = _deep_handler(_board("0xlb"))
 
     def handler(request: httpx.Request) -> httpx.Response:
-        if request.url.host == "api.goldsky.com":
-            return httpx.Response(200, json={"data": {"orderFilledEvents": [
-                _ofe("0xAaa", "0xBbb", 100),
-            ]}})
-        return httpx.Response(404)
+        hosts.add(request.url.host)
+        return cast(httpx.Response, route(request))
 
     client = _client_with_handler(handler)
-    counts = run_recent_traders_seed(limit=10, max_pages=2, client=client)
+    result = run_deep_pipeline(
+        leaderboard_depth=50, wallet_batch_size=10, activity_pages=1,
+        skip_kalshi=True, client=client,
+    )
     client.close()
 
-    assert counts["recent_traders_discovered"] == 2
-    assert counts["added"] == 2
+    assert "api.goldsky.com" not in hosts
+    assert result.warning == "subgraph discovery unavailable (deprecated 2026)"
+    assert result.to_dict()["warning"] == result.warning
+    assert result.discovered_this_run == 1  # the leaderboard wallet alone
     review = _load_review_state(tmp_path / "polymarket_wallet_review_state.jsonl")
-    assert review["0xaaa"].sources == ["subgraph"]
-    assert review["0xbbb"].status == "active"
-    assert review["0xaaa"].last_leaderboard_seen_at is None
+    assert review["0xlb"].sources == ["leaderboard"]
 
 
 def test_run_deep_pipeline_partial_success_on_degraded_api(
@@ -894,7 +825,7 @@ def test_run_deep_pipeline_partial_success_on_degraded_api(
     client = _client_with_handler(_deep_handler(fake))
     result = run_deep_pipeline(
         leaderboard_depth=50, wallet_batch_size=10,
-        activity_pages=1, seed_recent_traders=False, skip_kalshi=True,
+        activity_pages=1, skip_kalshi=True,
         client=client,
     )
     client.close()
@@ -902,6 +833,8 @@ def test_run_deep_pipeline_partial_success_on_degraded_api(
     # Partial-success contract: warning surfaces, but no exception raised.
     assert result.warning is not None
     assert "degraded" in result.warning
+    # The breaker reason comes first; the missing-discovery note still follows.
+    assert result.warning.endswith("; subgraph discovery unavailable (deprecated 2026)")
     # Prune was skipped → dormant wallet survives (the critical bug we
     # avoid by gating prune on aborted_early).
     assert result.pruned_this_run == 0
@@ -911,29 +844,3 @@ def test_run_deep_pipeline_partial_success_on_degraded_api(
     # The warning flows through to_dict() so the API surfaces it as
     # last_summary.warning.
     assert result.to_dict()["warning"] == result.warning
-
-
-def test_run_deep_pipeline_subgraph_failure_is_non_fatal(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """A subgraph blip must not kill an otherwise-healthy run. Without the
-    try/except wrap, a degraded subgraph during the recent-traders step
-    would raise and the breaker's partial-success path could never surface
-    its warning to the UI."""
-    monkeypatch.setenv("POLYMARKET_DATA_DIR", str(tmp_path))
-    monkeypatch.setenv("POLYMARKET_WATCHLIST_PATH", str(tmp_path / "wl.txt"))
-
-    def subgraph(request: httpx.Request) -> httpx.Response:
-        # Subgraph refuses to connect — the rest of the API is healthy.
-        raise httpx.ConnectError("subgraph unreachable", request=request)
-
-    client = _client_with_handler(_deep_handler(_board("0xfromlb"), subgraph))
-    result = run_deep_pipeline(
-        leaderboard_depth=50, wallet_batch_size=10,
-        activity_pages=1, skip_kalshi=True, client=client,
-    )
-    client.close()
-
-    # Subgraph failure absorbed; leaderboard wallet still flowed through.
-    assert result.recent_traders_discovered == 0
-    assert result.discovered_this_run >= 1
