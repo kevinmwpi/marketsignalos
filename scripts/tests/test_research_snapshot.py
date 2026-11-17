@@ -133,6 +133,22 @@ def test_combo_trades_and_redeemable_holdings_are_left_out_without_being_faults(
                 wallet[kind]["rows_excluded"]) == (2, 0, 1)
 
 
+def test_holdings_are_read_past_the_resolved_ones_and_published_up_to_the_cap():
+    """Sorted by value, unredeemed winners come first. v1 never listed them, so
+    v2 is read deeper for the sample's 50 live holdings."""
+    resolved = [row(token_id=str(i), redeemable=True) for i in range(120)]
+    live = [row(token_id=str(1000 + i)) for i in range(70)]
+    with client_for(positions=resolved + live) as client:
+        result = collector.Collector(client, wallet_limit=1).collect()
+    sample = result["wallets"][0]["positions"]
+    assert result["requests"][-1]["params"]["limit"] == collector.POSITION_FETCH_LIMIT == 200
+    assert [r["asset"] for r in sample["rows"]] == [str(1000 + i) for i in range(50)]
+    assert (sample["rows_returned"], sample["rows_excluded"], sample["rows_rejected"]) == (
+        190, 120, 0)
+    assert sample["possibly_truncated"] is True  # 70 live holdings, 50 published
+    assert result["limits"]["positions_per_wallet"] == 50 and result["status"] == "complete"
+
+
 def test_a_v1_shaped_response_is_unavailable_not_empty():
     def handler(request):
         if request.url.path == "/v2/leaderboard":
