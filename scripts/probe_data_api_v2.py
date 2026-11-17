@@ -161,8 +161,13 @@ def activity_key(row: dict[str, Any]) -> tuple[Any, ...]:
             row.get("type"))
 
 
-def walk(probe: Probe, path: str, pages: int, **params: Any) -> dict[str, Any]:
-    """Follow ``next_cursor`` for ``pages`` pages; report order, overlap and per-type shapes."""
+def walk(probe: Probe, path: str, pages: int, *, keep_collisions: bool = False,
+         **params: Any) -> dict[str, Any]:
+    """Follow ``next_cursor`` for ``pages`` pages; report order, overlap and per-type shapes.
+
+    ``keep_collisions`` adds up to three groups of rows that share one dedupe key
+    (legacy wallet only): whether v2 splits what the store treats as one row.
+    """
     rows: list[dict[str, Any]] = []
     sizes: list[int] = []
     cursor: str | None = None
@@ -183,7 +188,10 @@ def walk(probe: Probe, path: str, pages: int, **params: Any) -> dict[str, Any]:
     for row in rows:
         by_type.setdefault(str(row.get("type")), []).append(row)
     same_second = Counter(stamps)
+    groups = [[row for row in rows if activity_key(row) == key]
+              for key, n in keys.items() if n > 1][:3] if keep_collisions else []
     return {
+        "collision_groups": groups,
         "params": params, "statuses": statuses, "page_sizes": sizes, "rows": len(rows),
         "has_more_after_last_page": cursor is not None,
         "timestamps_non_increasing": all(a >= b for a, b in pairwise(stamps)),
@@ -209,7 +217,8 @@ def probe_activity(probe: Probe, wallet: str, *, keep_rows: bool) -> dict[str, A
     oldest_full = probe.get("/v2/activity", user=wallet, limit=3, sort_direction="ASC", start=1)
     out["full_history_oldest"] = summary(oldest_full, keep_rows=keep_rows)
     out["full_history_oldest_timestamps"] = timestamps(rows_of(oldest_full))
-    out["walk_desc_full_history"] = walk(probe, "/v2/activity", 3, user=wallet, start=1, limit=500)
+    out["walk_desc_full_history"] = walk(probe, "/v2/activity", 3, keep_collisions=keep_rows,
+                                         user=wallet, start=1, limit=500)
     out["walk_default_window"] = walk(probe, "/v2/activity", 2, user=wallet, limit=500)
 
     first = rows_of(probe.get("/v2/activity", user=wallet, start=1, limit=40))
