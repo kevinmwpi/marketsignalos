@@ -310,6 +310,16 @@ the pilot, so they should land by about 2026-10-13 (S7).
      (`docs/lean-pilot.md`). Late-filled trades are more than 3 h old, so capture
      counts them as stale fills, not signals. The fix changes what the pilot
      collects, so it restarts the 14-day count (S7).
+   - *Fixed 2026-11-17:* Polymarket retired Data API v1 on 2026-11-02 and every
+     wallet request answered HTTP 410 from 23:08 UTC. For fifteen days the pilot
+     stored no activity, the provisional list emptied and no signal was captured.
+     The collector now reads v2 (`docs/lean-pilot.md`). Trades made during the
+     outage are collected as history, but they are more than 3 h old, so capture
+     counts them as stale fills: the burn-in has no signals for 2026-11-02 to
+     2026-11-17. The fix changes how the pilot collects, so it restarts the 14-day
+     count (S7): the earliest freeze is 14 days after the deploy. Each provisional
+     build now also logs, as counts, why wallets are out of T2 (`diagnostic`), which
+     is logging only.
 5. **Power count and freeze.** Count T2's events over the last 14 days and set the
    window (S6). Commit the frozen config, record its hash in the blueprint, and open
    the window.

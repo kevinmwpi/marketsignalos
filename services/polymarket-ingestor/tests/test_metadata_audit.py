@@ -37,9 +37,9 @@ def test_replay_changes_only_metadata_status_and_reasons() -> None:
 def fixture(tmp_path: Path) -> tuple[Path, Path, Path, Path]:
     data = tmp_path / "data"
     data.mkdir()
-    event = parse_activity_row({"proxyWallet": WALLET, "conditionId": "one", "type": "TRADE",
+    event = parse_activity_row({"proxy_wallet": WALLET, "condition_id": "one", "type": "TRADE",
                                 "timestamp": 1000, "side": "BUY", "size": 10,
-                                "price": .4, "usdcSize": 4, "outcomeIndex": 0})
+                                "price": .4, "usdc_size": 4, "outcome_index": 0})
     market = parse_market_row({"conditionId": "one", "closed": True,
                               "outcomes": '["Yes","No"]', "outcomePrices": '["1","0"]'})
     hydration = PolymarketWalletHydration(

@@ -226,7 +226,7 @@ The pipeline runs JSONL-first. Postgres is opt-in via `DATABASE_URL` (`Dual*` st
 
 ### Implemented
 - FastAPI app: `/` (minimal HTML landing), `/health`, `/metrics`, `/ingestor/{run,status}`, `/signals/skilled-bets`, `/signals/polymarket-leaderboard`
-- **`run_pipeline()`** — single in-process orchestrator the web "Run ingest" button invokes. Seeds wallets from the data API's `/v1/leaderboard` across `day/week/month/all` windows (a rejected window is skipped and named in the result's `warning`), pulls activity/positions/value, fetches Polymarket markets + Kalshi public markets, and runs the Polymarket→Kalshi market matcher. No env vars required.
+- **`run_pipeline()`** — single in-process orchestrator the web "Run ingest" button invokes. Seeds wallets from the data API's `/v2/leaderboard` across `day/week/month/all` windows (a rejected window is skipped and named in the result's `warning`), pulls activity/positions/value, fetches Polymarket markets + Kalshi public markets, and runs the Polymarket→Kalshi market matcher. No env vars required.
 - **`/signals/skilled-bets`** — still-held BUY entries from wallets with `skill_likelihood ≥ 0.8`, each row carrying the Kalshi mirror (ticker, title, deep link, live YES price, match confidence) when a match exists
 - **SkilledBetsPanel + PolymarketLeaderboardPanel + IngestButton** mounted on `/` (the dashboard root)
 - **Operator ingestion** — bearer-token protected HTTP controls; explicit local-only bypass and development buttons. Log capture surfaces a `log_tail` and counts summary to authorized operators.
@@ -312,6 +312,10 @@ Keep the $15/month target and the prepare-before-provisioning rule.
 | `docs/stage3-cohort-v1-plan.md` | Stage 3 cohort v1: the rule qualifies no wallet, so nested tiers with T2 primary; outcome, costs, baseline, window and timing decisions S1–S7 (chosen 2026-10-06); build steps |
 | `docs/llm-judge.md` | Market-matcher eval set, TF-IDF baseline tooling, and the planned LLM judge (Phase 1 built) |
 | `docs/benchmarks/2026-09-29-polygon-logs-probe.md` | Live probe: V2 `OrderFilled` decodes to Data API trades exactly; ~2.9 GB/day to follow the chain, ~970 calls per wallet history on free RPC; Goldsky orderbook subgraph is deprecated |
+| `docs/benchmarks/2026-11-17-data-api-v2-probe.md` | Data API v2 as documented and as probed live: routes, envelope, cursor paging, field names, sentinels, limits. v1 was retired on 2026-11-02 and answers HTTP 410 |
+| `docs/benchmarks/2026-11-17-data-api-v2-smoke.md` | Live smoke test of the v2 migration: v2 returns the last v1 capture's 988 trades fill for fill; stop-and-resume walks lose nothing; position volume found |
+| `docs/benchmarks/2026-11-17-data-api-v2-smoke-2.md` | Second smoke test, of the final code: position rows per run down from 139,555 to 13,284; one wallet with 25,232 live holdings refused by the 10,500-row bound |
+| `docs/benchmarks/2026-11-17-data-api-v2-positions.md` | How `/v2/positions` can list holdings in live markets only, which v1 did by default and v2 has no parameter for |
 | `docs/prd.md` | Product requirements, MVP scope, success metrics |
 | `docs/architecture.md` | High-level data flow and key principles |
 | `docs/0001-tech-stack.md` | ADR explaining stack choices |

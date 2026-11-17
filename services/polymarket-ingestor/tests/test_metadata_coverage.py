@@ -48,7 +48,7 @@ def test_coverage_keeps_legacy_settlement_rule_and_distinguishes_missing() -> No
 
 
 def test_denominator_includes_sell_only_and_ignores_duplicate_fills_nontrade_empty() -> None:
-    trade = parse_activity_row({"proxyWallet": WALLET, "conditionId": "one", "type": "TRADE"})
+    trade = parse_activity_row({"proxy_wallet": WALLET, "condition_id": "one", "type": "TRADE"})
     events = [trade, trade, replace(trade, condition_id="two", side="SELL"),
               replace(trade, condition_id="redeem", type="REDEEM"), replace(trade, condition_id="")]
     assert activity_conditions(events) == {"one", "two"}
@@ -69,8 +69,8 @@ def test_snapshot_refresh_is_immutable_and_never_repairs_other_trust_flags() -> 
 
 def test_scorers_refresh_stale_false_and_stale_true_without_changing_numeric_scores() -> None:
     activity = [parse_activity_row({
-        "proxyWallet": WALLET, "conditionId": "one", "type": "TRADE", "side": "BUY",
-        "timestamp": 1000, "size": 100, "price": .4, "usdcSize": 40, "outcomeIndex": 0,
+        "proxy_wallet": WALLET, "condition_id": "one", "type": "TRADE", "side": "BUY",
+        "timestamp": 1000, "size": 100, "price": .4, "usdc_size": 40, "outcome_index": 0,
     })]
     market = parse_market_row({
         "conditionId": "one", "closed": True, "outcomes": '["Yes","No"]',
@@ -100,7 +100,7 @@ def test_scorers_refresh_stale_false_and_stale_true_without_changing_numeric_sco
 
 def test_shared_calculation_matches_existing_hydration_refresh(tmp_path: Path) -> None:
     stores = _build_stores(tmp_path)
-    events = [parse_activity_row({"proxyWallet": WALLET, "conditionId": c, "type": "TRADE"})
+    events = [parse_activity_row({"proxy_wallet": WALLET, "condition_id": c, "type": "TRADE"})
               for c in ("closed", "open", "missing", "closed")]
     markets = [parse_market_row({"conditionId": "closed", "closed": True}),
                parse_market_row({"conditionId": "open", "closed": False,

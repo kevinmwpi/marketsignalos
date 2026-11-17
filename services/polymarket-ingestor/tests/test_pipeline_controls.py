@@ -13,6 +13,8 @@ from marketsignalos_polymarket import runner, storage
 from marketsignalos_polymarket.models import PolymarketWalletHydration
 from marketsignalos_polymarket.polymarket_client import PolymarketClient, PolymarketClientConfig
 
+from ._data_api import HOST, FakeDataApi
+
 
 @pytest.fixture
 def pilot_data(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
@@ -25,7 +27,12 @@ def pilot_data(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 @pytest.fixture
 def empty_client() -> Iterator[PolymarketClient]:
-    with httpx.Client(transport=httpx.MockTransport(lambda req: httpx.Response(200, json=[]))) as http:
+    fake = FakeDataApi()  # no wallets, no boards: every listing is empty
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return fake(request) if request.url.host == HOST else httpx.Response(200, json=[])
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as http:
         yield PolymarketClient(
             PolymarketClientConfig(max_retries=1, retry_backoff_seconds=0), client=http,
         )
@@ -162,23 +169,34 @@ def test_invalid_bounds_fail_before_opening_stores(
 
 def _activity(timestamp: int, transaction: str) -> dict[str, Any]:
     return {
-        "proxyWallet": "0xabc", "timestamp": timestamp, "transactionHash": transaction,
-        "conditionId": "0xc", "type": "TRADE", "side": "BUY", "price": 0.5,
-        "size": 1, "usdcSize": 0.5, "outcomeIndex": 0,
+        "proxy_wallet": "0xabc", "timestamp": timestamp, "transaction_hash": transaction,
+        "condition_id": "0xc", "type": "TRADE", "side": "BUY", "price": 0.5,
+        "size": 1, "usdc_size": 0.5, "outcome_index": 0,
     }
 
 
-def test_request_cap_covers_boundary_calls_and_prevents_subgraph_escape(
+class _Feed(FakeDataApi):
+    """One wallet's /v2/activity: newest first, paged by cursor inside start/end."""
+
+    def __init__(self, timestamps: list[int]) -> None:
+        super().__init__()
+        self.activity["0xabc"] = [
+            _activity(ts, f"t{i}") for i, ts in enumerate(timestamps)
+        ]
+
+    @property
+    def activity_calls(self) -> int:
+        return len(self.calls("/v2/activity"))
+
+
+def test_request_cap_covers_every_activity_page_and_prevents_subgraph_escape(
     pilot_data: Path,
 ) -> None:
-    calls: list[httpx.Request] = []
+    feed = _Feed([100, 100, 99, 98, 97, 96])
 
     def handler(request: httpx.Request) -> httpx.Response:
         assert "goldsky" not in str(request.url)
-        if request.url.path == "/activity":
-            calls.append(request)
-            return httpx.Response(200, json=[_activity(100, "a"), _activity(100, "b")])
-        return httpx.Response(200, json=[])
+        return feed(request)
 
     stores = runner._build_stores(pilot_data)
     with httpx.Client(transport=httpx.MockTransport(handler)) as http:
@@ -187,63 +205,37 @@ def test_request_cap_covers_boundary_calls_and_prevents_subgraph_escape(
             client, stores, addresses=["0xabc"], activity_page_size=2,
             max_pages_per_wallet=20, exhaust_activity=True, max_activity_requests_per_wallet=2,
         )
-    assert len(calls) == 2
+    assert feed.activity_calls == 2
     state = stores.hydration.load_hydration()["0xabc"]
     assert not state.activity_history_complete
-    assert state.oldest_activity_cursor_timestamp == 100  # boundary must be revisited
+    # The walk may have stopped inside second 98: the next one starts there again.
+    assert state.oldest_activity_cursor_timestamp == 98
     assert "activity request budget reached" in state.errors
 
 
 def test_capped_recent_refresh_queues_the_skipped_range_and_blocks_trust(
     pilot_data: Path,
 ) -> None:
-    calls: list[httpx.Request] = []
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        if request.url.path == "/activity":
-            calls.append(request)
-            return httpx.Response(200, json=[_activity(100, "a"), _activity(90, "b")])
-        return httpx.Response(200, json=[])
-
+    feed = _Feed([100, 90, 80, 70, 60])
     stores = runner._build_stores(pilot_data)
     stores.checkpoints.set_last_timestamp("0xabc", 50)
     stores.hydration.upsert_hydration([
         PolymarketWalletHydration(proxy_wallet="0xabc", activity_history_complete=True),
     ])
-    with httpx.Client(transport=httpx.MockTransport(handler)) as http:
+    with httpx.Client(transport=httpx.MockTransport(feed)) as http:
         client = PolymarketClient(PolymarketClientConfig(max_retries=1), client=http)
         runner.run_wallets(
             client, stores, addresses=["0xabc"], activity_page_size=2,
             max_activity_requests_per_wallet=1,
         )
-    assert len(calls) == 1
+    assert feed.activity_calls == 1
     reopened = runner._build_stores(pilot_data)
     assert reopened.checkpoints.get_last_timestamp("0xabc") == 100
-    # The budget ran out inside timestamp 90's boundary pages, so 90 is revisited.
+    # The budget ran out after the page that ends in second 90, so 90 is revisited.
     assert reopened.activity_gaps.get_gap("0xabc") == (50, 90)
     state = reopened.hydration.load_hydration()["0xabc"]
     assert not state.activity_history_complete
     assert "recent activity overflow; gap queued for backfill" in state.errors
-
-
-class _Feed:
-    """One wallet's /activity as the Data API pages it: newest first, by end/start/offset."""
-
-    def __init__(self, timestamps: list[int]) -> None:
-        self.rows = sorted((_activity(ts, f"t{ts}") for ts in timestamps),
-                           key=lambda row: int(row["timestamp"]), reverse=True)
-        self.calls = 0
-
-    def __call__(self, request: httpx.Request) -> httpx.Response:
-        if request.url.path != "/activity":
-            return httpx.Response(200, json=[])
-        self.calls += 1
-        params = request.url.params
-        rows = [row for row in self.rows
-                if int(row["timestamp"]) <= int(params.get("end", 10**12))
-                and int(row["timestamp"]) >= int(params.get("start", 0))]
-        offset = int(params.get("offset", 0))
-        return httpx.Response(200, json=rows[offset:offset + int(params["limit"])])
 
 
 def _refresh(data: Path, feed: _Feed, *, budget: int) -> runner._Stores:
@@ -280,15 +272,21 @@ def test_an_overflowing_wallet_advances_and_later_runs_fill_what_it_skipped(
     _seed(pilot_data, checkpoint=30)
     feed = _Feed(list(range(10, 101, 10)))
 
-    stores = _refresh(pilot_data, feed, budget=4)  # two pages, each with its boundary call
+    stores = _refresh(pilot_data, feed, budget=2)  # two pages and the budget is spent
     assert _stored(pilot_data) == [70, 80, 90, 100]  # the newest pages, as before
     assert stores.checkpoints.get_last_timestamp("0xabc") == 100
-    assert stores.activity_gaps.get_gap("0xabc") == (30, 69)
+    # The walk may have stopped inside second 70, so the gap starts there.
+    assert stores.activity_gaps.get_gap("0xabc") == (30, 70)
     state = stores.hydration.load_hydration()["0xabc"]
     assert "recent activity overflow; gap queued for backfill" in state.errors
     assert not state.activity_history_complete
 
     stores = _refresh(pilot_data, feed, budget=5)  # nothing new, so the gap is walked
+    assert _stored(pilot_data) == [40, 50, 60, 70, 80, 90, 100]
+    assert stores.activity_gaps.get_gap("0xabc") == (30, 40)  # two more pages, resumed
+    assert not stores.hydration.load_hydration()["0xabc"].activity_history_complete
+
+    stores = _refresh(pilot_data, feed, budget=5)  # the last page reaches the checkpoint
     assert _stored(pilot_data) == [40, 50, 60, 70, 80, 90, 100]
     assert stores.activity_gaps.get_gap("0xabc") is None
     assert stores.checkpoints.get_last_timestamp("0xabc") == 100
@@ -303,9 +301,9 @@ def test_a_second_overflow_keeps_the_checkpoint_until_the_open_gap_is_filled(
     _seed(pilot_data, checkpoint=100, gap=(30, 69))
     feed = _Feed(list(range(10, 141, 10)))
 
-    stores = _refresh(pilot_data, feed, budget=6)
+    stores = _refresh(pilot_data, feed, budget=3)
     assert stores.checkpoints.get_last_timestamp("0xabc") == 100
-    assert stores.activity_gaps.get_gap("0xabc") == (30, 49)  # resumed, not restarted
+    assert stores.activity_gaps.get_gap("0xabc") == (30, 50)  # resumed, not restarted
     assert _stored(pilot_data) == [50, 60, 110, 120, 130, 140]
     state = stores.hydration.load_hydration()["0xabc"]
     assert "recent activity refresh incomplete; checkpoint retained" in state.errors
@@ -321,52 +319,73 @@ def test_the_gap_is_saved_before_the_checkpoint_passes_it(
 
     monkeypatch.setattr(storage.JsonWalletCheckpointStore, "set_last_timestamp", killed)
     with pytest.raises(RuntimeError, match="killed"):
-        _refresh(pilot_data, _Feed(list(range(10, 101, 10))), budget=4)
+        _refresh(pilot_data, _Feed(list(range(10, 101, 10))), budget=2)
     monkeypatch.undo()
     stores = runner._build_stores(pilot_data)
     assert stores.checkpoints.get_last_timestamp("0xabc") == 30
-    assert stores.activity_gaps.get_gap("0xabc") == (30, 69)
+    assert stores.activity_gaps.get_gap("0xabc") == (30, 70)
 
 
-def test_gap_top_revisits_a_budget_cut_timestamp_and_skips_an_unpageable_one() -> None:
+def test_a_stopped_walk_resumes_at_its_oldest_second_unless_it_is_stuck_in_it() -> None:
     errors: list[str] = []
-    spent = runner._ActivityRequestBudget(0)
-    assert not spent.take()
-    assert runner._gap_top(70, True, spent, errors) == 69
-    assert runner._gap_top(70, False, spent, errors) == 70
+    stopped = runner._ActivityPaginationResult(events=[], exhausted=False, oldest_timestamp=70)
+    assert runner._resume_end(stopped, errors) == 70
     assert errors == []
-    assert runner._gap_top(70, False, runner._ActivityRequestBudget(5), errors) == 69
-    assert errors == ["activity boundary exceeded offset safety bound"]
+    stuck = runner._ActivityPaginationResult(
+        events=[], exhausted=False, oldest_timestamp=70, stalled=True)
+    assert runner._resume_end(stuck, errors) == 69
+    assert errors == ["activity second exceeded page safety bound"]
+    unread = runner._ActivityPaginationResult(events=[], exhausted=False, oldest_timestamp=None)
+    assert runner._resume_end(unread, errors) is None
 
 
 def test_request_budget_is_shared_between_recent_and_history(pilot_data: Path) -> None:
-    calls: list[httpx.Request] = []
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        if request.url.path == "/activity":
-            calls.append(request)
-            rows = [_activity(101, "new")] if len(calls) == 1 else [
-                _activity(50, "a"), _activity(49, "b"),
-            ]
-            return httpx.Response(200, json=rows)
-        return httpx.Response(200, json=[])
-
+    feed = _Feed([101, 50, 49, 48, 47])
     stores = runner._build_stores(pilot_data)
     stores.checkpoints.set_last_timestamp("0xabc", 100)
     stores.hydration.upsert_hydration([
         PolymarketWalletHydration(proxy_wallet="0xabc", oldest_activity_cursor_timestamp=50),
     ])
-    with httpx.Client(transport=httpx.MockTransport(handler)) as http:
+    with httpx.Client(transport=httpx.MockTransport(feed)) as http:
         client = PolymarketClient(PolymarketClientConfig(max_retries=1), client=http)
         runner.run_wallets(
             client, stores, addresses=["0xabc"], activity_page_size=2,
             max_activity_requests_per_wallet=2,
         )
-    assert len(calls) == 2
+    assert feed.activity_calls == 2  # one recent page, one history page
     assert stores.checkpoints.get_last_timestamp("0xabc") == 101
     state = stores.hydration.load_hydration()["0xabc"]
     assert state.oldest_activity_cursor_timestamp == 49
     assert not state.activity_history_complete
+
+
+def test_capped_runs_collect_a_whole_history_once_while_new_trades_arrive(
+    pilot_data: Path,
+) -> None:
+    """The worker reads two pages per walk. Seconds shared by several trades, a
+    backlog longer than one run and trades arriving between runs must all end up
+    stored exactly once."""
+    history = [500, 500, 500, 499, 498, 498, 497, 496, 496, 496, 496, 495, 494, 493, 493,
+               492, 491, 490, 490, 489, 488, 487, 487, 486, 485]
+    feed = _Feed(history)
+    arrivals = [[], [601, 600, 600], [], [702, 701, 701, 701, 700, 700, 700, 699], [], [800]]
+    expected = len(history)
+    for run in range(40):
+        for ts in (arrivals[run] if run < len(arrivals) else []):
+            feed.activity["0xabc"].append(_activity(ts, f"new{run}-{expected}"))
+            expected += 1
+        stores = _refresh(pilot_data, feed, budget=10)
+        state = stores.hydration.load_hydration()["0xabc"]
+        if run >= len(arrivals) and state.activity_history_complete:
+            break
+    lines = (pilot_data / "polymarket_activity.jsonl").read_text(encoding="utf-8").splitlines()
+    stored = sorted(json.loads(line)["transaction_hash"] for line in lines)
+    assert stored == sorted(row["transaction_hash"] for row in feed.activity["0xabc"])
+    assert len(stored) == expected == 37
+    assert state.activity_history_complete and stores.activity_gaps.get_gap("0xabc") is None
+    assert stores.checkpoints.get_last_timestamp("0xabc") == 800
+    assert not [error for error in state.errors if "activity" in error]
+    assert run < 30  # it converges; it does not circle
 
 
 def test_pipeline_cli_parses_collection_controls() -> None:

@@ -76,12 +76,23 @@ bundled fallback; the scheduled data branch supplies subsequent captures indepen
 
 - Selection: first page of OVERALL / DAY / VOL on the public leaderboard, default 10
   wallets, maximum 20. This favors active accounts; it is not an unbiased population
-  sample or evidence of excess return.
+  sample or evidence of excess return. Since 2026-11-17 the board is ranked by volume
+  in shares (Data API v2); until 2026-11-02 it was ranked by volume in USDC (v1). The
+  cohort definition therefore changed with the upstream API, not by choice.
 - At most one leaderboard request, one trade request and one positions request per
   unique wallet: default 21, maximum 41 HTTP attempts. No retries or pagination.
 - Trades: at most 100 newest TRADE rows in a fixed seven-day window ending at collection
   start. Holdings: at most 50 positive-size, non-redeemable rows ordered by reported value.
   Upstream default archive filtering applies. These samples are incomplete.
+- v2 mixes two kinds of row into these listings that v1 served elsewhere or not at all,
+  and has no request filter for either: combo (basket) trades, and holdings in resolved
+  markets that the wallet has not redeemed. Both are left out and counted per sample as
+  `rows_excluded`; they are not faults, so they do not make a capture partial. Because
+  resolved holdings rank among the rest by value, the 200 largest holdings are read and
+  the live ones among them are published, up to 50. A wallet with many unredeemed
+  winners can therefore show fewer than 50 while holding more: in one live test, 19 and
+  20 of 200 were live for two wallets. Such a sample is marked possibly truncated. v2
+  does not list holdings below 0.1 shares.
 - A full page is labelled possibly truncated. A shorter page does not prove complete
   lifetime history. Two identical fills can be legitimate: trade identity is not inferred
   from transaction hashes and fills are not collapsed. Duplicate position assets are
@@ -105,12 +116,21 @@ executable price. Prices, balances and market state are not synchronized. Fees, 
 cash flows, resolutions, profitability and forecast skill are not inferred. The original
 signal API and its eligibility filters are unchanged.
 
-Official endpoint references (legacy v1, verified September 19, 2026):
-[leaderboard](https://docs.polymarket.com/api-reference/core/get-trader-leaderboard-rankings),
-[activity](https://docs.polymarket.com/api-reference/core/get-user-activity),
-[positions](https://docs.polymarket.com/api-reference/core/get-current-positions-for-a-user).
-Evaluate the documented v2 migration before expanding coverage; do not silently combine
-schemas or change the cohort definition.
+Official endpoint references (Data API v2, read 2026-11-17):
+[leaderboard](https://docs.polymarket.com/api-reference/boards/get-the-trader-leaderboard),
+[activity](https://docs.polymarket.com/api-reference/feeds/list-account-activity),
+[positions](https://docs.polymarket.com/api-reference/wallet/list-positions-for-a-user-or-market),
+[migration from v1](https://docs.polymarket.com/migrate/data-api-v1-to-v2).
+
+Polymarket retired v1 on 2026-11-02 and the scheduled capture failed from
+2026-11-03 00:56 UTC until the collector moved to v2 on 2026-11-17. The published file
+keeps its v1 field names and `schema_version` 1, so the dashboard reads captures from
+both APIs; `source_api: "v2"` and the `/v2/...` request paths in the receipts mark the
+newer ones. Trades were compared across the two: v2 returns the 988 comparable v1
+trades of the last v1 capture fill for fill
+([smoke test](benchmarks/2026-11-17-data-api-v2-smoke.md)). Holdings cannot be compared,
+because they change. Do not combine captures from the two APIs in one ranking: the
+selection rule differs (shares against USDC).
 
 ## Next stages
 
