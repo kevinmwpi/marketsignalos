@@ -88,8 +88,11 @@ bundled fallback; the scheduled data branch supplies subsequent captures indepen
   and has no request filter for either: combo (basket) trades, and holdings in resolved
   markets that the wallet has not redeemed. Both are left out and counted per sample as
   `rows_excluded`; they are not faults, so they do not make a capture partial. Because
-  resolved holdings rank among the rest by value, 200 holdings are read to publish the
-  50 largest live ones. v2 does not list holdings below 0.1 shares.
+  resolved holdings rank among the rest by value, the 200 largest holdings are read and
+  the live ones among them are published, up to 50. A wallet with many unredeemed
+  winners can therefore show fewer than 50 while holding more: in one live test, 19 and
+  20 of 200 were live for two wallets. Such a sample is marked possibly truncated. v2
+  does not list holdings below 0.1 shares.
 - A full page is labelled possibly truncated. A shorter page does not prove complete
   lifetime history. Two identical fills can be legitimate: trade identity is not inferred
   from transaction hashes and fills are not collapsed. Duplicate position assets are
