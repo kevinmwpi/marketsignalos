@@ -45,9 +45,9 @@ def _buy(wallet: str, cid: str, outcome: int, ts: int, price: float, usdc: float
          side: str = "BUY") -> dict[str, Any]:
     """A Data API /activity row. It goes through the real parser and store, which
     keep size and USDC but drop price, as on the pilot's volume."""
-    return {"proxyWallet": wallet, "timestamp": ts, "conditionId": cid, "type": "TRADE",
-            "side": side, "size": usdc / price, "usdcSize": usdc, "price": price,
-            "outcomeIndex": outcome, "transactionHash": f"0xt{wallet}{cid}{outcome}{ts}{side}"}
+    return {"proxy_wallet": wallet, "timestamp": ts, "condition_id": cid, "type": "TRADE",
+            "side": side, "size": usdc / price, "usdc_size": usdc, "price": price,
+            "outcome_index": outcome, "transaction_hash": f"0xt{wallet}{cid}{outcome}{ts}{side}"}
 
 
 def _market(cid: str, closed: bool, prices: list[str], end: int = W + 60 * 86400) -> dict[str, Any]:

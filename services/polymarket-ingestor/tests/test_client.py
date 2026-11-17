@@ -43,144 +43,177 @@ def test_get_leaderboard_rejects_bad_metric() -> None:
     client.close()
 
 
-def test_get_trader_leaderboard_rankings_passes_matrix_params() -> None:
+def _page(rows: list[dict[str, Any]], next_cursor: str | None = None) -> dict[str, Any]:
+    """A Data API v2 listing response."""
+    return {
+        "data": rows,
+        "pagination": {
+            "limit": len(rows), "offset": 0,
+            "has_more": next_cursor is not None, "next_cursor": next_cursor,
+        },
+    }
+
+
+def _capture(body: Any) -> tuple[PolymarketClient, dict[str, Any]]:
+    """A client whose every request is answered with ``body`` and recorded."""
     captured: dict[str, Any] = {}
 
     def handler(request: httpx.Request) -> httpx.Response:
         captured["host"] = request.url.host
         captured["path"] = request.url.path
         captured["params"] = dict(request.url.params)
-        return httpx.Response(200, json=[{"proxyWallet": "0xabc", "amount": 1.0,
-                                          "pseudonym": "x", "name": "x"}])
+        return httpx.Response(200, json=body)
 
-    client = _client_with_mock(handler)
-    rows = client.get_trader_leaderboard_rankings(
-        category="POLITICS", time_period="WEEK", order_by="VOL", limit=25, offset=50,
+    return _client_with_mock(handler), captured
+
+
+def test_leaderboard_page_sends_v2_names_and_values() -> None:
+    client, captured = _capture(_page([{"user_id": "0xabc", "pnl": 1.0}], "next"))
+    page = client.get_trader_leaderboard_page(
+        category="POLITICS", time_period="WEEK", order_by="VOL", limit=25, cursor="c1",
     )
+    client.close()
     assert captured["host"] == "data-api.polymarket.com"
-    assert captured["path"] == "/v1/leaderboard"
+    assert captured["path"] == "/v2/leaderboard"
+    # v2 wants lower-case periods and VOLUME: it answers 400 to v1's "VOL".
     assert captured["params"] == {
-        "category": "POLITICS",
-        "timePeriod": "WEEK",
-        "orderBy": "VOL",
-        "limit": "25",
-        "offset": "50",
+        "category": "POLITICS", "time_period": "week", "sort_by": "VOLUME",
+        "limit": "25", "cursor": "c1",
     }
-    assert rows[0]["proxyWallet"] == "0xabc"
+    assert page.rows[0]["user_id"] == "0xabc"
+    assert page.next_cursor == "next"
+
+
+def test_leaderboard_first_page_sends_no_cursor_and_the_last_page_returns_none() -> None:
+    client, captured = _capture(_page([]))
+    page = client.get_trader_leaderboard_page(order_by="PNL", limit=10)
     client.close()
+    assert "cursor" not in captured["params"]
+    assert captured["params"]["sort_by"] == "PNL"
+    assert page.rows == [] and page.next_cursor is None
 
 
-def test_get_trader_leaderboard_rankings_unwraps_data_envelope() -> None:
-    """Some Polymarket data-api endpoints wrap arrays in {data: [...]} — accept either."""
-    def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, json={"data": [
-            {"proxyWallet": "0xdef", "amount": 2.0, "pseudonym": "y", "name": "y"},
-        ]})
-
-    client = _client_with_mock(handler)
-    rows = client.get_trader_leaderboard_rankings(
-        category="OVERALL", time_period="ALL", order_by="PNL", limit=10,
-    )
-    assert rows[0]["proxyWallet"] == "0xdef"
-    client.close()
-
-
-def test_get_trader_leaderboard_rankings_omits_zero_offset() -> None:
-    """offset=0 should be elided from the query string (matches the activity client)."""
-    captured: dict[str, Any] = {}
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        captured["params"] = dict(request.url.params)
-        return httpx.Response(200, json=[])
-
-    client = _client_with_mock(handler)
-    client.get_trader_leaderboard_rankings(
-        category="OVERALL", time_period="ALL", order_by="PNL", limit=10, offset=0,
-    )
-    assert "offset" not in captured["params"]
-    client.close()
-
-
-def test_get_trader_leaderboard_rankings_validates_args() -> None:
-    client = _client_with_mock(lambda r: httpx.Response(200, json=[]))
+def test_leaderboard_page_validates_args() -> None:
+    client = _client_with_mock(lambda r: httpx.Response(200, json=_page([])))
     with pytest.raises(ValueError, match="category"):
-        client.get_trader_leaderboard_rankings(category="BOGUS")
+        client.get_trader_leaderboard_page(category="BOGUS")
     with pytest.raises(ValueError, match="time_period"):
-        client.get_trader_leaderboard_rankings(time_period="QUARTER")
+        client.get_trader_leaderboard_page(time_period="QUARTER")
     with pytest.raises(ValueError, match="order_by"):
-        client.get_trader_leaderboard_rankings(order_by="ROI")
+        client.get_trader_leaderboard_page(order_by="ROI")
     with pytest.raises(ValueError, match="limit"):
-        client.get_trader_leaderboard_rankings(limit=0)
+        client.get_trader_leaderboard_page(limit=0)
     with pytest.raises(ValueError, match="limit"):
-        client.get_trader_leaderboard_rankings(limit=51)
-    with pytest.raises(ValueError, match="offset"):
-        client.get_trader_leaderboard_rankings(offset=-1)
-    with pytest.raises(ValueError, match="offset"):
-        client.get_trader_leaderboard_rankings(offset=1001)
+        client.get_trader_leaderboard_page(limit=1001)
     client.close()
 
 
-def test_get_wallet_economics_for_period_uses_separate_orders() -> None:
-    orders: list[str] = []
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        if request.url.path == "/v1/leaderboard":
-            orders.append(str(request.url.params.get("orderBy")))
-            return httpx.Response(200, json=[{"proxyWallet": "0xabc", "amount": 1.0}])
-        return httpx.Response(404)
-
-    client = _client_with_mock(handler)
-    pnl, vol = client.get_wallet_economics_for_period("0xabc", time_period="ALL")
+def test_wallet_standing_is_one_object() -> None:
+    client, captured = _capture({"data": {"user_id": "0xabc", "pnl": 12.5, "volume": 40.0}})
+    standing = client.get_wallet_leaderboard_standing("0xabc", time_period="MONTH")
     client.close()
-    assert orders == ["PNL", "VOL"]
-    assert pnl.get("proxyWallet") == "0xabc"
-    assert vol.get("proxyWallet") == "0xabc"
-
-
-def test_get_wallet_activity_passes_user_param() -> None:
-    captured: dict[str, Any] = {}
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        captured["host"] = request.url.host
-        captured["path"] = request.url.path
-        captured["params"] = dict(request.url.params)
-        return httpx.Response(200, json=[])
-
-    client = _client_with_mock(handler)
-    client.get_wallet_activity("0xABC", limit=5)
-    assert captured["host"] == "data-api.polymarket.com"
-    assert captured["path"] == "/activity"
-    assert captured["params"]["user"] == "0xABC"
-    assert captured["params"]["limit"] == "5"
-    client.close()
-
-
-def test_get_wallet_activity_passes_timestamp_window() -> None:
-    captured: dict[str, Any] = {}
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        captured["params"] = dict(request.url.params)
-        return httpx.Response(200, json=[])
-
-    client = _client_with_mock(handler)
-    client.get_wallet_activity("0xabc", limit=500, offset=50, start=100, end=200)
-    client.close()
+    assert captured["path"] == "/v2/leaderboard"
     assert captured["params"] == {
-        "user": "0xabc", "limit": "500", "offset": "50", "start": "100", "end": "200",
+        "user": "0xabc", "category": "OVERALL", "time_period": "month",
+    }
+    assert standing["pnl"] == 12.5
+
+
+def test_a_wallet_with_no_standing_in_the_period_is_empty_not_zero() -> None:
+    client, _ = _capture({"data": None})
+    assert client.get_wallet_leaderboard_standing("0xabc", time_period="MONTH") == {}
+    client.close()
+
+
+def test_wallet_volume_asks_for_the_whole_history() -> None:
+    client, captured = _capture({"data": {"volume": 9.0, "volume_usdc": 4.5, "trade_count": 3}})
+    volume = client.get_wallet_volume("0xabc")
+    client.close()
+    assert captured["path"] == "/v2/user-volume"
+    assert captured["params"] == {"user": "0xabc", "start": "1"}
+    assert volume["volume_usdc"] == 4.5
+
+
+def test_activity_page_asks_for_all_history_newest_first_without_deposits() -> None:
+    client, captured = _capture(_page([]))
+    client.get_wallet_activity_page("0xABC", limit=5)
+    client.close()
+    assert captured["host"] == "data-api.polymarket.com"
+    assert captured["path"] == "/v2/activity"
+    # Without ``start`` v2 serves three years only; start=1 is the whole history.
+    assert captured["params"] == {
+        "user": "0xABC", "limit": "5", "sort_direction": "DESC", "start": "1",
+        "exclude_deposits_withdrawals": "true",
     }
 
 
-def test_get_wallet_positions_passes_pagination_params() -> None:
-    captured: dict[str, Any] = {}
+def test_activity_page_passes_the_window_and_the_cursor() -> None:
+    client, captured = _capture(_page([{"timestamp": 150}], "c2"))
+    page = client.get_wallet_activity_page("0xabc", limit=500, cursor="c1", start=100, end=200)
+    client.close()
+    assert captured["params"] == {
+        "user": "0xabc", "limit": "500", "sort_direction": "DESC", "start": "100",
+        "exclude_deposits_withdrawals": "true", "end": "200", "cursor": "c1",
+    }
+    assert "offset" not in captured["params"]  # v2 answers 400 to it
+    assert page.rows == [{"timestamp": 150}] and page.next_cursor == "c2"
+
+
+def test_positions_page_lists_current_holdings_by_default() -> None:
+    client, captured = _capture(_page([]))
+    client.get_wallet_positions_page("0xabc", limit=500)
+    client.close()
+    assert captured["path"] == "/v2/positions"
+    assert captured["params"] == {"user": "0xabc", "limit": "500"}
+
+
+def test_positions_page_passes_status_floor_ordering_and_cursor() -> None:
+    client, captured = _capture(_page([]))
+    client.get_wallet_positions_page(
+        "0xabc", status="CLOSED", limit=50, cursor="c1", min_shares=1, sort_by="TOKENS",
+    )
+    client.close()
+    assert captured["params"] == {
+        "user": "0xabc", "limit": "50", "status": "CLOSED", "filter_type": "TOKENS",
+        "filter_amount": "1", "sort_by": "TOKENS", "sort_direction": "DESC", "cursor": "c1",
+    }
+
+
+@pytest.mark.parametrize("body", [
+    [],  # v1's bare list
+    {"data": []},  # no pagination object
+    {"data": {"user_id": "0xabc"}, "pagination": {}},
+    {"pagination": {"has_more": False, "next_cursor": None}},
+])
+def test_a_listing_without_the_v2_envelope_is_refused(body: Any) -> None:
+    client, _ = _capture(body)
+    with pytest.raises(ValueError, match="Expected"):
+        client.get_wallet_activity_page("0xabc")
+    client.close()
+
+
+def test_a_page_that_reports_more_rows_but_gives_no_cursor_is_refused() -> None:
+    """Followed blindly it would end the walk and silently truncate a history."""
+    client, _ = _capture(
+        {"data": [{"timestamp": 1}], "pagination": {"has_more": True, "next_cursor": None}}
+    )
+    with pytest.raises(ValueError, match="has_more"):
+        client.get_wallet_activity_page("0xabc")
+    client.close()
+
+
+def test_a_retired_v1_route_fails_without_retrying() -> None:
+    calls = {"n": 0}
 
     def handler(request: httpx.Request) -> httpx.Response:
-        captured["params"] = dict(request.url.params)
-        return httpx.Response(200, json=[])
+        calls["n"] += 1
+        return httpx.Response(410, json={"error": "Data API v1 has been retired"})
 
     client = _client_with_mock(handler)
-    client.get_wallet_positions("0xabc", limit=500, offset=500)
+    with pytest.raises(httpx.HTTPStatusError):
+        client.get_wallet_value("0xabc")
     client.close()
-    assert captured["params"] == {"user": "0xabc", "limit": "500", "offset": "500"}
+    assert calls["n"] == 1
 
 
 def test_get_markets_by_condition_ids_passes_explicit_closed_filter() -> None:
@@ -196,23 +229,25 @@ def test_get_markets_by_condition_ids_passes_explicit_closed_filter() -> None:
     assert captured[0]["closed"] == "true"
 
 
-def test_get_wallet_value_unwraps_single_element_list() -> None:
-    def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, json=[{"user": "0xabc", "value": 1234.5}])
-
-    client = _client_with_mock(handler)
+def test_wallet_value_reads_the_data_object() -> None:
+    client, captured = _capture({"data": {"proxy_wallet": "0xabc", "value": 1234.5}})
     result = client.get_wallet_value("0xabc")
+    client.close()
+    assert captured["path"] == "/v2/value"
+    assert captured["params"] == {"user": "0xabc"}
     assert result["value"] == 1234.5
+
+
+def test_wallet_value_without_data_is_zero() -> None:
+    client, _ = _capture({"data": None})
+    assert client.get_wallet_value("0xABC") == {"proxy_wallet": "0xabc", "value": 0}
     client.close()
 
 
-def test_get_wallet_value_handles_empty_list() -> None:
-    def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, json=[])
-
-    client = _client_with_mock(handler)
-    result = client.get_wallet_value("0xabc")
-    assert result == {"user": "0xabc", "value": 0}
+def test_wallet_value_refuses_v1s_one_element_list() -> None:
+    client, _ = _capture([{"user": "0xabc", "value": 1234.5}])
+    with pytest.raises(ValueError, match="Expected"):
+        client.get_wallet_value("0xabc")
     client.close()
 
 

@@ -84,9 +84,9 @@ def test_matching_prefers_category_and_tercile_then_tercile_then_nearest() -> No
 # ── The frozen configuration, end to end ─────────────────────────────────────
 
 def _buy(cid: str, ts: int) -> dict[str, Any]:
-    return {"proxyWallet": WALLET, "timestamp": ts, "conditionId": cid, "type": "TRADE",
-            "side": "BUY", "size": 20, "usdcSize": 8, "price": 0.4, "outcomeIndex": 0,
-            "eventSlug": f"event-{cid}", "transactionHash": f"0xt{cid}{ts}"}
+    return {"proxy_wallet": WALLET, "timestamp": ts, "condition_id": cid, "type": "TRADE",
+            "side": "BUY", "size": 20, "usdc_size": 8, "price": 0.4, "outcome_index": 0,
+            "event_slug": f"event-{cid}", "transaction_hash": f"0xt{cid}{ts}"}
 
 
 @pytest.fixture

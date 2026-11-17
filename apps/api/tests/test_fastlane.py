@@ -55,20 +55,20 @@ def _seed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 def _buy(wallet: str, ts: int, *, usdc: float = 500.0, cond: str = "0xcond") -> dict[str, Any]:
     return {
-        "proxyWallet": wallet,
+        "proxy_wallet": wallet,
         "timestamp": ts,
-        "conditionId": cond,
+        "condition_id": cond,
         "type": "TRADE",
         "side": "BUY",
         "size": 1000.0,
-        "usdcSize": usdc,
+        "usdc_size": usdc,
         "price": 0.5,
-        "outcomeIndex": 0,
+        "outcome_index": 0,
         "outcome": "Yes",
         "slug": "some-market",
         "title": "Some market",
-        "eventSlug": "some-event",
-        "transactionHash": f"0xtx{ts}",
+        "event_slug": "some-event",
+        "transaction_hash": f"0xtx{ts}",
     }
 
 

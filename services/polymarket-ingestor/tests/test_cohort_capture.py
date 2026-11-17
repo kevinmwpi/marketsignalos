@@ -35,10 +35,10 @@ C1, C2, C3, C4 = "0xc1", "0xc2", "0xc3", "0xc4"
 def _fill(wallet: str, cid: str, ago: int, *, side: str = "BUY", index: int = 0,
           tx: str = "") -> Any:
     return parse_activity_row({
-        "proxyWallet": wallet, "timestamp": int(NOW.timestamp()) - ago, "conditionId": cid,
-        "type": "TRADE", "side": side, "size": 50, "usdcSize": 25, "price": 0.5,
-        "outcomeIndex": index, "eventSlug": f"event-{cid}",
-        "transactionHash": tx or f"0xt{wallet[-4:]}{cid}{ago}{side}"})
+        "proxy_wallet": wallet, "timestamp": int(NOW.timestamp()) - ago, "condition_id": cid,
+        "type": "TRADE", "side": side, "size": 50, "usdc_size": 25, "price": 0.5,
+        "outcome_index": index, "event_slug": f"event-{cid}",
+        "transaction_hash": tx or f"0xt{wallet[-4:]}{cid}{ago}{side}"})
 
 
 @pytest.fixture

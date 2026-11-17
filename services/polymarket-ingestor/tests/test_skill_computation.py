@@ -605,7 +605,7 @@ def test_canceled_market_excluded_from_win_loss() -> None:
 
 
 def test_redeem_events_dont_corrupt_win_count() -> None:
-    """REDEEM rows have outcomeIndex=999 — must not be treated as trades."""
+    """REDEEM rows have outcome_index=999 — must not be treated as trades."""
     trade = _trade("0xc1", outcome=0, side="BUY", size=100, price=0.4)
     redeem = PolymarketActivity(
         proxy_wallet="0xabc",

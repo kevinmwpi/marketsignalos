@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -18,25 +19,35 @@ from marketsignalos_polymarket.polymarket_client import (
 )
 from marketsignalos_polymarket.runner import (
     _activity_key,
+    _ActivityRequestBudget,
     _build_stores,
     _EconomicsPeriodEntry,
+    _fetch_closed_positions,
     _is_kalshi_parlay,
     _paginate_activity,
     _paginate_activity_window,
     _paginate_positions,
     _plan_market_backfill_fetches,
+    _resume_end,
     _select_shallow_wallet_targets,
     _write_economics_cache,
     parse_activity_row,
+    parse_closed_position_row,
     parse_leaderboard_row,
     parse_market_row,
     parse_position_row,
+    parse_ranked_leaderboard_row,
     run_markets_backfill_from_activity,
     run_match_markets,
     run_pipeline,
     run_wallets,
     seed_watchlist_from_leaderboard,
 )
+
+from ._data_api import HOST, FakeDataApi, leaderboard_row, page, position_row
+from ._data_api import activity_row as _activity_row
+
+Handler = Callable[[httpx.Request], httpx.Response]
 
 
 def _client_with_handler(handler: Any) -> PolymarketClient:
@@ -48,23 +59,17 @@ def _client_with_handler(handler: Any) -> PolymarketClient:
     )
 
 
-def _activity_row(ts: int, tx: str, cond: str = "0xc", oi: int = 0) -> dict[str, Any]:
-    return {
-        "proxyWallet": "0xabc",
-        "timestamp": ts,
-        "conditionId": cond,
-        "type": "TRADE",
-        "size": 1.0,
-        "usdcSize": 0.5,
-        "transactionHash": tx,
-        "price": 0.5,
-        "side": "BUY",
-        "outcomeIndex": oi,
-        "title": "t",
-        "slug": "s",
-        "eventSlug": "e",
-        "outcome": "Yes",
-    }
+def _pipeline_handler(fake: FakeDataApi) -> Handler:
+    """The fake Data API, with an empty answer from every other host (Gamma, PnL)."""
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "lb-api.polymarket.com" in str(request.url):
+            raise AssertionError("the seed must not use lb-api, which rejects day/week/month")
+        if "api.goldsky.com" in str(request.url):
+            raise AssertionError("shallow pipeline must not call the subgraph")
+        if request.url.host == HOST:
+            return fake(request)
+        return httpx.Response(200, json=[])
+    return handler
 
 
 def test_parse_leaderboard_row_matches_real_shape() -> None:
@@ -86,21 +91,21 @@ def test_parse_leaderboard_row_matches_real_shape() -> None:
 
 def test_parse_activity_row_matches_real_shape() -> None:
     raw = {
-        "proxyWallet": "0xabc",
+        "proxy_wallet": "0xabc",
         "timestamp": 1715000000,
-        "conditionId": "0xcond",
+        "condition_id": "0xcond",
         "type": "TRADE",
         "size": 100.0,
-        "usdcSize": 62.0,
-        "transactionHash": "0xtx1",
+        "usdc_size": 62.0,
+        "transaction_hash": "0xtx1",
         "price": 0.62,
-        "asset": "12345",
+        "token_id": "12345",
         "side": "BUY",
-        "outcomeIndex": 0,
+        "outcome_index": 0,
         "title": "Some market",
         "slug": "some-market",
         "icon": "https://...",
-        "eventSlug": "some-event",
+        "event_slug": "some-event",
         "outcome": "Yes",
         "name": "Theo4",
         "pseudonym": "Ironclad-Tenement",
@@ -110,32 +115,64 @@ def test_parse_activity_row_matches_real_shape() -> None:
     assert a.condition_id == "0xcond"
     assert a.price == 0.62
     assert a.outcome_index == 0
+    assert (a.usdc_size, a.transaction_hash, a.event_slug) == (62.0, "0xtx1", "some-event")
+    # The stored key is built from these four fields; the migration must not move it.
+    assert _activity_key(a) == ("0xtx1", "0xcond", 0, "TRADE")
+
+
+def test_a_v1_shaped_activity_row_is_not_read() -> None:
+    """v1's camelCase names are gone: read as v2 they give an empty key, so a
+    fixture left in the old shape fails loudly instead of passing by accident."""
+    a = parse_activity_row({"proxyWallet": "0xabc", "conditionId": "0xcond",
+                            "transactionHash": "0xtx1", "outcomeIndex": 1, "type": "TRADE"})
+    assert _activity_key(a) == ("", "", 0, "TRADE")
 
 
 def test_parse_activity_row_tolerates_redeem_with_int_price() -> None:
     # REDEEM rows had `price: int` in the discovery probe — coerce to float.
     raw = {
-        "proxyWallet": "0xabc",
+        "proxy_wallet": "0xabc",
         "timestamp": 1715000000,
-        "conditionId": "0xcond",
+        "condition_id": "0xcond",
         "type": "REDEEM",
         "size": 100.0,
-        "usdcSize": 100.0,
-        "transactionHash": "0xtx2",
+        "usdc_size": 100.0,
+        "transaction_hash": "0xtx2",
         "price": 1,
-        "asset": "",
+        "token_id": "",
         "side": "",
-        "outcomeIndex": 0,
+        "outcome_index": 0,
         "title": "",
         "slug": "",
         "icon": "",
-        "eventSlug": "",
+        "event_slug": "",
         "outcome": "",
     }
     a = parse_activity_row(raw)
     assert a.type == "REDEEM"
     assert isinstance(a.price, float)
     assert a.price == 1.0
+
+
+def test_a_row_without_an_outcome_keeps_the_999_and_empty_condition_it_is_served_with() -> None:
+    """Rewards and rebates: v2 serves "" and 999, never null or a missing key."""
+    reward = parse_activity_row({
+        "proxy_wallet": "0xabc", "timestamp": 1715000000, "condition_id": "", "type": "REWARD",
+        "size": 3.0, "usdc_size": 3.0, "transaction_hash": "0xtx3", "price": 0.0,
+        "token_id": "", "side": "", "outcome_index": 999, "title": "", "slug": "",
+        "event_slug": "", "outcome": "",
+    })
+    assert (reward.condition_id, reward.outcome_index, reward.side) == ("", 999, "")
+    assert _activity_key(reward) == ("0xtx3", "", 999, "REWARD")
+
+
+def test_parse_ranked_leaderboard_row_reads_v2_names() -> None:
+    row = {"rank": 3, "user_id": "0xABC", "user_name": "Theo", "pnl": 12.5, "volume": 900.0}
+    profit = parse_ranked_leaderboard_row(row, metric="profit", window="month")
+    assert (profit.proxy_wallet, profit.name, profit.amount_usdc) == ("0xabc", "Theo", 12.5)
+    # v2's volume is in shares: it is not stored under a USDC name.
+    volume = parse_ranked_leaderboard_row(row, metric="volume", window="day")
+    assert (volume.proxy_wallet, volume.amount_usdc, volume.metric) == ("0xabc", 0.0, "volume")
 
 
 def test_parse_market_row_decodes_string_arrays() -> None:
@@ -182,154 +219,166 @@ def test_parse_market_row_handles_resolved_with_category() -> None:
     assert m.outcome_prices == [0.0, 1.0]
 
 
-def test_paginate_activity_walks_until_empty_page() -> None:
-    pages = [
-        [_activity_row(ts=1000, tx="0xa"), _activity_row(ts=999, tx="0xb")],
-        [_activity_row(ts=998, tx="0xc")],
-        [],  # exhausted
-    ]
-    call_count = {"n": 0}
-    ends: list[str | None] = []
+def _feed(*rows: dict[str, Any]) -> tuple[FakeDataApi, PolymarketClient]:
+    fake = FakeDataApi()
+    fake.activity["0xabc"] = list(rows)
+    return fake, _client_with_handler(fake)
 
-    def handler(request: httpx.Request) -> httpx.Response:
-        if request.url.params.get("start") is not None:
-            return httpx.Response(200, json=[])
-        ends.append(request.url.params.get("end"))
-        body = pages[call_count["n"]]
-        call_count["n"] += 1
-        return httpx.Response(200, json=body)
 
-    client = _client_with_handler(handler)
+def test_paginate_activity_follows_the_cursor_to_the_last_page() -> None:
+    fake, client = _feed(
+        _activity_row(ts=1000, tx="0xa"), _activity_row(ts=999, tx="0xb"),
+        _activity_row(ts=998, tx="0xc"),
+    )
     result = _paginate_activity(client, "0xabc", page_size=2, max_pages=10, since_timestamp=None)
-    assert [a.transaction_hash for a in result] == ["0xa", "0xb", "0xc"]
-    assert ends == [None, "998"]
     client.close()
+    assert [a.transaction_hash for a in result] == ["0xa", "0xb", "0xc"]
+    calls = fake.calls("/v2/activity")
+    assert [call.get("cursor") for call in calls] == [None, "2:2"]
+    # Every page repeats the filters: whole history, newest first, no deposits.
+    assert all(
+        (call["start"], call["sort_direction"], call["exclude_deposits_withdrawals"])
+        == ("1", "DESC", "true") for call in calls
+    )
 
 
 def test_paginate_activity_stops_at_watermark() -> None:
     """When a page contains rows older than since_timestamp, we stop after that page."""
-    pages = [
-        [_activity_row(ts=1000, tx="0xa"), _activity_row(ts=999, tx="0xb")],
-        [_activity_row(ts=998, tx="0xc"), _activity_row(ts=900, tx="0xd")],  # 900 <= 950
-        [_activity_row(ts=800, tx="0xe")],  # should not be fetched
-    ]
-    call_count = {"n": 0}
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        if request.url.params.get("start") is not None:
-            return httpx.Response(200, json=[])
-        if call_count["n"] >= len(pages):
-            return httpx.Response(200, json=[])
-        body = pages[call_count["n"]]
-        call_count["n"] += 1
-        return httpx.Response(200, json=body)
-
-    client = _client_with_handler(handler)
-    result = _paginate_activity(client, "0xabc", page_size=2, max_pages=10, since_timestamp=950)
-    # Only events with ts > 950 should be returned, and the third page should never be fetched.
-    assert sorted(a.transaction_hash for a in result) == ["0xa", "0xb", "0xc"]
-    assert call_count["n"] == 2
+    fake, client = _feed(
+        _activity_row(ts=1000, tx="0xa"), _activity_row(ts=999, tx="0xb"),
+        _activity_row(ts=998, tx="0xc"), _activity_row(ts=900, tx="0xd"),  # 900 <= 950
+        _activity_row(ts=800, tx="0xe"),  # should not be fetched
+    )
+    result = _paginate_activity_window(
+        client, "0xabc", page_size=2, max_pages=10, since_timestamp=950)
     client.close()
+    # Only events with ts > 950 are returned, and the third page is never fetched.
+    assert sorted(a.transaction_hash for a in result.events) == ["0xa", "0xb", "0xc"]
+    assert len(fake.calls("/v2/activity")) == 2
+    assert result.exhausted is True
 
 
 def test_paginate_activity_respects_max_pages() -> None:
-    def handler(request: httpx.Request) -> httpx.Response:
-        if request.url.params.get("start") is not None:
-            return httpx.Response(200, json=[])
-        end = int(request.url.params.get("end") or 1000)
-        return httpx.Response(200, json=[
-            _activity_row(ts=end, tx=f"0x{end}"),
-            _activity_row(ts=end - 1, tx=f"0x{end - 1}"),
-        ])
-
-    client = _client_with_handler(handler)
-    result = _paginate_activity(client, "0xabc", page_size=2, max_pages=3, since_timestamp=None)
-    assert len(result) == 6  # 3 pages × 2 rows
+    fake, client = _feed(*[_activity_row(ts=1000 - i, tx=f"0x{i}") for i in range(10)])
+    result = _paginate_activity_window(
+        client, "0xabc", page_size=2, max_pages=3, since_timestamp=None)
     client.close()
+    assert len(result.events) == 6  # 3 pages × 2 rows
+    assert (result.exhausted, result.oldest_timestamp, result.stalled) == (False, 995, False)
+    assert len(fake.calls("/v2/activity")) == 3
 
 
-def test_paginate_activity_exhausts_same_second_boundary() -> None:
+def test_a_short_or_empty_page_does_not_end_the_walk_only_a_missing_cursor_does() -> None:
+    bodies = [page([], "c1"), page([_activity_row(ts=5, tx="0xa")], "c2"), page([])]
+
     def handler(request: httpx.Request) -> httpx.Response:
-        start = request.url.params.get("start")
-        end = request.url.params.get("end")
-        offset = int(request.url.params.get("offset") or 0)
-        if start == "999" and end == "999":
-            if offset == 0:
-                return httpx.Response(200, json=[
-                    _activity_row(ts=999, tx="0xb"),
-                    _activity_row(ts=999, tx="0xc"),
-                ])
-            return httpx.Response(200, json=[_activity_row(ts=999, tx="0xd")])
-        if end == "998":
-            return httpx.Response(200, json=[])
-        return httpx.Response(200, json=[
-            _activity_row(ts=1000, tx="0xa"),
-            _activity_row(ts=999, tx="0xb"),
-        ])
+        return httpx.Response(200, json=bodies.pop(0))
 
     client = _client_with_handler(handler)
     result = _paginate_activity_window(
-        client, "0xabc", page_size=2, max_pages=5, since_timestamp=None
+        client, "0xabc", page_size=2, max_pages=5, since_timestamp=None)
+    client.close()
+    assert [e.transaction_hash for e in result.events] == ["0xa"]
+    assert result.exhausted is True and bodies == []
+
+
+def test_stopped_walks_resume_inside_their_oldest_second_and_lose_nothing() -> None:
+    """A page cap can stop a walk in the middle of a second. The next walk starts
+    at that second again; a walk still inside its first second reads on until
+    the second changes."""
+    rows = [
+        _activity_row(ts=1000, tx="0xa"),
+        _activity_row(ts=999, tx="0xb"), _activity_row(ts=999, tx="0xc"),
+        _activity_row(ts=999, tx="0xd"),
+        _activity_row(ts=998, tx="0xe"), _activity_row(ts=997, tx="0xf"),
+        _activity_row(ts=996, tx="0xg"),
+    ]
+    _, client = _feed(*rows)
+    seen: list[str] = []
+    walks: list[tuple[int | None, list[str]]] = []
+    end: int | None = None
+    errors: list[str] = []
+    for _walk in range(10):
+        result = _paginate_activity_window(
+            client, "0xabc", page_size=2, max_pages=1, since_timestamp=None, end_timestamp=end)
+        walks.append((end, [e.transaction_hash for e in result.events]))
+        seen.extend(e.transaction_hash for e in result.events)
+        if result.exhausted:
+            break
+        end = _resume_end(result, errors)
+    client.close()
+    assert walks == [
+        (None, ["0xa", "0xb"]),                # stopped inside second 999
+        (999, ["0xb", "0xc", "0xd", "0xe"]),   # read on past the page cap to leave 999
+        (998, ["0xe", "0xf"]),
+        (997, ["0xf", "0xg"]),
+    ]
+    assert sorted(set(seen)) == [row["transaction_hash"] for row in rows]
+    assert errors == []
+
+
+def test_a_second_too_large_for_one_walk_is_stepped_over_and_reported() -> None:
+    fake, client = _feed(
+        *[_activity_row(ts=999, tx=f"0x{i}") for i in range(20)],
+        _activity_row(ts=998, tx="0xold"),
+    )
+    result = _paginate_activity_window(
+        client, "0xabc", page_size=2, max_pages=1, max_stalled_pages=2,
+        since_timestamp=None, end_timestamp=999,
+    )
+    errors: list[str] = []
+    assert len(fake.calls("/v2/activity")) == 3  # the cap of 1, then 2 more
+    assert (result.exhausted, result.stalled, result.oldest_timestamp) == (False, True, 999)
+    # Starting at 999 again would read the same six rows every run.
+    assert _resume_end(result, errors) == 998
+    assert errors == ["activity second exceeded page safety bound"]
+
+    # A request budget that runs out first is not that case: the next run, with a
+    # fresh budget, starts at the same second again and nothing is skipped.
+    budget = _ActivityRequestBudget(2)
+    result = _paginate_activity_window(
+        client, "0xabc", page_size=2, max_pages=1, max_stalled_pages=2,
+        since_timestamp=None, end_timestamp=999, request_budget=budget,
     )
     client.close()
-    assert result.boundary_complete is True
-    assert result.exhausted is True
-    assert {event.transaction_hash for event in result.events} == {"0xa", "0xb", "0xc", "0xd"}
+    errors = []
+    assert (result.stalled, budget.hit_limit) == (False, True)
+    assert _resume_end(result, errors) == 999 and errors == []
 
 
-def test_paginate_activity_resumes_from_oldest_timestamp_cursor() -> None:
-    def handler(request: httpx.Request) -> httpx.Response:
-        if request.url.params.get("start") is not None:
-            return httpx.Response(200, json=[])
-        end = int(request.url.params.get("end") or 5)
-        return httpx.Response(200, json=[
-            _activity_row(ts=end, tx=f"0x{end}"),
-            _activity_row(ts=end - 1, tx=f"0x{end - 1}"),
-        ])
-
-    client = _client_with_handler(handler)
-    first = _paginate_activity_window(
-        client, "0xabc", page_size=2, max_pages=1, since_timestamp=None
-    )
-    second = _paginate_activity_window(
-        client,
-        "0xabc",
-        page_size=2,
-        max_pages=1,
-        since_timestamp=None,
-        end_timestamp=(first.oldest_timestamp or 0) - 1,
+def test_a_walk_that_read_nothing_has_no_resume_point() -> None:
+    fake, client = _feed(_activity_row(ts=5, tx="0xa"))
+    result = _paginate_activity_window(
+        client, "0xabc", page_size=2, max_pages=3, since_timestamp=None,
+        request_budget=_ActivityRequestBudget(0),
     )
     client.close()
-    assert {event.timestamp for event in first.events} == {5, 4}
-    assert {event.timestamp for event in second.events} == {3, 2}
+    assert fake.calls("/v2/activity") == []
+    assert (result.exhausted, result.oldest_timestamp) == (False, None)
+    assert _resume_end(result, []) is None
+
+
+def test_combo_rows_are_left_out_and_counted() -> None:
+    _, client = _feed(
+        _activity_row(ts=1000, tx="0xa"),
+        _activity_row(ts=999, tx="0xcombo", cond="0xbasket", is_combo=True),
+        _activity_row(ts=998, tx="0xb", is_combo=False),
+    )
+    result = _paginate_activity_window(
+        client, "0xabc", page_size=10, max_pages=2, since_timestamp=None)
+    client.close()
+    assert [e.transaction_hash for e in result.events] == ["0xa", "0xb"]
+    assert result.combo_rows == 1
 
 
 def test_paginate_activity_window_streaming_matches_accumulate() -> None:
-    """The on_page sink receives exactly the deduped events the accumulate path
-    returns — including same-second boundary re-fetches — but holds nothing in
-    memory (result.events stays empty). This pins the streaming refactor that
-    keeps whale hydration from ballooning RAM."""
-    def handler(request: httpx.Request) -> httpx.Response:
-        start = request.url.params.get("start")
-        end = request.url.params.get("end")
-        offset = int(request.url.params.get("offset") or 0)
-        if start == "999" and end == "999":
-            # Same-second boundary sweep: one overlapping row (0xb) plus a new
-            # one (0xd) at offset 0, then exhausted.
-            if offset == 0:
-                return httpx.Response(200, json=[
-                    _activity_row(ts=999, tx="0xb"),
-                    _activity_row(ts=999, tx="0xd"),
-                ])
-            return httpx.Response(200, json=[])
-        if end == "998":
-            return httpx.Response(200, json=[])
-        return httpx.Response(200, json=[
-            _activity_row(ts=1000, tx="0xa"),
-            _activity_row(ts=999, tx="0xb"),
-        ])
-
-    client = _client_with_handler(handler)
+    """The on_page sink receives the events the accumulate path returns but holds
+    nothing in memory (result.events stays empty). This pins the streaming
+    refactor that keeps whale hydration from ballooning RAM."""
+    _, client = _feed(
+        _activity_row(ts=1000, tx="0xa"), _activity_row(ts=999, tx="0xb"),
+        _activity_row(ts=999, tx="0xd"),
+    )
     accumulate = _paginate_activity_window(
         client, "0xabc", page_size=2, max_pages=5, since_timestamp=None
     )
@@ -347,36 +396,66 @@ def test_paginate_activity_window_streaming_matches_accumulate() -> None:
     # Streaming keeps no per-wallet accumulation.
     assert result.events == []
     # Same termination metadata either way.
-    assert (result.exhausted, result.boundary_complete, result.oldest_timestamp) == (
+    assert (result.exhausted, result.stalled, result.oldest_timestamp) == (
         accumulate.exhausted,
-        accumulate.boundary_complete,
+        accumulate.stalled,
         accumulate.oldest_timestamp,
     )
-    # The sink sees the same events after the store's dedupe key collapses the
-    # overlapping boundary re-fetch (0xb appears on both the page and the sweep).
     assert {_activity_key(e) for e in streamed} == {
         _activity_key(e) for e in accumulate.events
     }
     assert {e.transaction_hash for e in accumulate.events} == {"0xa", "0xb", "0xd"}
 
 
-def test_paginate_positions_walks_beyond_first_page() -> None:
-    offsets: list[str | None] = []
+def test_paginate_positions_follows_the_cursor_with_v1s_floor_ordered_by_size() -> None:
+    fake = FakeDataApi()
+    fake.positions["0xabc"] = [
+        position_row(f"0x{i}", size=1000.0 - i) for i in range(501)
+    ] + [position_row("0xdust", size=0.5)]  # v1's default hid holdings below one share
+    client = _client_with_handler(fake)
+    rows = _paginate_positions(client, "0xabc")
+    client.close()
+    assert len(rows) == 501 and "0xdust" not in {row["condition_id"] for row in rows}
+    assert fake.calls("/v2/positions") == [
+        {"user": "0xabc", "limit": "500", "filter_type": "TOKENS", "filter_amount": "1",
+         "sort_by": "TOKENS", "sort_direction": "DESC"},
+        {"user": "0xabc", "limit": "500", "filter_type": "TOKENS", "filter_amount": "1",
+         "sort_by": "TOKENS", "sort_direction": "DESC", "cursor": "500:500"},
+    ]
+
+
+def test_a_holding_served_on_two_pages_is_kept_once() -> None:
+    """A holding that changes between two page requests can move across the cursor."""
+    bodies = [
+        page([position_row("0xa"), position_row("0xb")], "c1"),
+        page([position_row("0xb"), position_row("0xb", oi=1), position_row("0xc")]),
+    ]
 
     def handler(request: httpx.Request) -> httpx.Response:
-        offsets.append(request.url.params.get("offset"))
-        offset = int(request.url.params.get("offset") or 0)
-        count = 500 if offset == 0 else 1
-        return httpx.Response(200, json=[
-            {"conditionId": f"0x{offset + i}", "outcomeIndex": 0}
-            for i in range(count)
-        ])
+        return httpx.Response(200, json=bodies.pop(0))
 
     client = _client_with_handler(handler)
     rows = _paginate_positions(client, "0xabc")
     client.close()
-    assert len(rows) == 501
-    assert offsets == [None, "500"]
+    assert [(row["condition_id"], row["outcome_index"]) for row in rows] == [
+        ("0xa", 0), ("0xb", 0), ("0xb", 1), ("0xc", 0)]
+
+
+def test_closed_positions_are_one_page() -> None:
+    fake = FakeDataApi()
+    fake.closed_positions["0xabc"] = [
+        position_row(f"0x{i}", size=0.0, status="CLOSED", realized_pnl=float(200 - i))
+        for i in range(120)
+    ]
+    client = _client_with_handler(fake)
+    rows = _fetch_closed_positions(client, "0xabc")
+    client.close()
+    assert len(rows) == 50
+    assert fake.calls("/v2/positions") == [{"user": "0xabc", "status": "CLOSED", "limit": "50"}]
+    closed = parse_closed_position_row(rows[0], proxy_wallet="0xABC")
+    assert (closed.proxy_wallet, closed.condition_id, closed.realized_pnl_usdc) == (
+        "0xabc", "0x0", 200.0)
+    assert (closed.size, closed.avg_price, closed.current_outcome_price) == (0.0, 0.4, 0.5)
 
 
 def test_markets_backfill_fetches_closed_and_active_metadata(tmp_path: Path) -> None:
@@ -492,29 +571,13 @@ def test_run_wallets_uses_economics_cache_without_user_leaderboard_calls(
         },
     })
 
-    leaderboard_calls: list[str] = []
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        path = request.url.path
-        if path == "/v1/leaderboard" and request.url.params.get("user"):
-            leaderboard_calls.append(str(request.url.params.get("user")))
-        if path == "/activity":
-            return httpx.Response(200, json=[])
-        if path == "/positions":
-            return httpx.Response(200, json=[])
-        if path == "/closed-positions":
-            return httpx.Response(200, json=[])
-        if path == "/value":
-            return httpx.Response(200, json=[{"user": "0xabc", "value": 1.0}])
-        if path.startswith("/user-pnl"):
-            return httpx.Response(200, json=[])
-        return httpx.Response(404)
-
-    client = _client_with_handler(handler)
+    fake = FakeDataApi()
+    client = _client_with_handler(_pipeline_handler(fake))
     stores = _build_stores(tmp_path)
     run_wallets(client, stores, addresses=["0xabc"], max_pages_per_wallet=1)
     client.close()
 
+    leaderboard_calls = fake.calls("/v2/leaderboard") + fake.calls("/v2/user-volume")
     assert leaderboard_calls == []
     hydration = stores.hydration.load_hydration()["0xabc"]
     assert hydration.economic_all_time_complete is True
@@ -543,54 +606,62 @@ def test_select_shallow_wallet_targets_prefers_hot_wallets(tmp_path: Path) -> No
 
 
 def test_run_wallets_advances_checkpoint(tmp_path: Path) -> None:
-    pages = [
-        [_activity_row(ts=2000, tx="0xa"), _activity_row(ts=1500, tx="0xb")],
-        [],
-    ]
-    call_count = {"n": 0}
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        path = request.url.path
-        if path == "/activity":
-            body = pages[min(call_count["n"], len(pages) - 1)]
-            call_count["n"] += 1
-            return httpx.Response(200, json=body)
-        if path == "/positions":
-            return httpx.Response(200, json=[])
-        if path == "/value":
-            return httpx.Response(200, json=[{"user": "0xabc", "value": 1234.5}])
-        return httpx.Response(404)
-
-    client = _client_with_handler(handler)
+    fake = FakeDataApi()
+    fake.activity["0xabc"] = [_activity_row(ts=2000, tx="0xa"), _activity_row(ts=1500, tx="0xb")]
+    fake.values["0xabc"] = 1234.5
+    client = _client_with_handler(_pipeline_handler(fake))
     stores = _build_stores(tmp_path)
-    run_wallets(client, stores, addresses=["0xabc"], activity_page_size=2, max_pages_per_wallet=5)
-
+    written, _, _ = run_wallets(
+        client, stores, addresses=["0xabc"], activity_page_size=2, max_pages_per_wallet=5)
+    assert written == 2
     assert stores.checkpoints.get_last_timestamp("0xabc") == 2000
 
-    # Second run should fetch nothing new (page0 still returns ts <= 2000, so paginator stops).
-    call_count["n"] = 0
+    # Second run fetches nothing new: neither row is newer than the checkpoint.
     written_a, _, _ = run_wallets(
         client, stores, addresses=["0xabc"], activity_page_size=2, max_pages_per_wallet=5
     )
-    # All rows in page0 have ts ∈ {2000, 1500} — neither is > 2000, so nothing new is collected.
     assert written_a == 0
     client.close()
+    state = stores.hydration.load_hydration()["0xabc"]
+    assert state.errors == [] and state.activity_history_complete is True
+    assert (state.positions_complete, state.closed_positions_complete) == (True, True)
+
+
+def test_run_wallets_reads_economics_from_the_standing_and_usdc_volume(tmp_path: Path) -> None:
+    fake = FakeDataApi()
+    fake.standings[("0xabc", "all")] = {"user_id": "0xabc", "pnl": 150.0, "volume": 9000.0}
+    fake.standings[("0xabc", "month")] = {"user_id": "0xabc", "pnl": -4.0, "volume": 100.0}
+    fake.volumes["0xabc"] = {"volume": 9000.0, "volume_usdc": 4200.0, "trade_count": 12}
+    # 0xnew has traded but has no standing in the month window: v2 serves data: null.
+    fake.standings[("0xnew", "all")] = {"user_id": "0xnew", "pnl": 1.0, "volume": 5.0}
+    fake.volumes["0xnew"] = {"volume": 5.0, "volume_usdc": 2.0, "trade_count": 1}
+    # 0xnull's standing carries a null PnL: unavailable, never zero.
+    fake.standings[("0xnull", "all")] = {"user_id": "0xnull", "pnl": None, "volume": 5.0}
+    client = _client_with_handler(_pipeline_handler(fake))
+    stores = _build_stores(tmp_path)
+    run_wallets(client, stores, addresses=["0xabc", "0xnew", "0xnull"], max_pages_per_wallet=1,
+                wallet_concurrency=1)
+    client.close()
+
+    state = stores.hydration.load_hydration()
+    known = state["0xabc"]
+    assert (known.economic_all_time_complete, known.economic_month_complete) == (True, True)
+    # USDC volume comes from /v2/user-volume: the standing's 9000 is shares.
+    assert (known.all_time_pnl_usdc, known.all_time_volume_usdc) == (150.0, 4200.0)
+    assert known.pnl_30d_usdc == -4.0
+    assert (state["0xnew"].economic_all_time_complete,
+            state["0xnew"].economic_month_complete) == (True, False)
+    assert state["0xnull"].economic_all_time_complete is False
+    assert all(wallet.errors == [] for wallet in state.values())
+    # No volume lookup for a wallet whose PnL is unknown.
+    assert [call["user"] for call in fake.calls("/v2/user-volume")] == ["0xabc", "0xnew"]
 
 
 def test_run_wallets_emits_progress_per_wallet(tmp_path: Path) -> None:
     """The progress callback should fire once per wallet with current/total
     so the API can surface wallet-scan progress to the UI."""
 
-    def handler(request: httpx.Request) -> httpx.Response:
-        if request.url.path == "/activity":
-            return httpx.Response(200, json=[])
-        if request.url.path == "/positions":
-            return httpx.Response(200, json=[])
-        if request.url.path == "/value":
-            return httpx.Response(200, json=[{"user": "0x", "value": 0.0}])
-        return httpx.Response(404)
-
-    client = _client_with_handler(handler)
+    client = _client_with_handler(_pipeline_handler(FakeDataApi()))
     stores = _build_stores(tmp_path)
     events: list[dict[str, Any]] = []
     addresses = ["0xaaa", "0xbbb", "0xccc"]
@@ -763,28 +834,28 @@ def test_run_match_markets_excludes_kalshi_parlays(tmp_path: Path) -> None:
         f"legit market should still match, links: {tickers}"
 
 
-def test_parse_position_row_falls_back_on_alt_field_names() -> None:
-    raw = {
-        "conditionId": "0xc",
-        "outcomeIndex": 1,
-        "outcome": "No",
-        "size": 250.0,
-        "averagePrice": 0.42,  # alt name
-        "value": 95.0,         # alt name
-        "slug": "s",
-        "title": "t",
-        "eventSlug": "e",
-    }
+def test_parse_position_row_reads_v2_names() -> None:
+    raw = position_row("0xc", 1, size=250.0, outcome="No", avg_price=0.42,
+                       current_value=95.0, current_price=0.38, unrealized_pnl=-10.0)
     p = parse_position_row(raw, proxy_wallet="0xABC")
     assert p.proxy_wallet == "0xabc"
-    assert p.avg_price == 0.42
-    assert p.current_value_usdc == 95.0
+    assert (p.condition_id, p.outcome_index, p.outcome, p.size) == ("0xc", 1, "No", 250.0)
+    assert (p.avg_price, p.current_value_usdc, p.current_outcome_price) == (0.42, 95.0, 0.38)
+    assert p.cash_pnl_usdc == -10.0
+    assert (p.slug, p.title, p.event_slug) == ("s", "t", "e")
 
 
-def _is_ranked_leaderboard(request: httpx.Request) -> bool:
-    """A seed request; per-wallet economics lookups use the same path with ``user``."""
-    return (request.url.host == "data-api.polymarket.com"
-            and request.url.path == "/v1/leaderboard" and "user" not in request.url.params)
+def test_a_holding_without_a_size_is_refused_not_stored_as_zero() -> None:
+    """v2 serves null for a number it does not have. A zero would read as an exit."""
+    with pytest.raises(ValueError, match="current_size"):
+        parse_position_row(position_row("0xc", current_size=None), proxy_wallet="0xabc")
+    with pytest.raises(ValueError, match="current_size"):  # a v1-shaped row
+        parse_position_row({"conditionId": "0xc", "size": 250.0}, proxy_wallet="0xabc")
+
+
+def _seed_calls(fake: FakeDataApi) -> list[dict[str, str]]:
+    """Seed requests; per-wallet standings use the same path with ``user``."""
+    return [call for call in fake.calls("/v2/leaderboard") if "user" not in call]
 
 
 def test_run_pipeline_skips_windows_the_api_rejects(
@@ -793,20 +864,15 @@ def test_run_pipeline_skips_windows_the_api_rejects(
     """A rejected leaderboard window is skipped and the rest of the pipeline
     completes, but the rejection is reported in the result's warning."""
 
+    fake = FakeDataApi()
+    answer = _pipeline_handler(fake)
+
     def handler(request: httpx.Request) -> httpx.Response:
-        if "lb-api.polymarket.com" in str(request.url):
-            raise AssertionError("the seed must not use lb-api, which rejects day/week/month")
-        # Leaderboard: accept 'ALL', reject everything else with 400.
-        if _is_ranked_leaderboard(request):
-            if request.url.params.get("timePeriod") == "ALL":
-                return httpx.Response(200, json=[])
+        # Leaderboard: accept 'all', reject everything else with 400.
+        if (request.url.path == "/v2/leaderboard" and "user" not in request.url.params
+                and request.url.params.get("time_period") != "all"):
             return httpx.Response(400, json={"error": "invalid request"})
-        # Gamma markets: return an empty page so run_markets exits cleanly.
-        if "gamma-api.polymarket.com" in str(request.url):
-            return httpx.Response(200, json=[])
-        # Data API (activity / positions / value) — none of these should be
-        # called since the watchlist will be empty, but cover them anyway.
-        return httpx.Response(200, json=[])
+        return answer(request)
 
     monkeypatch.setenv("POLYMARKET_DATA_DIR", str(tmp_path))
     monkeypatch.setenv("POLYMARKET_WATCHLIST_PATH", str(tmp_path / "wl.txt"))
@@ -838,37 +904,49 @@ def test_run_pipeline_seeds_the_day_window_from_the_ranked_leaderboard(
     tmp_path: Path, monkeypatch: Any,
 ) -> None:
     """The lean pilot seeds from the day window; the 60-wallet limit spans two pages."""
-    requests: list[dict[str, str]] = []
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        if _is_ranked_leaderboard(request):
-            params = dict(request.url.params)
-            requests.append(params)
-            offset, limit = int(params.get("offset", 0)), int(params["limit"])
-            return httpx.Response(200, json=[
-                {"rank": str(i + 1), "proxyWallet": f"0xW{i:03d}", "userName": f"user{i}",
-                 "vol": 1000.0 - i, "pnl": 5.0}
-                for i in range(offset, min(offset + limit, 60))
-            ])
-        return httpx.Response(200, json=[])
-
+    fake = FakeDataApi()
+    fake.leaderboards[("OVERALL", "day", "VOLUME")] = [
+        leaderboard_row(f"0xW{i:03d}", pnl=5.0, name=f"user{i}") for i in range(60)
+    ]
     monkeypatch.setenv("POLYMARKET_DATA_DIR", str(tmp_path))
     monkeypatch.setenv("POLYMARKET_WATCHLIST_PATH", str(tmp_path / "wl.txt"))
     result = run_pipeline(
         windows=["day"], leaderboard_limit=60, skip_kalshi=True, skip_enrichment=True,
         refresh_reference=False, wallet_batch_size=1,
-        client=_client_with_handler(handler),
+        client=_client_with_handler(_pipeline_handler(fake)),
     )
 
-    assert [(r["timePeriod"], r["orderBy"], r["limit"], r.get("offset", "0"))
-            for r in requests] == [("DAY", "VOL", "50", "0"), ("DAY", "VOL", "10", "50")]
+    # A cursor keeps its page size, so the second page is 50 wide and cut to 10.
+    assert [(r["time_period"], r["sort_by"], r["limit"], r.get("cursor"))
+            for r in _seed_calls(fake)] == [
+        ("day", "VOLUME", "50", None), ("day", "VOLUME", "50", "50:50")]
     assert result.windows_succeeded == ["day"] and result.warning is None
     assert result.leaderboard_entries == 60 and result.wallets_seeded == 60
     rows = [json.loads(line) for line in
             (tmp_path / "polymarket_leaderboard.jsonl").read_text().splitlines()]
     assert rows[0]["proxy_wallet"] == "0xw000" and rows[0]["name"] == "user0"
-    assert rows[0]["amount_usdc"] == 1000.0
+    assert rows[0]["amount_usdc"] == 0.0  # v2 volume is shares: no USDC amount to store
     assert (rows[0]["metric"], rows[0]["window"]) == ("volume", "day")
+
+
+def test_a_longer_board_is_cut_at_the_seed_limit(tmp_path: Path, monkeypatch: Any) -> None:
+    fake = FakeDataApi()
+    fake.leaderboards[("OVERALL", "month", "PNL")] = [
+        leaderboard_row(f"0xW{i:03d}", pnl=500.0 - i) for i in range(200)
+    ]
+    monkeypatch.setenv("POLYMARKET_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("POLYMARKET_WATCHLIST_PATH", str(tmp_path / "wl.txt"))
+    result = run_pipeline(
+        windows=["month"], leaderboard_limit=70, skip_kalshi=True, skip_enrichment=True,
+        refresh_reference=False, wallet_batch_size=1, seed_metrics=("profit",),
+        client=_client_with_handler(_pipeline_handler(fake)),
+    )
+    assert len(_seed_calls(fake)) == 2
+    assert result.leaderboard_entries == 70 and result.wallets_seeded == 70
+    rows = [json.loads(line) for line in
+            (tmp_path / "polymarket_leaderboard.jsonl").read_text().splitlines()]
+    assert [row["proxy_wallet"] for row in rows][-1] == "0xw069"
+    assert rows[0]["amount_usdc"] == 500.0  # PnL is USDC in v2 as well
 
 
 def test_run_pipeline_seeds_volume_only_by_default(
@@ -877,72 +955,46 @@ def test_run_pipeline_seeds_volume_only_by_default(
     """The shallow pipeline must drop the profit/PnL leaderboard (luck bias)
     and must NOT touch the subgraph — recent-trader discovery lives only in the
     deep pipeline, which can absorb an unbounded wallet set."""
-    orders_called: list[str] = []
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        url = str(request.url)
-        if _is_ranked_leaderboard(request):
-            orders_called.append(request.url.params["orderBy"])
-            return httpx.Response(200, json=[
-                {"proxyWallet": "0xVol", "vol": 1.0, "userName": "v"},
-            ])
-        if "gamma-api.polymarket.com" in url:
-            return httpx.Response(200, json=[])
-        if "api.goldsky.com" in url:
-            raise AssertionError("shallow pipeline must not call the subgraph")
-        return httpx.Response(200, json=[])
-
+    fake = FakeDataApi()
+    fake.leaderboards[("OVERALL", "all", "VOLUME")] = [leaderboard_row("0xVol", name="v")]
     monkeypatch.setenv("POLYMARKET_DATA_DIR", str(tmp_path))
     monkeypatch.setenv("POLYMARKET_WATCHLIST_PATH", str(tmp_path / "wl.txt"))
     result = run_pipeline(
         windows=["all"], leaderboard_limit=5, skip_kalshi=True,
-        client=_client_with_handler(handler),
+        client=_client_with_handler(_pipeline_handler(fake)),
     )
-    assert orders_called == ["VOL"]  # profit never requested
+    # profit never requested; v2 names the volume ordering VOLUME, not VOL
+    assert [call["sort_by"] for call in _seed_calls(fake)] == ["VOLUME"]
     assert result.wallets_seeded == 1
 
 
 def test_run_pipeline_include_profit_reenables_profit(
     tmp_path: Path, monkeypatch: Any,
 ) -> None:
-    orders_called: set[str] = set()
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        url = str(request.url)
-        if _is_ranked_leaderboard(request):
-            orders_called.add(request.url.params["orderBy"])
-            return httpx.Response(200, json=[])
-        if "gamma-api.polymarket.com" in url:
-            return httpx.Response(200, json=[])
-        return httpx.Response(200, json=[])
-
+    fake = FakeDataApi()
     monkeypatch.setenv("POLYMARKET_DATA_DIR", str(tmp_path))
     monkeypatch.setenv("POLYMARKET_WATCHLIST_PATH", str(tmp_path / "wl.txt"))
     run_pipeline(
         windows=["all"], leaderboard_limit=5, skip_kalshi=True,
-        include_profit_leaderboard=True, client=_client_with_handler(handler),
+        include_profit_leaderboard=True, client=_client_with_handler(_pipeline_handler(fake)),
     )
-    assert orders_called == {"PNL", "VOL"}
+    assert {call["sort_by"] for call in _seed_calls(fake)} == {"PNL", "VOLUME"}
 
 
 def test_run_pipeline_seeds_from_the_named_metrics_only(
     tmp_path: Path, monkeypatch: Any,
 ) -> None:
-    orders_called: list[str] = []
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        if _is_ranked_leaderboard(request):
-            orders_called.append(request.url.params["orderBy"])
-            return httpx.Response(200, json=[{"proxyWallet": "0xWin", "pnl": 9.0}])
-        return httpx.Response(200, json=[])
-
+    fake = FakeDataApi()
+    fake.leaderboards[("OVERALL", "month", "PNL")] = [leaderboard_row("0xWin", pnl=9.0)]
+    handler = _pipeline_handler(fake)
     monkeypatch.setenv("POLYMARKET_DATA_DIR", str(tmp_path))
     monkeypatch.setenv("POLYMARKET_WATCHLIST_PATH", str(tmp_path / "wl.txt"))
     result = run_pipeline(
         windows=["month"], leaderboard_limit=5, skip_kalshi=True,
         seed_metrics=("profit",), client=_client_with_handler(handler),
     )
-    assert orders_called == ["PNL"] and result.wallets_seeded == 1
+    assert [call["sort_by"] for call in _seed_calls(fake)] == ["PNL"]
+    assert result.wallets_seeded == 1
     with pytest.raises(ValueError, match="unsupported seed metrics"):
         run_pipeline(windows=["month"], leaderboard_limit=5, skip_kalshi=True,
                      seed_metrics=("roi",), client=_client_with_handler(handler))
@@ -1112,11 +1164,10 @@ def test_shard_activity_by_wallet_partitions_and_preserves_order(tmp_path: Path)
 def test_a_capped_watchlist_stops_growing_but_keeps_everyone(
     tmp_path: Path, monkeypatch: Any,
 ) -> None:
-    def handler(request: httpx.Request) -> httpx.Response:
-        if _is_ranked_leaderboard(request):
-            return httpx.Response(200, json=[
-                {"proxyWallet": f"0xNEW{i}", "vol": 1.0} for i in range(3)])
-        return httpx.Response(200, json=[])
+    fake = FakeDataApi()
+    fake.leaderboards[("OVERALL", "day", "VOLUME")] = [
+        leaderboard_row(f"0xNEW{i}") for i in range(3)]
+    handler = _pipeline_handler(fake)
 
     watchlist = tmp_path / "wl.txt"
     watchlist.write_text("0xold1\n0xold2\n", encoding="utf-8")
@@ -1142,11 +1193,10 @@ def test_a_capped_watchlist_stops_growing_but_keeps_everyone(
 def test_excluded_wallets_leave_the_watchlist_and_are_never_reseeded(
     tmp_path: Path, monkeypatch: Any,
 ) -> None:
-    def handler(request: httpx.Request) -> httpx.Response:
-        if _is_ranked_leaderboard(request):
-            return httpx.Response(200, json=[
-                {"proxyWallet": "0xBOT", "vol": 9.0}, {"proxyWallet": "0xnew", "vol": 1.0}])
-        return httpx.Response(200, json=[])
+    fake = FakeDataApi()
+    fake.leaderboards[("OVERALL", "month", "VOLUME")] = [
+        leaderboard_row("0xBOT"), leaderboard_row("0xnew")]
+    handler = _pipeline_handler(fake)
 
     watchlist = tmp_path / "wl.txt"
     watchlist.write_text("0xold\n0xbot\n", encoding="utf-8")
