@@ -377,9 +377,10 @@ of 1, which the collector's one-share floor is meant to match.
 `sizeThreshold`.
 
 - Before the outage: 1,488 to 1,660 position rows per run of 28 wallets (10-31 and
-  11-01), and 5,789 rows in the store for the two newest snapshots of 64 wallets.
-  That is about 45 to 55 rows per wallet and snapshot. No run was far from the
-  others, so no wallet in the rotation listed more than a few hundred rows.
+  11-01), or 53 to 59 per wallet, and 5,789 rows in the store for the two newest
+  snapshots of each wallet that has any. That makes about 50 wallets with
+  snapshots, not 64 (see the last item). No run was far from the others, so no
+  wallet in the rotation listed more than a few hundred rows.
 - First two runs on v2 (2026-11-17 09:07 and 10:07 UTC), live holdings of at least
   one share: 80 and 96 rows, each for a different batch of 28 wallets. Retention
   keeps two snapshots per wallet, so after each run it dropped the oldest snapshot
@@ -392,13 +393,24 @@ of 1, which the collector's one-share floor is meant to match.
   caveat Part 2 raises about its 74-wallet group: the closer comparison is its 52
   wallets without a large dead book (LIVE mean 18.8; LIVE+RESOLVED mean 49.8,
   median 18).
+- Seeds whose first listing was empty. A seed is polled again only if its first
+  position listing stored something, and 12 to 14 of the 64 wallets appear never to
+  have been polled a second time (`docs/lean-pilot.md`, known gaps). All of them
+  were seeded on v1. If v1 listed resolved holdings, an empty listing meant holding
+  nothing at all, which is 7 of today's 100 month-board wallets; if it left them
+  out, it meant holding nothing live, which is 27 of 100. About a fifth of the
+  pilot's seeds is nearer the second. This leans towards "left out", and rests on
+  two things not established: that these wallets left the rotation because their
+  listing was empty rather than because it failed (one did fail, on 2026-10-22), and
+  that seeds in October resembled today's board.
 
 **Where that leaves it.** Unsettled. The same wallets list far fewer rows than they
 did, thirteen times fewer in one batch and about four times fewer in the other.
 "Included" explains that as dead rows no longer listed; "left out" explains it as
 live books that shrank across the 2026-11-03 elections, which wallets seeded from
 October's profit board may have done. Neither reading predicts the difference
-between the two batches, and these counts do not move the 60–65% above either way.
+between the two batches. The share of seeds with an empty first listing leans
+towards "left out", in the same direction as the 60–65% above.
 (This paragraph first said "closer to even", on the first batch alone.)
 
 The check under "What would settle it" is the one to run, and its input is leaving

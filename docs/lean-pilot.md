@@ -327,8 +327,42 @@ live check of the position filter
   USDC amount (v2 reports shares). The pilot seeds by month profit, which is in USDC
   in both versions.
 
-Known gaps, none of them new with v2:
+Known gaps. The first is new with v2; the others are not:
 
+- **A history walk that reads only empty pages does not advance.** v2 can serve an
+  empty page, or one holding only combo trades, and still have rows after it. A walk
+  reads two pages. If neither holds a row the collector keeps, it has no timestamp
+  to resume from, so the next run asks for the same two pages: the wallet's history
+  stays incomplete with no error and no new row. Reproduced against the fake API on
+  2026-11-17 and not yet covered by a test; not seen in production, where it would
+  look like the frozen wallets below. The recent and gap walks hit the same
+  condition but show it (`recent activity refresh incomplete`, a gap that never
+  closes).
+- **About a fifth of the watchlist appears not to be polled.** A bounded run takes
+  a wallet again only while its latest position snapshot holds something, so a seed
+  whose first listing was empty or failed is polled once (see "Which wallets are
+  polled" above). The result line does not name the wallets a run polled, but three
+  counts agree on 12 to 14 of the 64:
+  - `backfill_complete_wallets` was 52 in every run from 2026-10-22 18:10 UTC to the
+    outage (267 runs) and is 52 again since the second run on v2. Twelve histories
+    stay incomplete, which blocks trust, while the runs write far too few rows for
+    twelve wallets to be reading history: about 3,600 rows a day before the outage,
+    3 and 0 in the third and fourth runs on v2. The count fell from 53 in the run of
+    2026-10-22 18:10 UTC. That run wrote 980 activity rows, two pages of one history,
+    and is the only run that ever logged `positions pagination exceeded safety
+    bound`. A wallet still in the rotation would have repeated that error every few
+    hours.
+  - Through the outage a polled wallet's history was marked incomplete when its
+    activity request failed, and the count stayed at 2 for all 345 runs. The first
+    run on v2 brought it to 30 and the second to 52. A rotation of 50 wallets gives
+    exactly that: 28, then the other 22 with 6 repeats.
+  - The position store held 5,789 rows for two snapshots per wallet. Batches of 28
+    wrote 1,488 to 1,660, or 53 to 59 a wallet, which makes 49 to 55 wallets with
+    snapshots, not 64.
+
+  These wallets keep their place under the cap of 64 while 70 leaderboard wallets
+  wait for one. Rotating a bounded run over the whole watchlist would poll them
+  again; it changes what the pilot collects and is an owner decision.
 - **The dedupe key drops fills.** The store keeps one row per (transaction,
   condition, outcome index, type). A wallet whose order is filled against two resting
   orders in one transaction gets two rows from the API that share that key, and the
