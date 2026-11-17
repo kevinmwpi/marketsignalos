@@ -238,6 +238,69 @@ def test_the_stage_is_provisional_until_the_freeze_then_frozen_once(data: Path) 
         cohort_v1.run(data, now=CUTOFF + timedelta(days=2), freeze_at=CUTOFF, discovery={})
 
 
+def _screened(**tiers: tuple[str, list[str]]) -> dict[str, Any]:
+    return {"screened": {wallet: {"tier": tier, "reasons": reasons}
+                         for wallet, (tier, reasons) in tiers.items()}}
+
+
+def test_the_diagnostic_counts_what_blocks_wallets_and_how_they_moved() -> None:
+    metadata, model = "incomplete market metadata", "forecast confidence below 80%"
+    config = _screened(
+        a=("T2", [CLV]),
+        b=("T3", [model, CLV]),                    # one gate from T2
+        c=("none", [metadata]),                    # one gate from T2
+        d=("none", [metadata, model, CLV]),        # two gates away
+        e=("excluded", ["excluded by the cohort stage (systematic)"]),
+        f=("unscreened", ["on the leaderboard, never hydrated (watchlist cap)"]),
+        g=("T1", []),
+    )
+    first = cohort_v1.diagnostic(config, None)
+    assert first == {
+        "screened": {"T1": 1, "T2": 1, "T3": 1, "excluded": 1, "none": 2, "unscreened": 1},
+        "blocking": {CLV: 3, model: 2, metadata: 2},
+        "one_gate_from_t2": {model: 1, metadata: 1},
+    }
+    # Since the last build: b and c fell out of T2, e was excluded from T2, h is gone.
+    previous = {"a": "T2", "b": "T2", "c": "T2", "d": "none", "e": "T2", "g": "T1", "h": "T3"}
+    moved = cohort_v1.diagnostic(config, previous)
+    assert moved["moves"] == {"T2->T3": 1, "T2->excluded": 1, "T2->none": 1,
+                              "T3->absent": 1, "absent->unscreened": 1}
+    assert moved["left_t2"] == {
+        "excluded by the cohort stage (systematic)": 1, model: 1, metadata: 1}
+    # No wallet address, price or score anywhere in it.
+    assert not any(wallet in json.dumps(moved) for wallet in ('"a"', '"b"', "0x"))
+
+
+def test_the_provisional_stage_logs_the_diagnostic_and_remembers_the_tiers(data: Path) -> None:
+    before = CUTOFF - timedelta(days=7)
+    first = cohort_v1.run(data, now=before, freeze_at=None, discovery={})
+    assert set(first["diagnostic"]) == {"screened", "blocking", "one_gate_from_t2"}
+    assert sum(first["diagnostic"]["screened"].values()) == 3  # every screened wallet, once
+    state = json.loads((data / "cohort-v1" / "diagnostic-state.json").read_text())
+    assert state["tiers"]["0x" + "e" * 40] == "excluded" and state["built_at"]
+
+    second = cohort_v1.run(data, now=before + timedelta(days=1), freeze_at=None, discovery={})
+    assert second["diagnostic"]["moves"] == {} and second["diagnostic"]["left_t2"] == {}
+    # The member list, and so what the pilot polls, is the same with or without it.
+    assert {k: v for k, v in second.items() if k != "diagnostic"} == {
+        k: v for k, v in first.items() if k != "diagnostic"}
+
+    # A state file that cannot be read costs the comparison, never the stage.
+    (data / "cohort-v1" / "diagnostic-state.json").write_text("not json")
+    third = cohort_v1.run(data, now=before + timedelta(days=2), freeze_at=None, discovery={})
+    assert third["status"] == "succeeded" and "moves" not in third["diagnostic"]
+
+
+def test_the_frozen_config_and_its_hash_do_not_carry_the_diagnostic(data: Path) -> None:
+    cohort_v1.run(data, now=CUTOFF - timedelta(days=1), freeze_at=CUTOFF, discovery={})
+    frozen = cohort_v1.run(data, now=CUTOFF, freeze_at=CUTOFF, discovery={})
+    config = json.loads((data / "cohort-v1" / "frozen-config.json").read_text())
+    assert "diagnostic" not in frozen and "diagnostic" not in config
+    assert config["config_hash"] == config_hash(config)
+    assert build(data, cutoff=CUTOFF, discovery={})["config_hash"] == config_hash(
+        build(data, cutoff=CUTOFF, discovery={}))
+
+
 def test_without_capture_the_window_falls_back_to_raw_buys(data: Path) -> None:
     window = cohort_v1.power_window(data, [WALLET], CUTOFF)
     # Two buys in the 14 days before the cutoff, both in one event; no signals yet.
