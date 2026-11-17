@@ -243,7 +243,7 @@ def test_receipt_retention_and_cooldown_survive_pruning(
 def test_runner_uses_budget_and_persists_partial_receipt(tmp_path: Path) -> None:
     stores = _build_stores(tmp_path)
     stores.activity.write_activity([parse_activity_row({
-        "proxyWallet": "wallet", "conditionId": "a", "timestamp": 1000, "type": "TRADE",
+        "proxy_wallet": "wallet", "condition_id": "a", "timestamp": 1000, "type": "TRADE",
     })])
     with closing(client(lambda _: httpx.Response(200, json=[]))) as upstream:
         assert run_markets_backfill_from_activity(

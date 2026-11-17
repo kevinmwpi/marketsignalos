@@ -25,6 +25,9 @@ MAX_RESPONSE_BYTES = 1_000_000
 MAX_SNAPSHOT_BYTES = 2_000_000
 TRADE_LIMIT = 100
 POSITION_LIMIT = 50
+# v2 lists resolved, unredeemed holdings among the rest and has no request filter
+# for them, so more rows are read than are published.
+POSITION_FETCH_LIMIT = 200
 ADDRESS = re.compile(r"0x[0-9a-fA-F]{40}\Z")
 HASH = re.compile(r"0x[0-9a-fA-F]{64}\Z")
 LOG = logging.getLogger(__name__)
@@ -45,15 +48,15 @@ def label(value: Any, fallback: str = "Unknown") -> str:
 
 
 def market_fields(row: dict[str, Any], address: str) -> dict[str, Any]:
-    if str(row.get("proxyWallet", "")).lower() != address:
+    if str(row.get("proxy_wallet", "")).lower() != address:
         raise ValueError("wallet mismatch")
-    condition = row.get("conditionId", "")
-    asset = row.get("asset", "")
+    condition = row.get("condition_id", "")
+    asset = row.get("token_id", "")
     if not isinstance(condition, str) or not HASH.fullmatch(condition):
         raise ValueError("invalid condition")
     if not isinstance(asset, str) or not re.fullmatch(r"[0-9]{1,100}", asset):
         raise ValueError("invalid asset")
-    slug = row.get("eventSlug", "")
+    slug = row.get("event_slug", "")
     return {
         "condition_id": condition.lower(),
         "asset": asset,
@@ -109,7 +112,9 @@ class Collector:
                     if len(body) > MAX_RESPONSE_BYTES:
                         raise ValueError("response size limit exceeded")
                 receipt["sha256"] = hashlib.sha256(body).hexdigest()
-                rows = json.loads(body)
+                payload = json.loads(body)
+                # Data API v2 wraps every listing: {"data": [...], "pagination": {...}}.
+                rows = payload.get("data") if isinstance(payload, dict) else None
                 if not isinstance(rows, list) or len(rows) > params["limit"]:
                     raise ValueError("unexpected response shape or row limit exceeded")
                 receipt.update(status="ok", rows_returned=len(rows))
@@ -123,31 +128,37 @@ class Collector:
             receipt["observed_at"] = utc_now()
 
     def sample(self, address: str, kind: str) -> dict[str, Any]:
-        limit = TRADE_LIMIT if kind == "trades" else POSITION_LIMIT
+        limit = TRADE_LIMIT if kind == "trades" else POSITION_FETCH_LIMIT
         params: dict[str, Any] = {
             "user": address,
             "limit": limit,
-            "offset": 0,
-            "sortDirection": "DESC",
+            "sort_direction": "DESC",
         }
         if kind == "trades":
-            params.update(
-                type="TRADE", sortBy="TIMESTAMP", start=self.start, end=self.end
-            )
-            path = "/activity"
+            params.update(type="TRADE", start=self.start, end=self.end)
+            path = "/v2/activity"
         else:
-            params.update(sortBy="CURRENT", sizeThreshold=0, redeemable="false")
-            path = "/positions"
+            params.update(sort_by="CURRENT_VALUE")
+            path = "/v2/positions"
         raw, receipt = self.fetch(path, params)
         rows = []
         rejected = 0
+        excluded = 0
         seen_assets: set[str] = set()
         for row in raw:
+            # v2 has no request filter for these two: its feed mixes in combo
+            # (basket) trades, and its holdings include resolved, unredeemed
+            # ones. Neither was ever part of this sample, and neither is a fault.
+            if isinstance(row, dict) and row.get(
+                "is_combo" if kind == "trades" else "redeemable"
+            ) is True:
+                excluded += 1
+                continue
             try:
                 if not isinstance(row, dict):
                     raise ValueError("invalid row")
                 normalized = market_fields(row, address)
-                size = number(row.get("size"))
+                size = number(row.get("size" if kind == "trades" else "current_size"))
                 if size is None or size <= 0:
                     raise ValueError("invalid size")
                 normalized["size"] = size
@@ -162,12 +173,12 @@ class Collector:
                         or price is None
                     ):
                         raise ValueError("invalid trade")
-                    tx = row.get("transactionHash", "")
+                    tx = row.get("transaction_hash", "")
                     normalized.update(
                         timestamp=stamp,
                         side=row["side"],
                         price=price,
-                        notional=number(row.get("usdcSize")),
+                        notional=number(row.get("usdc_size")),
                         transaction_hash=tx
                         if isinstance(tx, str) and HASH.fullmatch(tx)
                         else None,
@@ -180,9 +191,9 @@ class Collector:
                         raise ValueError("duplicate asset or redeemability unavailable")
                     seen_assets.add(normalized["asset"])
                     normalized.update(
-                        average_price=number(row.get("avgPrice"), 1),
-                        reported_price=number(row.get("curPrice"), 1),
-                        reported_value=number(row.get("currentValue")),
+                        average_price=number(row.get("avg_price"), 1),
+                        reported_price=number(row.get("current_price"), 1),
+                        reported_value=number(row.get("current_value")),
                     )
                 rows.append(normalized)
             except ValueError:
@@ -190,24 +201,26 @@ class Collector:
         if kind == "trades":
             rows.sort(key=lambda item: item["timestamp"], reverse=True)
         receipt["rows_rejected"] = rejected
+        # Holdings are published largest first, up to the sample's own cap.
+        published = rows if kind == "trades" else rows[:POSITION_LIMIT]
         return {
             "status": receipt["status"],
             "observed_at": receipt["observed_at"],
             "rows_returned": len(raw),
             "rows_rejected": rejected,
-            "possibly_truncated": len(raw) >= limit,
-            "rows": rows,
+            "rows_excluded": excluded,
+            "possibly_truncated": len(raw) >= limit or len(rows) > len(published),
+            "rows": published,
         }
 
     def collect(self) -> dict[str, Any]:
         seeds, receipt = self.fetch(
-            "/v1/leaderboard",
+            "/v2/leaderboard",
             {
                 "category": "OVERALL",
-                "timePeriod": "DAY",
-                "orderBy": "VOL",
+                "time_period": "day",
+                "sort_by": "VOLUME",
                 "limit": self.wallet_limit,
-                "offset": 0,
             },
         )
         wallets = []
@@ -215,7 +228,7 @@ class Collector:
         rejected = 0
         for seed in seeds:
             address = (
-                str(seed.get("proxyWallet", "")).lower()
+                str(seed.get("user_id", "")).lower()
                 if isinstance(seed, dict)
                 else ""
             )
@@ -226,7 +239,7 @@ class Collector:
             wallets.append(
                 {
                     "address": address,
-                    "name": label(seed.get("userName"), address),
+                    "name": label(seed.get("user_name"), address),
                     "evaluation_status": "not_evaluated",
                     "trades": self.sample(address, "trades"),
                     "positions": self.sample(address, "positions"),
@@ -243,6 +256,8 @@ class Collector:
             "started_at": self.started_at,
             "generated_at": utc_now(),
             "source": BASE_URL,
+            # The published format is unchanged from v1; the routes are v2.
+            "source_api": "v2",
             "selection": "OVERALL / DAY / VOL, first page",
             "status": "partial"
             if any(r["status"] != "ok" or r.get("rows_rejected") for r in self.requests)

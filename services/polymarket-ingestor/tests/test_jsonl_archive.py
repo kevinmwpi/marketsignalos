@@ -26,9 +26,9 @@ B = "0x" + "b" * 40
 
 def _trade(n: int, wallet: str = A) -> Any:
     return parse_activity_row({
-        "proxyWallet": wallet, "timestamp": 1_759_000_000 + n, "conditionId": f"0xc{n}",
-        "type": "TRADE", "side": "BUY", "size": 10, "usdcSize": 4, "price": 0.4,
-        "outcomeIndex": 0, "eventSlug": f"e{n}", "transactionHash": f"0xt{n}"})
+        "proxy_wallet": wallet, "timestamp": 1_759_000_000 + n, "condition_id": f"0xc{n}",
+        "type": "TRADE", "side": "BUY", "size": 10, "usdc_size": 4, "price": 0.4,
+        "outcome_index": 0, "event_slug": f"e{n}", "transaction_hash": f"0xt{n}"})
 
 
 def _store(tmp_path: Path, numbers: range, wallet: str = A) -> Path:

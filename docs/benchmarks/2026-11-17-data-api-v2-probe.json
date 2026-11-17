@@ -1,0 +1,6670 @@
+{
+ "active": {
+  "activity": {
+   "bad_cursor": {
+    "body_if_error": {
+     "code": "invalid_request",
+     "error": "invalid cursor",
+     "retryable": false,
+     "trace_id": "0417cbc0bc2747cda77aa2e21f123d73"
+    },
+    "rows": 0,
+    "status": 400
+   },
+   "cursor_reuse": {
+    "with_other_filter": {
+     "error_body": null,
+     "status": 200
+    },
+    "with_other_limit": {
+     "error_body": null,
+     "rows": 5,
+     "status": 200
+    }
+   },
+   "default_first_page": {
+    "headers": {
+     "cache-control": "public, max-age=15",
+     "content-type": "application/json"
+    },
+    "ms": 242,
+    "pagination": {
+     "has_more": true,
+     "limit": 5,
+     "next_cursor": "str(179)",
+     "offset": 0
+    },
+    "params": {
+     "limit": 5,
+     "user": "0x4f1d5ae26fc31472966e951af3183308736d8de2"
+    },
+    "path": "/v2/activity",
+    "shape": {
+     "absent": {},
+     "enum_values": {
+      "outcome_index": {
+       "999": 5
+      },
+      "side": {
+       "\"\"": 5
+      },
+      "type": {
+       "\"CONVERSION\"": 3,
+       "\"MERGE\"": 2
+      }
+     },
+     "keys": {
+      "bio": {
+       "str-empty": 5
+      },
+      "condition_id": {
+       "hex-lower(66)": 5
+      },
+      "event_slug": {
+       "str": 5
+      },
+      "icon": {
+       "str": 2,
+       "str-empty": 3
+      },
+      "name": {
+       "str": 5
+      },
+      "outcome": {
+       "str-empty": 5
+      },
+      "outcome_index": {
+       "int(3 digits)": 5
+      },
+      "price": {
+       "float": 5
+      },
+      "profile_image": {
+       "str-empty": 5
+      },
+      "profile_image_optimized": {
+       "str-empty": 5
+      },
+      "proxy_wallet": {
+       "hex-lower(42)": 5
+      },
+      "pseudonym": {
+       "str": 5
+      },
+      "side": {
+       "str-empty": 5
+      },
+      "size": {
+       "float": 5
+      },
+      "slug": {
+       "str": 5
+      },
+      "timestamp": {
+       "int(10 digits)": 5
+      },
+      "title": {
+       "str": 5
+      },
+      "token_id": {
+       "str-empty": 5
+      },
+      "transaction_hash": {
+       "hex-lower(66)": 5
+      },
+      "type": {
+       "str": 5
+      },
+      "usdc_size": {
+       "float": 5
+      }
+     },
+     "rows": 5
+    },
+    "status": 200,
+    "top_level_keys": [
+     "data",
+     "pagination"
+    ]
+   },
+   "default_timestamps": [
+    1794899750,
+    1794899725,
+    1794899723,
+    1794899717,
+    1794899716
+   ],
+   "default_window_oldest": [
+    1775842151
+   ],
+   "exclude_deposits_false": {
+    "error_body": null,
+    "rows": 500,
+    "sides": {
+     "\"\"": 394,
+     "\"BUY\"": 106
+    },
+    "status": 200,
+    "types": {
+     "CONVERSION": 79,
+     "MERGE": 270,
+     "REDEEM": 44,
+     "TRADE": 106,
+     "WITHDRAWAL": 1
+    }
+   },
+   "exclude_deposits_true": {
+    "error_body": null,
+    "rows": 500,
+    "sides": {
+     "\"\"": 394,
+     "\"BUY\"": 106
+    },
+    "status": 200,
+    "types": {
+     "CONVERSION": 79,
+     "MERGE": 271,
+     "REDEEM": 44,
+     "TRADE": 106
+    }
+   },
+   "full_history_oldest": {
+    "headers": {
+     "cache-control": "public, max-age=15",
+     "content-type": "application/json"
+    },
+    "ms": 370,
+    "pagination": {
+     "has_more": true,
+     "limit": 3,
+     "next_cursor": "str(195)",
+     "offset": 0
+    },
+    "params": {
+     "limit": 3,
+     "sort_direction": "ASC",
+     "start": 1,
+     "user": "0x4f1d5ae26fc31472966e951af3183308736d8de2"
+    },
+    "path": "/v2/activity",
+    "shape": {
+     "absent": {},
+     "enum_values": {
+      "outcome_index": {
+       "0": 3
+      },
+      "side": {
+       "\"\"": 1,
+       "\"BUY\"": 2
+      },
+      "type": {
+       "\"REDEEM\"": 1,
+       "\"TRADE\"": 2
+      }
+     },
+     "keys": {
+      "bio": {
+       "str-empty": 3
+      },
+      "condition_id": {
+       "hex-lower(66)": 3
+      },
+      "event_slug": {
+       "str": 3
+      },
+      "icon": {
+       "str": 3
+      },
+      "name": {
+       "str": 3
+      },
+      "outcome": {
+       "str": 3
+      },
+      "outcome_index": {
+       "int(1 digits)": 3
+      },
+      "price": {
+       "float": 3
+      },
+      "profile_image": {
+       "str-empty": 3
+      },
+      "profile_image_optimized": {
+       "str-empty": 3
+      },
+      "proxy_wallet": {
+       "hex-lower(42)": 3
+      },
+      "pseudonym": {
+       "str": 3
+      },
+      "side": {
+       "str": 2,
+       "str-empty": 1
+      },
+      "size": {
+       "float": 3
+      },
+      "slug": {
+       "str": 3
+      },
+      "timestamp": {
+       "int(10 digits)": 3
+      },
+      "title": {
+       "str": 3
+      },
+      "token_id": {
+       "str-int": 3
+      },
+      "transaction_hash": {
+       "hex-lower(66)": 3
+      },
+      "type": {
+       "str": 3
+      },
+      "usdc_size": {
+       "float": 3
+      }
+     },
+     "rows": 3
+    },
+    "status": 200,
+    "top_level_keys": [
+     "data",
+     "pagination"
+    ]
+   },
+   "full_history_oldest_timestamps": [
+    1775842151,
+    1775842229,
+    1775969363
+   ],
+   "limit_1000": {
+    "error_body": null,
+    "rows": 1000,
+    "status": 200
+   },
+   "limit_1001": {
+    "error_body": {
+     "code": "invalid_request",
+     "error": "Failed to deserialize query string: limit: limit must be between 0 and 1000",
+     "retryable": false,
+     "trace_id": "9962ac4520ad4ad992226599bb7305b9"
+    },
+    "rows": 0,
+    "status": 400
+   },
+   "offset_param": {
+    "body_if_error": {
+     "code": "invalid_request",
+     "error": "'offset' is not a query param on this API: pages are cursor-only, pass 'cursor' from a prior response's next_cursor",
+     "retryable": false,
+     "trace_id": "4c45913493204bf3856452f371f05730"
+    },
+    "rows": 0,
+    "status": 400
+   },
+   "side_buy": {
+    "error_body": {
+     "code": "request_timeout",
+     "error": "request timed out",
+     "retryable": true,
+     "trace_id": "a7166569a8fd4e45afb98cbee2cddce5"
+    },
+    "rows": 0,
+    "sides": {},
+    "status": 503,
+    "types": {}
+   },
+   "type_trade": {
+    "error_body": null,
+    "rows": 500,
+    "sides": {
+     "\"BUY\"": 498,
+     "\"SELL\"": 2
+    },
+    "status": 200,
+    "types": {
+     "TRADE": 500
+    }
+   },
+   "type_trade_redeem": {
+    "error_body": null,
+    "rows": 500,
+    "sides": {
+     "\"\"": 80,
+     "\"BUY\"": 418,
+     "\"SELL\"": 2
+    },
+    "status": 200,
+    "types": {
+     "REDEEM": 80,
+     "TRADE": 420
+    }
+   },
+   "v1_style_market_param": {
+    "body_if_error": {
+     "code": "invalid_request",
+     "error": "'market' is not a query param on this API: filter by condition id with 'condition' (aliases 'condition_id', 'conditionId')",
+     "retryable": false,
+     "trace_id": "0664885b48174696bfa2aec747e86e72"
+    },
+    "rows": 0,
+    "status": 400
+   },
+   "walk_default_window": {
+    "collision_examples_by_type": {
+     "TRADE": 3
+    },
+    "collision_groups": [],
+    "dedupe_key_collisions": 3,
+    "has_more_after_last_page": true,
+    "identical_rows_repeated": 0,
+    "max_rows_sharing_one_second": 10,
+    "newest": 1794899750,
+    "oldest": 1794845884,
+    "page_sizes": [
+     500,
+     500
+    ],
+    "params": {
+     "limit": 500,
+     "user": "0x4f1d5ae26fc31472966e951af3183308736d8de2"
+    },
+    "rows": 1000,
+    "shape_by_type": {
+     "CONVERSION": {
+      "absent": {},
+      "enum_values": {
+       "outcome_index": {
+        "999": 200
+       },
+       "side": {
+        "\"\"": 200
+       },
+       "type": {
+        "\"CONVERSION\"": 200
+       }
+      },
+      "keys": {
+       "bio": {
+        "str-empty": 200
+       },
+       "condition_id": {
+        "hex-lower(66)": 200
+       },
+       "event_slug": {
+        "str": 200
+       },
+       "icon": {
+        "str-empty": 200
+       },
+       "name": {
+        "str": 200
+       },
+       "outcome": {
+        "str-empty": 200
+       },
+       "outcome_index": {
+        "int(3 digits)": 200
+       },
+       "price": {
+        "float": 200
+       },
+       "profile_image": {
+        "str-empty": 200
+       },
+       "profile_image_optimized": {
+        "str-empty": 200
+       },
+       "proxy_wallet": {
+        "hex-lower(42)": 200
+       },
+       "pseudonym": {
+        "str": 200
+       },
+       "side": {
+        "str-empty": 200
+       },
+       "size": {
+        "float": 200
+       },
+       "slug": {
+        "str": 200
+       },
+       "timestamp": {
+        "int(10 digits)": 200
+       },
+       "title": {
+        "str": 200
+       },
+       "token_id": {
+        "str-empty": 200
+       },
+       "transaction_hash": {
+        "hex-lower(66)": 200
+       },
+       "type": {
+        "str": 200
+       },
+       "usdc_size": {
+        "float": 200
+       }
+      },
+      "rows": 200
+     },
+     "MAKER_REBATE": {
+      "absent": {},
+      "enum_values": {
+       "outcome_index": {
+        "999": 1
+       },
+       "side": {
+        "\"\"": 1
+       },
+       "type": {
+        "\"MAKER_REBATE\"": 1
+       }
+      },
+      "keys": {
+       "bio": {
+        "str-empty": 1
+       },
+       "condition_id": {
+        "str-empty": 1
+       },
+       "event_slug": {
+        "str-empty": 1
+       },
+       "icon": {
+        "str-empty": 1
+       },
+       "name": {
+        "str": 1
+       },
+       "outcome": {
+        "str-empty": 1
+       },
+       "outcome_index": {
+        "int(3 digits)": 1
+       },
+       "price": {
+        "float": 1
+       },
+       "profile_image": {
+        "str-empty": 1
+       },
+       "profile_image_optimized": {
+        "str-empty": 1
+       },
+       "proxy_wallet": {
+        "hex-lower(42)": 1
+       },
+       "pseudonym": {
+        "str": 1
+       },
+       "side": {
+        "str-empty": 1
+       },
+       "size": {
+        "float": 1
+       },
+       "slug": {
+        "str-empty": 1
+       },
+       "timestamp": {
+        "int(10 digits)": 1
+       },
+       "title": {
+        "str-empty": 1
+       },
+       "token_id": {
+        "str-empty": 1
+       },
+       "transaction_hash": {
+        "hex-lower(66)": 1
+       },
+       "type": {
+        "str": 1
+       },
+       "usdc_size": {
+        "float": 1
+       }
+      },
+      "rows": 1
+     },
+     "MERGE": {
+      "absent": {},
+      "enum_values": {
+       "outcome_index": {
+        "999": 530
+       },
+       "side": {
+        "\"\"": 530
+       },
+       "type": {
+        "\"MERGE\"": 530
+       }
+      },
+      "keys": {
+       "bio": {
+        "str-empty": 530
+       },
+       "condition_id": {
+        "hex-lower(66)": 530
+       },
+       "event_slug": {
+        "str": 530
+       },
+       "icon": {
+        "str": 530
+       },
+       "name": {
+        "str": 530
+       },
+       "outcome": {
+        "str-empty": 530
+       },
+       "outcome_index": {
+        "int(3 digits)": 530
+       },
+       "price": {
+        "float": 530
+       },
+       "profile_image": {
+        "str-empty": 530
+       },
+       "profile_image_optimized": {
+        "str-empty": 530
+       },
+       "proxy_wallet": {
+        "hex-lower(42)": 530
+       },
+       "pseudonym": {
+        "str": 530
+       },
+       "side": {
+        "str-empty": 530
+       },
+       "size": {
+        "float": 530
+       },
+       "slug": {
+        "str": 530
+       },
+       "timestamp": {
+        "int(10 digits)": 530
+       },
+       "title": {
+        "str": 530
+       },
+       "token_id": {
+        "str-empty": 530
+       },
+       "transaction_hash": {
+        "hex-lower(66)": 530
+       },
+       "type": {
+        "str": 530
+       },
+       "usdc_size": {
+        "float": 530
+       }
+      },
+      "rows": 530
+     },
+     "REDEEM": {
+      "absent": {},
+      "enum_values": {
+       "outcome_index": {
+        "0": 45,
+        "1": 31
+       },
+       "side": {
+        "\"\"": 76
+       },
+       "type": {
+        "\"REDEEM\"": 76
+       }
+      },
+      "keys": {
+       "bio": {
+        "str-empty": 76
+       },
+       "condition_id": {
+        "hex-lower(66)": 76
+       },
+       "event_slug": {
+        "str": 76
+       },
+       "icon": {
+        "str": 76
+       },
+       "name": {
+        "str": 76
+       },
+       "outcome": {
+        "str": 76
+       },
+       "outcome_index": {
+        "int(1 digits)": 76
+       },
+       "price": {
+        "float": 76
+       },
+       "profile_image": {
+        "str-empty": 76
+       },
+       "profile_image_optimized": {
+        "str-empty": 76
+       },
+       "proxy_wallet": {
+        "hex-lower(42)": 76
+       },
+       "pseudonym": {
+        "str": 76
+       },
+       "side": {
+        "str-empty": 76
+       },
+       "size": {
+        "float": 76
+       },
+       "slug": {
+        "str": 76
+       },
+       "timestamp": {
+        "int(10 digits)": 76
+       },
+       "title": {
+        "str": 76
+       },
+       "token_id": {
+        "str-int": 76
+       },
+       "transaction_hash": {
+        "hex-lower(66)": 76
+       },
+       "type": {
+        "str": 76
+       },
+       "usdc_size": {
+        "float": 76
+       }
+      },
+      "rows": 76
+     },
+     "REWARD": {
+      "absent": {},
+      "enum_values": {
+       "outcome_index": {
+        "999": 1
+       },
+       "side": {
+        "\"\"": 1
+       },
+       "type": {
+        "\"REWARD\"": 1
+       }
+      },
+      "keys": {
+       "bio": {
+        "str-empty": 1
+       },
+       "condition_id": {
+        "str-empty": 1
+       },
+       "event_slug": {
+        "str-empty": 1
+       },
+       "icon": {
+        "str-empty": 1
+       },
+       "name": {
+        "str": 1
+       },
+       "outcome": {
+        "str-empty": 1
+       },
+       "outcome_index": {
+        "int(3 digits)": 1
+       },
+       "price": {
+        "float": 1
+       },
+       "profile_image": {
+        "str-empty": 1
+       },
+       "profile_image_optimized": {
+        "str-empty": 1
+       },
+       "proxy_wallet": {
+        "hex-lower(42)": 1
+       },
+       "pseudonym": {
+        "str": 1
+       },
+       "side": {
+        "str-empty": 1
+       },
+       "size": {
+        "float": 1
+       },
+       "slug": {
+        "str-empty": 1
+       },
+       "timestamp": {
+        "int(10 digits)": 1
+       },
+       "title": {
+        "str-empty": 1
+       },
+       "token_id": {
+        "str-empty": 1
+       },
+       "transaction_hash": {
+        "hex-lower(66)": 1
+       },
+       "type": {
+        "str": 1
+       },
+       "usdc_size": {
+        "float": 1
+       }
+      },
+      "rows": 1
+     },
+     "TAKER_REBATE": {
+      "absent": {},
+      "enum_values": {
+       "outcome_index": {
+        "999": 1
+       },
+       "side": {
+        "\"\"": 1
+       },
+       "type": {
+        "\"TAKER_REBATE\"": 1
+       }
+      },
+      "keys": {
+       "bio": {
+        "str-empty": 1
+       },
+       "condition_id": {
+        "str-empty": 1
+       },
+       "event_slug": {
+        "str-empty": 1
+       },
+       "icon": {
+        "str-empty": 1
+       },
+       "name": {
+        "str": 1
+       },
+       "outcome": {
+        "str-empty": 1
+       },
+       "outcome_index": {
+        "int(3 digits)": 1
+       },
+       "price": {
+        "float": 1
+       },
+       "profile_image": {
+        "str-empty": 1
+       },
+       "profile_image_optimized": {
+        "str-empty": 1
+       },
+       "proxy_wallet": {
+        "hex-lower(42)": 1
+       },
+       "pseudonym": {
+        "str": 1
+       },
+       "side": {
+        "str-empty": 1
+       },
+       "size": {
+        "float": 1
+       },
+       "slug": {
+        "str-empty": 1
+       },
+       "timestamp": {
+        "int(10 digits)": 1
+       },
+       "title": {
+        "str-empty": 1
+       },
+       "token_id": {
+        "str-empty": 1
+       },
+       "transaction_hash": {
+        "hex-lower(66)": 1
+       },
+       "type": {
+        "str": 1
+       },
+       "usdc_size": {
+        "float": 1
+       }
+      },
+      "rows": 1
+     },
+     "TRADE": {
+      "absent": {},
+      "enum_values": {
+       "outcome_index": {
+        "0": 78,
+        "1": 112
+       },
+       "side": {
+        "\"BUY\"": 190
+       },
+       "type": {
+        "\"TRADE\"": 190
+       }
+      },
+      "keys": {
+       "bio": {
+        "str-empty": 190
+       },
+       "condition_id": {
+        "hex-lower(66)": 190
+       },
+       "event_slug": {
+        "str": 190
+       },
+       "icon": {
+        "str": 190
+       },
+       "name": {
+        "str": 190
+       },
+       "outcome": {
+        "str": 190
+       },
+       "outcome_index": {
+        "int(1 digits)": 190
+       },
+       "price": {
+        "float": 190
+       },
+       "profile_image": {
+        "str-empty": 190
+       },
+       "profile_image_optimized": {
+        "str-empty": 190
+       },
+       "proxy_wallet": {
+        "hex-lower(42)": 190
+       },
+       "pseudonym": {
+        "str": 190
+       },
+       "side": {
+        "str": 190
+       },
+       "size": {
+        "float": 190
+       },
+       "slug": {
+        "str": 190
+       },
+       "timestamp": {
+        "int(10 digits)": 190
+       },
+       "title": {
+        "str": 190
+       },
+       "token_id": {
+        "str-int": 190
+       },
+       "transaction_hash": {
+        "hex-lower(66)": 190
+       },
+       "type": {
+        "str": 190
+       },
+       "usdc_size": {
+        "float": 190
+       }
+      },
+      "rows": 190
+     },
+     "YIELD": {
+      "absent": {},
+      "enum_values": {
+       "outcome_index": {
+        "999": 1
+       },
+       "side": {
+        "\"\"": 1
+       },
+       "type": {
+        "\"YIELD\"": 1
+       }
+      },
+      "keys": {
+       "bio": {
+        "str-empty": 1
+       },
+       "condition_id": {
+        "str-empty": 1
+       },
+       "event_slug": {
+        "str-empty": 1
+       },
+       "icon": {
+        "str-empty": 1
+       },
+       "name": {
+        "str": 1
+       },
+       "outcome": {
+        "str-empty": 1
+       },
+       "outcome_index": {
+        "int(3 digits)": 1
+       },
+       "price": {
+        "float": 1
+       },
+       "profile_image": {
+        "str-empty": 1
+       },
+       "profile_image_optimized": {
+        "str-empty": 1
+       },
+       "proxy_wallet": {
+        "hex-lower(42)": 1
+       },
+       "pseudonym": {
+        "str": 1
+       },
+       "side": {
+        "str-empty": 1
+       },
+       "size": {
+        "float": 1
+       },
+       "slug": {
+        "str-empty": 1
+       },
+       "timestamp": {
+        "int(10 digits)": 1
+       },
+       "title": {
+        "str-empty": 1
+       },
+       "token_id": {
+        "str-empty": 1
+       },
+       "transaction_hash": {
+        "hex-lower(66)": 1
+       },
+       "type": {
+        "str": 1
+       },
+       "usdc_size": {
+        "float": 1
+       }
+      },
+      "rows": 1
+     }
+    },
+    "statuses": [
+     200,
+     200
+    ],
+    "timestamps_non_decreasing": false,
+    "timestamps_non_increasing": true,
+    "types": {
+     "CONVERSION": 200,
+     "MAKER_REBATE": 1,
+     "MERGE": 530,
+     "REDEEM": 76,
+     "REWARD": 1,
+     "TAKER_REBATE": 1,
+     "TRADE": 190,
+     "YIELD": 1
+    }
+   },
+   "walk_desc_full_history": {
+    "collision_examples_by_type": {
+     "TRADE": 4
+    },
+    "collision_groups": [],
+    "dedupe_key_collisions": 4,
+    "has_more_after_last_page": true,
+    "identical_rows_repeated": 0,
+    "max_rows_sharing_one_second": 10,
+    "newest": 1794899750,
+    "oldest": 1794823994,
+    "page_sizes": [
+     500,
+     500,
+     500
+    ],
+    "params": {
+     "limit": 500,
+     "start": 1,
+     "user": "0x4f1d5ae26fc31472966e951af3183308736d8de2"
+    },
+    "rows": 1500,
+    "shape_by_type": {
+     "CONVERSION": {
+      "absent": {},
+      "enum_values": {
+       "outcome_index": {
+        "999": 274
+       },
+       "side": {
+        "\"\"": 274
+       },
+       "type": {
+        "\"CONVERSION\"": 274
+       }
+      },
+      "keys": {
+       "bio": {
+        "str-empty": 274
+       },
+       "condition_id": {
+        "hex-lower(66)": 274
+       },
+       "event_slug": {
+        "str": 274
+       },
+       "icon": {
+        "str-empty": 274
+       },
+       "name": {
+        "str": 274
+       },
+       "outcome": {
+        "str-empty": 274
+       },
+       "outcome_index": {
+        "int(3 digits)": 274
+       },
+       "price": {
+        "float": 274
+       },
+       "profile_image": {
+        "str-empty": 274
+       },
+       "profile_image_optimized": {
+        "str-empty": 274
+       },
+       "proxy_wallet": {
+        "hex-lower(42)": 274
+       },
+       "pseudonym": {
+        "str": 274
+       },
+       "side": {
+        "str-empty": 274
+       },
+       "size": {
+        "float": 274
+       },
+       "slug": {
+        "str": 274
+       },
+       "timestamp": {
+        "int(10 digits)": 274
+       },
+       "title": {
+        "str": 274
+       },
+       "token_id": {
+        "str-empty": 274
+       },
+       "transaction_hash": {
+        "hex-lower(66)": 274
+       },
+       "type": {
+        "str": 274
+       },
+       "usdc_size": {
+        "float": 274
+       }
+      },
+      "rows": 274
+     },
+     "MAKER_REBATE": {
+      "absent": {},
+      "enum_values": {
+       "outcome_index": {
+        "999": 1
+       },
+       "side": {
+        "\"\"": 1
+       },
+       "type": {
+        "\"MAKER_REBATE\"": 1
+       }
+      },
+      "keys": {
+       "bio": {
+        "str-empty": 1
+       },
+       "condition_id": {
+        "str-empty": 1
+       },
+       "event_slug": {
+        "str-empty": 1
+       },
+       "icon": {
+        "str-empty": 1
+       },
+       "name": {
+        "str": 1
+       },
+       "outcome": {
+        "str-empty": 1
+       },
+       "outcome_index": {
+        "int(3 digits)": 1
+       },
+       "price": {
+        "float": 1
+       },
+       "profile_image": {
+        "str-empty": 1
+       },
+       "profile_image_optimized": {
+        "str-empty": 1
+       },
+       "proxy_wallet": {
+        "hex-lower(42)": 1
+       },
+       "pseudonym": {
+        "str": 1
+       },
+       "side": {
+        "str-empty": 1
+       },
+       "size": {
+        "float": 1
+       },
+       "slug": {
+        "str-empty": 1
+       },
+       "timestamp": {
+        "int(10 digits)": 1
+       },
+       "title": {
+        "str-empty": 1
+       },
+       "token_id": {
+        "str-empty": 1
+       },
+       "transaction_hash": {
+        "hex-lower(66)": 1
+       },
+       "type": {
+        "str": 1
+       },
+       "usdc_size": {
+        "float": 1
+       }
+      },
+      "rows": 1
+     },
+     "MERGE": {
+      "absent": {},
+      "enum_values": {
+       "outcome_index": {
+        "999": 756
+       },
+       "side": {
+        "\"\"": 756
+       },
+       "type": {
+        "\"MERGE\"": 756
+       }
+      },
+      "keys": {
+       "bio": {
+        "str-empty": 756
+       },
+       "condition_id": {
+        "hex-lower(66)": 756
+       },
+       "event_slug": {
+        "str": 756
+       },
+       "icon": {
+        "str": 756
+       },
+       "name": {
+        "str": 756
+       },
+       "outcome": {
+        "str-empty": 756
+       },
+       "outcome_index": {
+        "int(3 digits)": 756
+       },
+       "price": {
+        "float": 756
+       },
+       "profile_image": {
+        "str-empty": 756
+       },
+       "profile_image_optimized": {
+        "str-empty": 756
+       },
+       "proxy_wallet": {
+        "hex-lower(42)": 756
+       },
+       "pseudonym": {
+        "str": 756
+       },
+       "side": {
+        "str-empty": 756
+       },
+       "size": {
+        "float": 756
+       },
+       "slug": {
+        "str": 756
+       },
+       "timestamp": {
+        "int(10 digits)": 756
+       },
+       "title": {
+        "str": 756
+       },
+       "token_id": {
+        "str-empty": 756
+       },
+       "transaction_hash": {
+        "hex-lower(66)": 756
+       },
+       "type": {
+        "str": 756
+       },
+       "usdc_size": {
+        "float": 756
+       }
+      },
+      "rows": 756
+     },
+     "REDEEM": {
+      "absent": {},
+      "enum_values": {
+       "outcome_index": {
+        "0": 47,
+        "1": 33
+       },
+       "side": {
+        "\"\"": 80
+       },
+       "type": {
+        "\"REDEEM\"": 80
+       }
+      },
+      "keys": {
+       "bio": {
+        "str-empty": 80
+       },
+       "condition_id": {
+        "hex-lower(66)": 80
+       },
+       "event_slug": {
+        "str": 80
+       },
+       "icon": {
+        "str": 80
+       },
+       "name": {
+        "str": 80
+       },
+       "outcome": {
+        "str": 80
+       },
+       "outcome_index": {
+        "int(1 digits)": 80
+       },
+       "price": {
+        "float": 80
+       },
+       "profile_image": {
+        "str-empty": 80
+       },
+       "profile_image_optimized": {
+        "str-empty": 80
+       },
+       "proxy_wallet": {
+        "hex-lower(42)": 80
+       },
+       "pseudonym": {
+        "str": 80
+       },
+       "side": {
+        "str-empty": 80
+       },
+       "size": {
+        "float": 80
+       },
+       "slug": {
+        "str": 80
+       },
+       "timestamp": {
+        "int(10 digits)": 80
+       },
+       "title": {
+        "str": 80
+       },
+       "token_id": {
+        "str-int": 80
+       },
+       "transaction_hash": {
+        "hex-lower(66)": 80
+       },
+       "type": {
+        "str": 80
+       },
+       "usdc_size": {
+        "float": 80
+       }
+      },
+      "rows": 80
+     },
+     "REWARD": {
+      "absent": {},
+      "enum_values": {
+       "outcome_index": {
+        "999": 1
+       },
+       "side": {
+        "\"\"": 1
+       },
+       "type": {
+        "\"REWARD\"": 1
+       }
+      },
+      "keys": {
+       "bio": {
+        "str-empty": 1
+       },
+       "condition_id": {
+        "str-empty": 1
+       },
+       "event_slug": {
+        "str-empty": 1
+       },
+       "icon": {
+        "str-empty": 1
+       },
+       "name": {
+        "str": 1
+       },
+       "outcome": {
+        "str-empty": 1
+       },
+       "outcome_index": {
+        "int(3 digits)": 1
+       },
+       "price": {
+        "float": 1
+       },
+       "profile_image": {
+        "str-empty": 1
+       },
+       "profile_image_optimized": {
+        "str-empty": 1
+       },
+       "proxy_wallet": {
+        "hex-lower(42)": 1
+       },
+       "pseudonym": {
+        "str": 1
+       },
+       "side": {
+        "str-empty": 1
+       },
+       "size": {
+        "float": 1
+       },
+       "slug": {
+        "str-empty": 1
+       },
+       "timestamp": {
+        "int(10 digits)": 1
+       },
+       "title": {
+        "str-empty": 1
+       },
+       "token_id": {
+        "str-empty": 1
+       },
+       "transaction_hash": {
+        "hex-lower(66)": 1
+       },
+       "type": {
+        "str": 1
+       },
+       "usdc_size": {
+        "float": 1
+       }
+      },
+      "rows": 1
+     },
+     "TAKER_REBATE": {
+      "absent": {},
+      "enum_values": {
+       "outcome_index": {
+        "999": 1
+       },
+       "side": {
+        "\"\"": 1
+       },
+       "type": {
+        "\"TAKER_REBATE\"": 1
+       }
+      },
+      "keys": {
+       "bio": {
+        "str-empty": 1
+       },
+       "condition_id": {
+        "str-empty": 1
+       },
+       "event_slug": {
+        "str-empty": 1
+       },
+       "icon": {
+        "str-empty": 1
+       },
+       "name": {
+        "str": 1
+       },
+       "outcome": {
+        "str-empty": 1
+       },
+       "outcome_index": {
+        "int(3 digits)": 1
+       },
+       "price": {
+        "float": 1
+       },
+       "profile_image": {
+        "str-empty": 1
+       },
+       "profile_image_optimized": {
+        "str-empty": 1
+       },
+       "proxy_wallet": {
+        "hex-lower(42)": 1
+       },
+       "pseudonym": {
+        "str": 1
+       },
+       "side": {
+        "str-empty": 1
+       },
+       "size": {
+        "float": 1
+       },
+       "slug": {
+        "str-empty": 1
+       },
+       "timestamp": {
+        "int(10 digits)": 1
+       },
+       "title": {
+        "str-empty": 1
+       },
+       "token_id": {
+        "str-empty": 1
+       },
+       "transaction_hash": {
+        "hex-lower(66)": 1
+       },
+       "type": {
+        "str": 1
+       },
+       "usdc_size": {
+        "float": 1
+       }
+      },
+      "rows": 1
+     },
+     "TRADE": {
+      "absent": {},
+      "enum_values": {
+       "outcome_index": {
+        "0": 143,
+        "1": 243
+       },
+       "side": {
+        "\"BUY\"": 384,
+        "\"SELL\"": 2
+       },
+       "type": {
+        "\"TRADE\"": 386
+       }
+      },
+      "keys": {
+       "bio": {
+        "str-empty": 386
+       },
+       "condition_id": {
+        "hex-lower(66)": 386
+       },
+       "event_slug": {
+        "str": 386
+       },
+       "icon": {
+        "str": 386
+       },
+       "name": {
+        "str": 386
+       },
+       "outcome": {
+        "str": 386
+       },
+       "outcome_index": {
+        "int(1 digits)": 386
+       },
+       "price": {
+        "float": 386
+       },
+       "profile_image": {
+        "str-empty": 386
+       },
+       "profile_image_optimized": {
+        "str-empty": 386
+       },
+       "proxy_wallet": {
+        "hex-lower(42)": 386
+       },
+       "pseudonym": {
+        "str": 386
+       },
+       "side": {
+        "str": 386
+       },
+       "size": {
+        "float": 386
+       },
+       "slug": {
+        "str": 386
+       },
+       "timestamp": {
+        "int(10 digits)": 386
+       },
+       "title": {
+        "str": 386
+       },
+       "token_id": {
+        "str-int": 386
+       },
+       "transaction_hash": {
+        "hex-lower(66)": 386
+       },
+       "type": {
+        "str": 386
+       },
+       "usdc_size": {
+        "float": 386
+       }
+      },
+      "rows": 386
+     },
+     "YIELD": {
+      "absent": {},
+      "enum_values": {
+       "outcome_index": {
+        "999": 1
+       },
+       "side": {
+        "\"\"": 1
+       },
+       "type": {
+        "\"YIELD\"": 1
+       }
+      },
+      "keys": {
+       "bio": {
+        "str-empty": 1
+       },
+       "condition_id": {
+        "str-empty": 1
+       },
+       "event_slug": {
+        "str-empty": 1
+       },
+       "icon": {
+        "str-empty": 1
+       },
+       "name": {
+        "str": 1
+       },
+       "outcome": {
+        "str-empty": 1
+       },
+       "outcome_index": {
+        "int(3 digits)": 1
+       },
+       "price": {
+        "float": 1
+       },
+       "profile_image": {
+        "str-empty": 1
+       },
+       "profile_image_optimized": {
+        "str-empty": 1
+       },
+       "proxy_wallet": {
+        "hex-lower(42)": 1
+       },
+       "pseudonym": {
+        "str": 1
+       },
+       "side": {
+        "str-empty": 1
+       },
+       "size": {
+        "float": 1
+       },
+       "slug": {
+        "str-empty": 1
+       },
+       "timestamp": {
+        "int(10 digits)": 1
+       },
+       "title": {
+        "str-empty": 1
+       },
+       "token_id": {
+        "str-empty": 1
+       },
+       "transaction_hash": {
+        "hex-lower(66)": 1
+       },
+       "type": {
+        "str": 1
+       },
+       "usdc_size": {
+        "float": 1
+       }
+      },
+      "rows": 1
+     }
+    },
+    "statuses": [
+     200,
+     200,
+     200
+    ],
+    "timestamps_non_decreasing": false,
+    "timestamps_non_increasing": true,
+    "types": {
+     "CONVERSION": 274,
+     "MAKER_REBATE": 1,
+     "MERGE": 756,
+     "REDEEM": 80,
+     "REWARD": 1,
+     "TAKER_REBATE": 1,
+     "TRADE": 386,
+     "YIELD": 1
+    }
+   },
+   "window_bounds": {
+    "end_equals_mid_newest": 1794899609,
+    "end_is_inclusive": true,
+    "end_minus_one_newest": 1794899597,
+    "mid": 1794899609,
+    "rows_at_mid_in_first_page": 1,
+    "start_and_end_equal_all_at_mid": true,
+    "start_and_end_equal_rows": 1,
+    "start_equals_mid_oldest": 1794899609,
+    "start_is_inclusive": true
+   }
+  },
+  "positions": {
+   "closed": {
+    "current_size_below_one": 500,
+    "current_size_zero": 384,
+    "headers": {
+     "cache-control": "public, max-age=5",
+     "content-type": "application/json"
+    },
+    "ms": 528,
+    "pagination": {
+     "has_more": true,
+     "limit": 500,
+     "next_cursor": "str(418)",
+     "offset": 0
+    },
+    "params": {
+     "limit": 500,
+     "status": "CLOSED",
+     "user": "0x4f1d5ae26fc31472966e951af3183308736d8de2"
+    },
+    "path": "/v2/positions",
+    "shape": {
+     "absent": {},
+     "enum_values": {
+      "archived": {
+       "false": 500
+      },
+      "mergeable": {
+       "false": 460,
+       "true": 40
+      },
+      "negative_risk": {
+       "false": 14,
+       "true": 486
+      },
+      "outcome_index": {
+       "0": 102,
+       "1": 398
+      },
+      "redeemable": {
+       "false": 397,
+       "true": 103
+      },
+      "status": {
+       "\"CLOSED\"": 500
+      },
+      "verified": {
+       "false": 500
+      }
+     },
+     "keys": {
+      "archived": {
+       "bool": 500
+      },
+      "avg_price": {
+       "float": 500
+      },
+      "condition_id": {
+       "hex-lower(66)": 500
+      },
+      "current_price": {
+       "float": 500
+      },
+      "current_size": {
+       "float": 500
+      },
+      "current_value": {
+       "float": 500
+      },
+      "end_date": {
+       "str": 500
+      },
+      "entry_cost_usdc": {
+       "float": 500
+      },
+      "entry_fees_usdc": {
+       "float": 500
+      },
+      "event_id": {
+       "str-int": 500
+      },
+      "event_slug": {
+       "str": 500
+      },
+      "first_entry_at": {
+       "int(10 digits)": 500
+      },
+      "icon": {
+       "str": 500
+      },
+      "last_event_at": {
+       "int(10 digits)": 500
+      },
+      "mergeable": {
+       "bool": 500
+      },
+      "name": {
+       "str": 500
+      },
+      "negative_risk": {
+       "bool": 500
+      },
+      "opposite_outcome": {
+       "str": 500
+      },
+      "opposite_token_id": {
+       "str-int": 500
+      },
+      "outcome": {
+       "str": 500
+      },
+      "outcome_index": {
+       "int(1 digits)": 500
+      },
+      "percent_pnl": {
+       "float": 500
+      },
+      "percent_realized_pnl": {
+       "float": 500
+      },
+      "profile_image": {
+       "str-empty": 500
+      },
+      "proxy_wallet": {
+       "hex-lower(42)": 500
+      },
+      "realized_pnl": {
+       "float": 500
+      },
+      "redeemable": {
+       "bool": 500
+      },
+      "slug": {
+       "str": 500
+      },
+      "status": {
+       "str": 500
+      },
+      "title": {
+       "str": 500
+      },
+      "token_id": {
+       "str-int": 500
+      },
+      "total_cost_usdc": {
+       "float": 500
+      },
+      "total_pnl": {
+       "float": 500
+      },
+      "total_size": {
+       "float": 500
+      },
+      "unrealized_pnl": {
+       "float": 500
+      },
+      "verified": {
+       "bool": 500
+      }
+     },
+     "rows": 500
+    },
+    "status": 200,
+    "statuses_reported": {
+     "CLOSED": 500
+    },
+    "top_level_keys": [
+     "data",
+     "pagination"
+    ]
+   },
+   "cursor_walk_limit_5": {
+    "has_more_after_last_page": true,
+    "identical_rows_repeated": 0,
+    "page_sizes": [
+     5,
+     5
+    ],
+    "rows": 10,
+    "statuses": [
+     200,
+     200
+    ]
+   },
+   "default": {
+    "current_size_below_one": 0,
+    "current_size_zero": 0,
+    "headers": {
+     "cache-control": "public, max-age=5",
+     "content-type": "application/json"
+    },
+    "ms": 666,
+    "pagination": {
+     "has_more": true,
+     "limit": 500,
+     "next_cursor": "str(398)",
+     "offset": 0
+    },
+    "params": {
+     "limit": 500,
+     "user": "0x4f1d5ae26fc31472966e951af3183308736d8de2"
+    },
+    "path": "/v2/positions",
+    "shape": {
+     "absent": {},
+     "enum_values": {
+      "archived": {
+       "false": 500
+      },
+      "mergeable": {
+       "false": 498,
+       "true": 2
+      },
+      "negative_risk": {
+       "false": 42,
+       "true": 458
+      },
+      "outcome_index": {
+       "0": 330,
+       "1": 170
+      },
+      "redeemable": {
+       "false": 500
+      },
+      "status": {
+       "\"OPEN\"": 500
+      },
+      "verified": {
+       "false": 500
+      }
+     },
+     "keys": {
+      "archived": {
+       "bool": 500
+      },
+      "avg_price": {
+       "float": 500
+      },
+      "condition_id": {
+       "hex-lower(66)": 500
+      },
+      "current_price": {
+       "float": 500
+      },
+      "current_size": {
+       "float": 500
+      },
+      "current_value": {
+       "float": 500
+      },
+      "end_date": {
+       "str": 500
+      },
+      "entry_cost_usdc": {
+       "float": 500
+      },
+      "entry_fees_usdc": {
+       "float": 500
+      },
+      "event_id": {
+       "str-int": 500
+      },
+      "event_slug": {
+       "str": 500
+      },
+      "first_entry_at": {
+       "int(10 digits)": 500
+      },
+      "icon": {
+       "str": 500
+      },
+      "last_event_at": {
+       "int(10 digits)": 500
+      },
+      "mergeable": {
+       "bool": 500
+      },
+      "name": {
+       "str": 500
+      },
+      "negative_risk": {
+       "bool": 500
+      },
+      "opposite_outcome": {
+       "str": 500
+      },
+      "opposite_token_id": {
+       "str-int": 500
+      },
+      "outcome": {
+       "str": 500
+      },
+      "outcome_index": {
+       "int(1 digits)": 500
+      },
+      "percent_pnl": {
+       "float": 500
+      },
+      "percent_realized_pnl": {
+       "float": 500
+      },
+      "profile_image": {
+       "str-empty": 500
+      },
+      "proxy_wallet": {
+       "hex-lower(42)": 500
+      },
+      "realized_pnl": {
+       "float": 500
+      },
+      "redeemable": {
+       "bool": 500
+      },
+      "slug": {
+       "str": 500
+      },
+      "status": {
+       "str": 500
+      },
+      "title": {
+       "str": 500
+      },
+      "token_id": {
+       "str-int": 500
+      },
+      "total_cost_usdc": {
+       "float": 500
+      },
+      "total_pnl": {
+       "float": 500
+      },
+      "total_size": {
+       "float": 500
+      },
+      "unrealized_pnl": {
+       "float": 500
+      },
+      "verified": {
+       "bool": 500
+      }
+     },
+     "rows": 500
+    },
+    "status": 200,
+    "statuses_reported": {
+     "OPEN": 500
+    },
+    "top_level_keys": [
+     "data",
+     "pagination"
+    ]
+   },
+   "default_vs_statuses": {
+    "default": 499,
+    "default_equals_open": true,
+    "default_equals_open_plus_redeemable": false,
+    "note": "only the first page (500) of each listing is compared",
+    "open": 499,
+    "redeemable": 500,
+    "redeemable_inside_default": 0
+   },
+   "include_archived": {
+    "current_size_below_one": 0,
+    "current_size_zero": 0,
+    "headers": {
+     "cache-control": "public, max-age=5",
+     "content-type": "application/json"
+    },
+    "ms": 574,
+    "pagination": {
+     "has_more": true,
+     "limit": 500,
+     "next_cursor": "str(398)",
+     "offset": 0
+    },
+    "params": {
+     "include_archived": "true",
+     "limit": 500,
+     "user": "0x4f1d5ae26fc31472966e951af3183308736d8de2"
+    },
+    "path": "/v2/positions",
+    "shape": {
+     "absent": {},
+     "enum_values": {
+      "archived": {
+       "false": 487,
+       "true": 13
+      },
+      "mergeable": {
+       "false": 498,
+       "true": 2
+      },
+      "negative_risk": {
+       "false": 42,
+       "true": 458
+      },
+      "outcome_index": {
+       "0": 333,
+       "1": 167
+      },
+      "redeemable": {
+       "false": 500
+      },
+      "status": {
+       "\"OPEN\"": 500
+      },
+      "verified": {
+       "false": 500
+      }
+     },
+     "keys": {
+      "archived": {
+       "bool": 500
+      },
+      "avg_price": {
+       "float": 500
+      },
+      "condition_id": {
+       "hex-lower(66)": 500
+      },
+      "current_price": {
+       "float": 500
+      },
+      "current_size": {
+       "float": 500
+      },
+      "current_value": {
+       "float": 500
+      },
+      "end_date": {
+       "str": 500
+      },
+      "entry_cost_usdc": {
+       "float": 500
+      },
+      "entry_fees_usdc": {
+       "float": 500
+      },
+      "event_id": {
+       "str-int": 500
+      },
+      "event_slug": {
+       "str": 500
+      },
+      "first_entry_at": {
+       "int(1 digits)": 11,
+       "int(10 digits)": 489
+      },
+      "icon": {
+       "str": 500
+      },
+      "last_event_at": {
+       "int(1 digits)": 11,
+       "int(10 digits)": 489
+      },
+      "mergeable": {
+       "bool": 500
+      },
+      "name": {
+       "str": 500
+      },
+      "negative_risk": {
+       "bool": 500
+      },
+      "opposite_outcome": {
+       "str": 500
+      },
+      "opposite_token_id": {
+       "str-int": 500
+      },
+      "outcome": {
+       "str": 500
+      },
+      "outcome_index": {
+       "int(1 digits)": 500
+      },
+      "percent_pnl": {
+       "float": 500
+      },
+      "percent_realized_pnl": {
+       "float": 500
+      },
+      "profile_image": {
+       "str-empty": 500
+      },
+      "proxy_wallet": {
+       "hex-lower(42)": 500
+      },
+      "realized_pnl": {
+       "float": 500
+      },
+      "redeemable": {
+       "bool": 500
+      },
+      "slug": {
+       "str": 500
+      },
+      "status": {
+       "str": 500
+      },
+      "title": {
+       "str": 500
+      },
+      "token_id": {
+       "str-int": 500
+      },
+      "total_cost_usdc": {
+       "float": 500
+      },
+      "total_pnl": {
+       "float": 500
+      },
+      "total_size": {
+       "float": 500
+      },
+      "unrealized_pnl": {
+       "float": 500
+      },
+      "verified": {
+       "bool": 500
+      }
+     },
+     "rows": 500
+    },
+    "status": 200,
+    "statuses_reported": {
+     "OPEN": 500
+    },
+    "top_level_keys": [
+     "data",
+     "pagination"
+    ]
+   },
+   "mergeable": {
+    "current_size_below_one": 0,
+    "current_size_zero": 0,
+    "headers": {
+     "cache-control": "public, max-age=5",
+     "content-type": "application/json"
+    },
+    "ms": 746,
+    "pagination": {
+     "has_more": false,
+     "limit": 500,
+     "next_cursor": null,
+     "offset": 0
+    },
+    "params": {
+     "limit": 500,
+     "status": "MERGEABLE",
+     "user": "0x4f1d5ae26fc31472966e951af3183308736d8de2"
+    },
+    "path": "/v2/positions",
+    "shape": {
+     "absent": {},
+     "enum_values": {
+      "archived": {
+       "false": 6
+      },
+      "mergeable": {
+       "true": 6
+      },
+      "negative_risk": {
+       "false": 4,
+       "true": 2
+      },
+      "outcome_index": {
+       "0": 3,
+       "1": 3
+      },
+      "redeemable": {
+       "false": 6
+      },
+      "status": {
+       "\"OPEN\"": 6
+      },
+      "verified": {
+       "false": 6
+      }
+     },
+     "keys": {
+      "archived": {
+       "bool": 6
+      },
+      "avg_price": {
+       "float": 6
+      },
+      "condition_id": {
+       "hex-lower(66)": 6
+      },
+      "current_price": {
+       "float": 6
+      },
+      "current_size": {
+       "float": 6
+      },
+      "current_value": {
+       "float": 6
+      },
+      "end_date": {
+       "str": 6
+      },
+      "entry_cost_usdc": {
+       "float": 6
+      },
+      "entry_fees_usdc": {
+       "float": 6
+      },
+      "event_id": {
+       "str-int": 6
+      },
+      "event_slug": {
+       "str": 6
+      },
+      "first_entry_at": {
+       "int(10 digits)": 6
+      },
+      "icon": {
+       "str": 6
+      },
+      "last_event_at": {
+       "int(10 digits)": 6
+      },
+      "mergeable": {
+       "bool": 6
+      },
+      "name": {
+       "str": 6
+      },
+      "negative_risk": {
+       "bool": 6
+      },
+      "opposite_outcome": {
+       "str": 6
+      },
+      "opposite_token_id": {
+       "str-int": 6
+      },
+      "outcome": {
+       "str": 6
+      },
+      "outcome_index": {
+       "int(1 digits)": 6
+      },
+      "percent_pnl": {
+       "float": 6
+      },
+      "percent_realized_pnl": {
+       "float": 6
+      },
+      "profile_image": {
+       "str-empty": 6
+      },
+      "proxy_wallet": {
+       "hex-lower(42)": 6
+      },
+      "realized_pnl": {
+       "float": 6
+      },
+      "redeemable": {
+       "bool": 6
+      },
+      "slug": {
+       "str": 6
+      },
+      "status": {
+       "str": 6
+      },
+      "title": {
+       "str": 6
+      },
+      "token_id": {
+       "str-int": 6
+      },
+      "total_cost_usdc": {
+       "float": 6
+      },
+      "total_pnl": {
+       "float": 6
+      },
+      "total_size": {
+       "float": 6
+      },
+      "unrealized_pnl": {
+       "float": 6
+      },
+      "verified": {
+       "bool": 6
+      }
+     },
+     "rows": 6
+    },
+    "status": 200,
+    "statuses_reported": {
+     "OPEN": 6
+    },
+    "top_level_keys": [
+     "data",
+     "pagination"
+    ]
+   },
+   "open": {
+    "current_size_below_one": 0,
+    "current_size_zero": 0,
+    "headers": {
+     "cache-control": "public, max-age=5",
+     "content-type": "application/json"
+    },
+    "ms": 242,
+    "pagination": {
+     "has_more": true,
+     "limit": 500,
+     "next_cursor": "str(398)",
+     "offset": 0
+    },
+    "params": {
+     "limit": 500,
+     "status": "OPEN",
+     "user": "0x4f1d5ae26fc31472966e951af3183308736d8de2"
+    },
+    "path": "/v2/positions",
+    "shape": {
+     "absent": {},
+     "enum_values": {
+      "archived": {
+       "false": 500
+      },
+      "mergeable": {
+       "false": 498,
+       "true": 2
+      },
+      "negative_risk": {
+       "false": 42,
+       "true": 458
+      },
+      "outcome_index": {
+       "0": 330,
+       "1": 170
+      },
+      "redeemable": {
+       "false": 500
+      },
+      "status": {
+       "\"OPEN\"": 500
+      },
+      "verified": {
+       "false": 500
+      }
+     },
+     "keys": {
+      "archived": {
+       "bool": 500
+      },
+      "avg_price": {
+       "float": 500
+      },
+      "condition_id": {
+       "hex-lower(66)": 500
+      },
+      "current_price": {
+       "float": 500
+      },
+      "current_size": {
+       "float": 500
+      },
+      "current_value": {
+       "float": 500
+      },
+      "end_date": {
+       "str": 500
+      },
+      "entry_cost_usdc": {
+       "float": 500
+      },
+      "entry_fees_usdc": {
+       "float": 500
+      },
+      "event_id": {
+       "str-int": 500
+      },
+      "event_slug": {
+       "str": 500
+      },
+      "first_entry_at": {
+       "int(10 digits)": 500
+      },
+      "icon": {
+       "str": 500
+      },
+      "last_event_at": {
+       "int(10 digits)": 500
+      },
+      "mergeable": {
+       "bool": 500
+      },
+      "name": {
+       "str": 500
+      },
+      "negative_risk": {
+       "bool": 500
+      },
+      "opposite_outcome": {
+       "str": 500
+      },
+      "opposite_token_id": {
+       "str-int": 500
+      },
+      "outcome": {
+       "str": 500
+      },
+      "outcome_index": {
+       "int(1 digits)": 500
+      },
+      "percent_pnl": {
+       "float": 500
+      },
+      "percent_realized_pnl": {
+       "float": 500
+      },
+      "profile_image": {
+       "str-empty": 500
+      },
+      "proxy_wallet": {
+       "hex-lower(42)": 500
+      },
+      "realized_pnl": {
+       "float": 500
+      },
+      "redeemable": {
+       "bool": 500
+      },
+      "slug": {
+       "str": 500
+      },
+      "status": {
+       "str": 500
+      },
+      "title": {
+       "str": 500
+      },
+      "token_id": {
+       "str-int": 500
+      },
+      "total_cost_usdc": {
+       "float": 500
+      },
+      "total_pnl": {
+       "float": 500
+      },
+      "total_size": {
+       "float": 500
+      },
+      "unrealized_pnl": {
+       "float": 500
+      },
+      "verified": {
+       "bool": 500
+      }
+     },
+     "rows": 500
+    },
+    "status": 200,
+    "statuses_reported": {
+     "OPEN": 500
+    },
+    "top_level_keys": [
+     "data",
+     "pagination"
+    ]
+   },
+   "open_and_redeemable": {
+    "current_size_below_one": 0,
+    "current_size_zero": 0,
+    "error_body": {
+     "code": "invalid_request",
+     "error": "invalid position status: OPEN,REDEEMABLE",
+     "parameter": "status",
+     "retryable": false,
+     "trace_id": "0012cfc87d7f466c9a4c0ba187928929"
+    },
+    "headers": {
+     "content-type": "application/json"
+    },
+    "ms": 122,
+    "pagination": {},
+    "params": {
+     "limit": 500,
+     "status": "OPEN,REDEEMABLE",
+     "user": "0x4f1d5ae26fc31472966e951af3183308736d8de2"
+    },
+    "path": "/v2/positions",
+    "shape": {
+     "absent": {},
+     "enum_values": {},
+     "keys": {},
+     "rows": 0
+    },
+    "status": 400,
+    "statuses_reported": {},
+    "top_level_keys": [
+     "code",
+     "error",
+     "parameter",
+     "retryable",
+     "trace_id"
+    ]
+   },
+   "redeemable": {
+    "current_size_below_one": 12,
+    "current_size_zero": 0,
+    "headers": {
+     "cache-control": "public, max-age=5",
+     "content-type": "application/json"
+    },
+    "ms": 618,
+    "pagination": {
+     "has_more": true,
+     "limit": 500,
+     "next_cursor": "str(406)",
+     "offset": 0
+    },
+    "params": {
+     "limit": 500,
+     "status": "REDEEMABLE",
+     "user": "0x4f1d5ae26fc31472966e951af3183308736d8de2"
+    },
+    "path": "/v2/positions",
+    "shape": {
+     "absent": {},
+     "enum_values": {
+      "archived": {
+       "false": 500
+      },
+      "mergeable": {
+       "false": 500
+      },
+      "negative_risk": {
+       "false": 27,
+       "true": 473
+      },
+      "outcome_index": {
+       "0": 486,
+       "1": 14
+      },
+      "redeemable": {
+       "true": 500
+      },
+      "status": {
+       "\"REDEEMABLE\"": 500
+      },
+      "verified": {
+       "false": 500
+      }
+     },
+     "keys": {
+      "archived": {
+       "bool": 500
+      },
+      "avg_price": {
+       "float": 500
+      },
+      "condition_id": {
+       "hex-lower(66)": 500
+      },
+      "current_price": {
+       "float": 500
+      },
+      "current_size": {
+       "float": 500
+      },
+      "current_value": {
+       "float": 500
+      },
+      "end_date": {
+       "str": 500
+      },
+      "entry_cost_usdc": {
+       "float": 500
+      },
+      "entry_fees_usdc": {
+       "float": 500
+      },
+      "event_id": {
+       "str-int": 500
+      },
+      "event_slug": {
+       "str": 500
+      },
+      "first_entry_at": {
+       "int(1 digits)": 9,
+       "int(10 digits)": 491
+      },
+      "icon": {
+       "str": 500
+      },
+      "last_event_at": {
+       "int(1 digits)": 9,
+       "int(10 digits)": 491
+      },
+      "mergeable": {
+       "bool": 500
+      },
+      "name": {
+       "str": 500
+      },
+      "negative_risk": {
+       "bool": 500
+      },
+      "opposite_outcome": {
+       "str": 500
+      },
+      "opposite_token_id": {
+       "str-int": 500
+      },
+      "outcome": {
+       "str": 500
+      },
+      "outcome_index": {
+       "int(1 digits)": 500
+      },
+      "percent_pnl": {
+       "float": 500
+      },
+      "percent_realized_pnl": {
+       "float": 500
+      },
+      "profile_image": {
+       "str-empty": 500
+      },
+      "proxy_wallet": {
+       "hex-lower(42)": 500
+      },
+      "realized_pnl": {
+       "float": 500
+      },
+      "redeemable": {
+       "bool": 500
+      },
+      "slug": {
+       "str": 500
+      },
+      "status": {
+       "str": 500
+      },
+      "title": {
+       "str": 500
+      },
+      "token_id": {
+       "str-int": 500
+      },
+      "total_cost_usdc": {
+       "float": 500
+      },
+      "total_pnl": {
+       "float": 500
+      },
+      "total_size": {
+       "float": 500
+      },
+      "unrealized_pnl": {
+       "float": 500
+      },
+      "verified": {
+       "bool": 500
+      }
+     },
+     "rows": 500
+    },
+    "status": 200,
+    "statuses_reported": {
+     "REDEEMABLE": 500
+    },
+    "top_level_keys": [
+     "data",
+     "pagination"
+    ]
+   },
+   "redeemable_lost": {
+    "current_size_below_one": 9,
+    "current_size_zero": 0,
+    "headers": {
+     "cache-control": "public, max-age=5",
+     "content-type": "application/json"
+    },
+    "ms": 449,
+    "pagination": {
+     "has_more": true,
+     "limit": 500,
+     "next_cursor": "str(411)",
+     "offset": 0
+    },
+    "params": {
+     "limit": 500,
+     "status": "REDEEMABLE_LOST",
+     "user": "0x4f1d5ae26fc31472966e951af3183308736d8de2"
+    },
+    "path": "/v2/positions",
+    "shape": {
+     "absent": {},
+     "enum_values": {
+      "archived": {
+       "false": 500
+      },
+      "mergeable": {
+       "false": 500
+      },
+      "negative_risk": {
+       "false": 26,
+       "true": 474
+      },
+      "outcome_index": {
+       "0": 488,
+       "1": 12
+      },
+      "redeemable": {
+       "true": 500
+      },
+      "status": {
+       "\"REDEEMABLE\"": 500
+      },
+      "verified": {
+       "false": 500
+      }
+     },
+     "keys": {
+      "archived": {
+       "bool": 500
+      },
+      "avg_price": {
+       "float": 500
+      },
+      "condition_id": {
+       "hex-lower(66)": 500
+      },
+      "current_price": {
+       "float": 500
+      },
+      "current_size": {
+       "float": 500
+      },
+      "current_value": {
+       "float": 500
+      },
+      "end_date": {
+       "str": 500
+      },
+      "entry_cost_usdc": {
+       "float": 500
+      },
+      "entry_fees_usdc": {
+       "float": 500
+      },
+      "event_id": {
+       "str-int": 500
+      },
+      "event_slug": {
+       "str": 500
+      },
+      "first_entry_at": {
+       "int(1 digits)": 9,
+       "int(10 digits)": 491
+      },
+      "icon": {
+       "str": 500
+      },
+      "last_event_at": {
+       "int(1 digits)": 9,
+       "int(10 digits)": 491
+      },
+      "mergeable": {
+       "bool": 500
+      },
+      "name": {
+       "str": 500
+      },
+      "negative_risk": {
+       "bool": 500
+      },
+      "opposite_outcome": {
+       "str": 500
+      },
+      "opposite_token_id": {
+       "str-int": 500
+      },
+      "outcome": {
+       "str": 500
+      },
+      "outcome_index": {
+       "int(1 digits)": 500
+      },
+      "percent_pnl": {
+       "float": 500
+      },
+      "percent_realized_pnl": {
+       "float": 500
+      },
+      "profile_image": {
+       "str-empty": 500
+      },
+      "proxy_wallet": {
+       "hex-lower(42)": 500
+      },
+      "realized_pnl": {
+       "float": 500
+      },
+      "redeemable": {
+       "bool": 500
+      },
+      "slug": {
+       "str": 500
+      },
+      "status": {
+       "str": 500
+      },
+      "title": {
+       "str": 500
+      },
+      "token_id": {
+       "str-int": 500
+      },
+      "total_cost_usdc": {
+       "float": 500
+      },
+      "total_pnl": {
+       "float": 500
+      },
+      "total_size": {
+       "float": 500
+      },
+      "unrealized_pnl": {
+       "float": 500
+      },
+      "verified": {
+       "bool": 500
+      }
+     },
+     "rows": 500
+    },
+    "status": 200,
+    "statuses_reported": {
+     "REDEEMABLE": 500
+    },
+    "top_level_keys": [
+     "data",
+     "pagination"
+    ]
+   },
+   "tokens_at_least_one": {
+    "current_size_below_one": 0,
+    "current_size_zero": 0,
+    "headers": {
+     "cache-control": "public, max-age=5",
+     "content-type": "application/json"
+    },
+    "ms": 590,
+    "pagination": {
+     "has_more": true,
+     "limit": 500,
+     "next_cursor": "str(398)",
+     "offset": 0
+    },
+    "params": {
+     "filter_amount": 1,
+     "filter_type": "TOKENS",
+     "limit": 500,
+     "user": "0x4f1d5ae26fc31472966e951af3183308736d8de2"
+    },
+    "path": "/v2/positions",
+    "shape": {
+     "absent": {},
+     "enum_values": {
+      "archived": {
+       "false": 500
+      },
+      "mergeable": {
+       "false": 498,
+       "true": 2
+      },
+      "negative_risk": {
+       "false": 42,
+       "true": 458
+      },
+      "outcome_index": {
+       "0": 330,
+       "1": 170
+      },
+      "redeemable": {
+       "false": 500
+      },
+      "status": {
+       "\"OPEN\"": 500
+      },
+      "verified": {
+       "false": 500
+      }
+     },
+     "keys": {
+      "archived": {
+       "bool": 500
+      },
+      "avg_price": {
+       "float": 500
+      },
+      "condition_id": {
+       "hex-lower(66)": 500
+      },
+      "current_price": {
+       "float": 500
+      },
+      "current_size": {
+       "float": 500
+      },
+      "current_value": {
+       "float": 500
+      },
+      "end_date": {
+       "str": 500
+      },
+      "entry_cost_usdc": {
+       "float": 500
+      },
+      "entry_fees_usdc": {
+       "float": 500
+      },
+      "event_id": {
+       "str-int": 500
+      },
+      "event_slug": {
+       "str": 500
+      },
+      "first_entry_at": {
+       "int(10 digits)": 500
+      },
+      "icon": {
+       "str": 500
+      },
+      "last_event_at": {
+       "int(10 digits)": 500
+      },
+      "mergeable": {
+       "bool": 500
+      },
+      "name": {
+       "str": 500
+      },
+      "negative_risk": {
+       "bool": 500
+      },
+      "opposite_outcome": {
+       "str": 500
+      },
+      "opposite_token_id": {
+       "str-int": 500
+      },
+      "outcome": {
+       "str": 500
+      },
+      "outcome_index": {
+       "int(1 digits)": 500
+      },
+      "percent_pnl": {
+       "float": 500
+      },
+      "percent_realized_pnl": {
+       "float": 500
+      },
+      "profile_image": {
+       "str-empty": 500
+      },
+      "proxy_wallet": {
+       "hex-lower(42)": 500
+      },
+      "realized_pnl": {
+       "float": 500
+      },
+      "redeemable": {
+       "bool": 500
+      },
+      "slug": {
+       "str": 500
+      },
+      "status": {
+       "str": 500
+      },
+      "title": {
+       "str": 500
+      },
+      "token_id": {
+       "str-int": 500
+      },
+      "total_cost_usdc": {
+       "float": 500
+      },
+      "total_pnl": {
+       "float": 500
+      },
+      "total_size": {
+       "float": 500
+      },
+      "unrealized_pnl": {
+       "float": 500
+      },
+      "verified": {
+       "bool": 500
+      }
+     },
+     "rows": 500
+    },
+    "status": 200,
+    "statuses_reported": {
+     "OPEN": 500
+    },
+    "top_level_keys": [
+     "data",
+     "pagination"
+    ]
+   }
+  },
+  "scalars": {
+   "leaderboard_volume_unit": {
+    "standing_over_user_volume_shares": 1.0,
+    "standing_over_user_volume_usdc": 1.403
+   },
+   "standing_all": {
+    "data_object_shape": {
+     "pnl": "float",
+     "profile_image": "str-empty",
+     "rank_pnl": "int(3 digits)",
+     "rank_volume": "int(4 digits)",
+     "user_id": "hex-lower(42)",
+     "user_name": "str",
+     "verified": "bool",
+     "volume": "float",
+     "x_username": "str"
+    },
+    "headers": {
+     "content-type": "application/json"
+    },
+    "ms": 128,
+    "pagination": {},
+    "params": {
+     "category": "OVERALL",
+     "time_period": "all",
+     "user": "0x4f1d5ae26fc31472966e951af3183308736d8de2"
+    },
+    "path": "/v2/leaderboard",
+    "shape": {
+     "absent": {},
+     "enum_values": {},
+     "keys": {},
+     "rows": 0
+    },
+    "status": 200,
+    "top_level_keys": [
+     "data"
+    ]
+   },
+   "standing_month": {
+    "data_object_shape": {
+     "pnl": "float",
+     "profile_image": "str-empty",
+     "rank_pnl": "int(1 digits)",
+     "rank_volume": "int(3 digits)",
+     "user_id": "hex-lower(42)",
+     "user_name": "str",
+     "verified": "bool",
+     "volume": "float",
+     "x_username": "str"
+    },
+    "headers": {
+     "content-type": "application/json"
+    },
+    "ms": 134,
+    "pagination": {},
+    "params": {
+     "category": "OVERALL",
+     "time_period": "month",
+     "user": "0x4f1d5ae26fc31472966e951af3183308736d8de2"
+    },
+    "path": "/v2/leaderboard",
+    "shape": {
+     "absent": {},
+     "enum_values": {},
+     "keys": {},
+     "rows": 0
+    },
+    "status": 200,
+    "top_level_keys": [
+     "data"
+    ]
+   },
+   "standing_no_category": {
+    "data_object_shape": {
+     "pnl": "float",
+     "profile_image": "str-empty",
+     "rank_pnl": "int(3 digits)",
+     "rank_volume": "int(4 digits)",
+     "user_id": "hex-lower(42)",
+     "user_name": "str",
+     "verified": "bool",
+     "volume": "float",
+     "x_username": "str"
+    },
+    "headers": {
+     "content-type": "application/json"
+    },
+    "ms": 128,
+    "pagination": {},
+    "params": {
+     "time_period": "all",
+     "user": "0x4f1d5ae26fc31472966e951af3183308736d8de2"
+    },
+    "path": "/v2/leaderboard",
+    "shape": {
+     "absent": {},
+     "enum_values": {},
+     "keys": {},
+     "rows": 0
+    },
+    "status": 200,
+    "top_level_keys": [
+     "data"
+    ]
+   },
+   "user_stats": {
+    "data_object_shape": {
+     "all_time_pnl": "dict",
+     "biggest_win": "float",
+     "join_date": "int(10 digits)",
+     "proxy_wallet": "hex-lower(42)",
+     "trades": "int(5 digits)",
+     "views": "int(5 digits)"
+    },
+    "headers": {
+     "content-type": "application/json"
+    },
+    "ms": 113,
+    "pagination": {},
+    "params": {
+     "user": "0x4f1d5ae26fc31472966e951af3183308736d8de2"
+    },
+    "path": "/v2/user-stats",
+    "shape": {
+     "absent": {},
+     "enum_values": {},
+     "keys": {},
+     "rows": 0
+    },
+    "status": 200,
+    "top_level_keys": [
+     "data"
+    ]
+   },
+   "user_volume_default": {
+    "data_object_shape": {
+     "trade_count": "int(6 digits)",
+     "volume": "float",
+     "volume_usdc": "float"
+    },
+    "headers": {
+     "content-type": "application/json"
+    },
+    "ms": 198,
+    "pagination": {},
+    "params": {
+     "user": "0x4f1d5ae26fc31472966e951af3183308736d8de2"
+    },
+    "path": "/v2/user-volume",
+    "shape": {
+     "absent": {},
+     "enum_values": {},
+     "keys": {},
+     "rows": 0
+    },
+    "status": 200,
+    "top_level_keys": [
+     "data"
+    ]
+   },
+   "user_volume_full_history": {
+    "data_object_shape": {
+     "trade_count": "int(6 digits)",
+     "volume": "float",
+     "volume_usdc": "float"
+    },
+    "headers": {
+     "content-type": "application/json"
+    },
+    "ms": 186,
+    "pagination": {},
+    "params": {
+     "start": 1,
+     "user": "0x4f1d5ae26fc31472966e951af3183308736d8de2"
+    },
+    "path": "/v2/user-volume",
+    "shape": {
+     "absent": {},
+     "enum_values": {},
+     "keys": {},
+     "rows": 0
+    },
+    "status": 200,
+    "top_level_keys": [
+     "data"
+    ]
+   },
+   "value": {
+    "data_object_shape": {
+     "proxy_wallet": "hex-lower(42)",
+     "value": "float"
+    },
+    "headers": {
+     "cache-control": "public, max-age=6",
+     "content-type": "application/json"
+    },
+    "ms": 244,
+    "pagination": {},
+    "params": {
+     "user": "0x4f1d5ae26fc31472966e951af3183308736d8de2"
+    },
+    "path": "/v2/value",
+    "shape": {
+     "absent": {},
+     "enum_values": {},
+     "keys": {},
+     "rows": 0
+    },
+    "status": 200,
+    "top_level_keys": [
+     "data"
+    ]
+   }
+  }
+ },
+ "active_wallet_is_rank_1_month_pnl": true,
+ "base_url": "https://data-api.polymarket.com",
+ "finished_at": "2026-11-17T07:17:23.432941+00:00",
+ "leaderboard": {
+  "all_pnl": {
+   "headers": {
+    "content-type": "application/json"
+   },
+   "ms": 139,
+   "pagination": {
+    "has_more": true,
+    "limit": 5,
+    "next_cursor": "str(172)",
+    "offset": 0
+   },
+   "params": {
+    "category": "OVERALL",
+    "limit": 5,
+    "sort_by": "PNL",
+    "time_period": "all"
+   },
+   "path": "/v2/leaderboard",
+   "pnl_non_increasing": true,
+   "ranks": [
+    1,
+    2,
+    3,
+    4,
+    5
+   ],
+   "shape": {
+    "absent": {},
+    "enum_values": {
+     "verified": {
+      "false": 5
+     }
+    },
+    "keys": {
+     "pnl": {
+      "float": 5
+     },
+     "profile_image": {
+      "str": 1,
+      "str-empty": 4
+     },
+     "rank": {
+      "int(1 digits)": 5
+     },
+     "user_id": {
+      "hex-lower(42)": 5
+     },
+     "user_name": {
+      "str": 5
+     },
+     "verified": {
+      "bool": 5
+     },
+     "volume": {
+      "float": 5
+     },
+     "x_username": {
+      "str": 1,
+      "str-empty": 4
+     }
+    },
+    "rows": 5
+   },
+   "status": 200,
+   "top_level_keys": [
+    "data",
+    "pagination"
+   ]
+  },
+  "category_politics": {
+   "headers": {
+    "content-type": "application/json"
+   },
+   "ms": 132,
+   "pagination": {
+    "has_more": true,
+    "limit": 5,
+    "next_cursor": "str(176)",
+    "offset": 0
+   },
+   "params": {
+    "category": "POLITICS",
+    "limit": 5,
+    "sort_by": "PNL",
+    "time_period": "month"
+   },
+   "path": "/v2/leaderboard",
+   "pnl_non_increasing": true,
+   "ranks": [
+    1,
+    2,
+    3,
+    4,
+    5
+   ],
+   "shape": {
+    "absent": {},
+    "enum_values": {
+     "verified": {
+      "false": 5
+     }
+    },
+    "keys": {
+     "pnl": {
+      "float": 5
+     },
+     "profile_image": {
+      "str-empty": 5
+     },
+     "rank": {
+      "int(1 digits)": 5
+     },
+     "user_id": {
+      "hex-lower(42)": 5
+     },
+     "user_name": {
+      "str": 5
+     },
+     "verified": {
+      "bool": 5
+     },
+     "volume": {
+      "float": 5
+     },
+     "x_username": {
+      "str-empty": 5
+     }
+    },
+    "rows": 5
+   },
+   "status": 200,
+   "top_level_keys": [
+    "data",
+    "pagination"
+   ]
+  },
+  "limit_1000": {
+   "error_body": null,
+   "rows": 1000,
+   "status": 200
+  },
+  "limit_1001": {
+   "error_body": {
+    "code": "invalid_request",
+    "error": "Failed to deserialize query string: limit: limit must be between 0 and 1000",
+    "retryable": false,
+    "trace_id": "22923c35d5fa4baebc9538d65fcbb4f2"
+   },
+   "rows": 0,
+   "status": 400
+  },
+  "lowercase_category": {
+   "headers": {
+    "content-type": "application/json"
+   },
+   "ms": 137,
+   "pagination": {
+    "has_more": true,
+    "limit": 5,
+    "next_cursor": "str(175)",
+    "offset": 0
+   },
+   "params": {
+    "category": "overall",
+    "limit": 5,
+    "sort_by": "PNL",
+    "time_period": "month"
+   },
+   "path": "/v2/leaderboard",
+   "pnl_non_increasing": true,
+   "ranks": [
+    1,
+    2,
+    3,
+    4,
+    5
+   ],
+   "shape": {
+    "absent": {},
+    "enum_values": {
+     "verified": {
+      "false": 5
+     }
+    },
+    "keys": {
+     "pnl": {
+      "float": 5
+     },
+     "profile_image": {
+      "str": 1,
+      "str-empty": 4
+     },
+     "rank": {
+      "int(1 digits)": 5
+     },
+     "user_id": {
+      "hex-lower(42)": 5
+     },
+     "user_name": {
+      "str": 5
+     },
+     "verified": {
+      "bool": 5
+     },
+     "volume": {
+      "float": 5
+     },
+     "x_username": {
+      "str": 2,
+      "str-empty": 3
+     }
+    },
+    "rows": 5
+   },
+   "status": 200,
+   "top_level_keys": [
+    "data",
+    "pagination"
+   ]
+  },
+  "month_pnl": {
+   "headers": {
+    "content-type": "application/json"
+   },
+   "ms": 148,
+   "pagination": {
+    "has_more": true,
+    "limit": 5,
+    "next_cursor": "str(175)",
+    "offset": 0
+   },
+   "params": {
+    "category": "OVERALL",
+    "limit": 5,
+    "sort_by": "PNL",
+    "time_period": "month"
+   },
+   "path": "/v2/leaderboard",
+   "pnl_non_increasing": true,
+   "ranks": [
+    1,
+    2,
+    3,
+    4,
+    5
+   ],
+   "shape": {
+    "absent": {},
+    "enum_values": {
+     "verified": {
+      "false": 5
+     }
+    },
+    "keys": {
+     "pnl": {
+      "float": 5
+     },
+     "profile_image": {
+      "str": 1,
+      "str-empty": 4
+     },
+     "rank": {
+      "int(1 digits)": 5
+     },
+     "user_id": {
+      "hex-lower(42)": 5
+     },
+     "user_name": {
+      "str": 5
+     },
+     "verified": {
+      "bool": 5
+     },
+     "volume": {
+      "float": 5
+     },
+     "x_username": {
+      "str": 2,
+      "str-empty": 3
+     }
+    },
+    "rows": 5
+   },
+   "status": 200,
+   "top_level_keys": [
+    "data",
+    "pagination"
+   ]
+  },
+  "month_volume": {
+   "headers": {
+    "content-type": "application/json"
+   },
+   "ms": 145,
+   "pagination": {
+    "has_more": true,
+    "limit": 5,
+    "next_cursor": "str(175)",
+    "offset": 0
+   },
+   "params": {
+    "category": "OVERALL",
+    "limit": 5,
+    "sort_by": "VOLUME",
+    "time_period": "month"
+   },
+   "path": "/v2/leaderboard",
+   "pnl_non_increasing": false,
+   "ranks": [
+    1,
+    2,
+    3,
+    4,
+    5
+   ],
+   "shape": {
+    "absent": {},
+    "enum_values": {
+     "verified": {
+      "false": 5
+     }
+    },
+    "keys": {
+     "pnl": {
+      "float": 5
+     },
+     "profile_image": {
+      "str": 1,
+      "str-empty": 4
+     },
+     "rank": {
+      "int(1 digits)": 5
+     },
+     "user_id": {
+      "hex-lower(42)": 5
+     },
+     "user_name": {
+      "str": 5
+     },
+     "verified": {
+      "bool": 5
+     },
+     "volume": {
+      "float": 5
+     },
+     "x_username": {
+      "str": 1,
+      "str-empty": 4
+     }
+    },
+    "rows": 5
+   },
+   "status": 200,
+   "top_level_keys": [
+    "data",
+    "pagination"
+   ]
+  },
+  "no_params": {
+   "headers": {
+    "content-type": "application/json"
+   },
+   "ms": 140,
+   "pagination": {
+    "has_more": true,
+    "limit": 5,
+    "next_cursor": "str(172)",
+    "offset": 0
+   },
+   "params": {
+    "limit": 5
+   },
+   "path": "/v2/leaderboard",
+   "pnl_non_increasing": true,
+   "ranks": [
+    1,
+    2,
+    3,
+    4,
+    5
+   ],
+   "shape": {
+    "absent": {},
+    "enum_values": {
+     "verified": {
+      "false": 5
+     }
+    },
+    "keys": {
+     "pnl": {
+      "float": 5
+     },
+     "profile_image": {
+      "str": 2,
+      "str-empty": 3
+     },
+     "rank": {
+      "int(1 digits)": 5
+     },
+     "user_id": {
+      "hex-lower(42)": 5
+     },
+     "user_name": {
+      "str": 5
+     },
+     "verified": {
+      "bool": 5
+     },
+     "volume": {
+      "float": 5
+     },
+     "x_username": {
+      "str-empty": 5
+     }
+    },
+    "rows": 5
+   },
+   "status": 200,
+   "top_level_keys": [
+    "data",
+    "pagination"
+   ]
+  },
+  "paging_100_vs_2x50": {
+   "distinct_wallets_one_page": 100,
+   "one_page_rows": 100,
+   "ranks_first_last": [
+    1,
+    100
+   ],
+   "same_wallet_order": true,
+   "second_page_status": 200,
+   "two_page_rows": 100
+  },
+  "uppercase_period": {
+   "headers": {
+    "content-type": "application/json"
+   },
+   "ms": 144,
+   "pagination": {
+    "has_more": true,
+    "limit": 5,
+    "next_cursor": "str(175)",
+    "offset": 0
+   },
+   "params": {
+    "category": "OVERALL",
+    "limit": 5,
+    "sort_by": "PNL",
+    "time_period": "MONTH"
+   },
+   "path": "/v2/leaderboard",
+   "pnl_non_increasing": true,
+   "ranks": [
+    1,
+    2,
+    3,
+    4,
+    5
+   ],
+   "shape": {
+    "absent": {},
+    "enum_values": {
+     "verified": {
+      "false": 5
+     }
+    },
+    "keys": {
+     "pnl": {
+      "float": 5
+     },
+     "profile_image": {
+      "str": 1,
+      "str-empty": 4
+     },
+     "rank": {
+      "int(1 digits)": 5
+     },
+     "user_id": {
+      "hex-lower(42)": 5
+     },
+     "user_name": {
+      "str": 5
+     },
+     "verified": {
+      "bool": 5
+     },
+     "volume": {
+      "float": 5
+     },
+     "x_username": {
+      "str": 2,
+      "str-empty": 3
+     }
+    },
+    "rows": 5
+   },
+   "status": 200,
+   "top_level_keys": [
+    "data",
+    "pagination"
+   ]
+  },
+  "v1_sort_name": {
+   "error_body": {
+    "code": "invalid_request",
+    "error": "sort_by must be PNL or VOLUME",
+    "parameter": "sort_by",
+    "retryable": false,
+    "trace_id": "5e1bd7d0b1444ad1b5db6b640d992543"
+   },
+   "headers": {
+    "content-type": "application/json"
+   },
+   "ms": 104,
+   "pagination": {},
+   "params": {
+    "category": "OVERALL",
+    "limit": 5,
+    "sort_by": "VOL",
+    "time_period": "month"
+   },
+   "path": "/v2/leaderboard",
+   "pnl_non_increasing": true,
+   "ranks": [],
+   "shape": {
+    "absent": {},
+    "enum_values": {},
+    "keys": {},
+    "rows": 0
+   },
+   "status": 400,
+   "top_level_keys": [
+    "code",
+    "error",
+    "parameter",
+    "retryable",
+    "trace_id"
+   ]
+  },
+  "v1_style_params": {
+   "headers": {
+    "content-type": "application/json"
+   },
+   "ms": 140,
+   "pagination": {
+    "has_more": true,
+    "limit": 5,
+    "next_cursor": "str(175)",
+    "offset": 0
+   },
+   "params": {
+    "category": "OVERALL",
+    "limit": 5,
+    "orderBy": "PNL",
+    "timePeriod": "MONTH"
+   },
+   "path": "/v2/leaderboard",
+   "pnl_non_increasing": true,
+   "ranks": [
+    1,
+    2,
+    3,
+    4,
+    5
+   ],
+   "shape": {
+    "absent": {},
+    "enum_values": {
+     "verified": {
+      "false": 5
+     }
+    },
+    "keys": {
+     "pnl": {
+      "float": 5
+     },
+     "profile_image": {
+      "str": 1,
+      "str-empty": 4
+     },
+     "rank": {
+      "int(1 digits)": 5
+     },
+     "user_id": {
+      "hex-lower(42)": 5
+     },
+     "user_name": {
+      "str": 5
+     },
+     "verified": {
+      "bool": 5
+     },
+     "volume": {
+      "float": 5
+     },
+     "x_username": {
+      "str": 2,
+      "str-empty": 3
+     }
+    },
+    "rows": 5
+   },
+   "status": 200,
+   "top_level_keys": [
+    "data",
+    "pagination"
+   ]
+  }
+ },
+ "legacy": {
+  "activity": {
+   "bad_cursor": {
+    "body_if_error": {
+     "code": "invalid_request",
+     "error": "invalid cursor",
+     "retryable": false,
+     "trace_id": "8ad74f3c66994fa3bed78a91a4f580fd"
+    },
+    "rows": 0,
+    "status": 400
+   },
+   "cursor_reuse": {
+    "with_other_filter": {
+     "error_body": null,
+     "status": 200
+    },
+    "with_other_limit": {
+     "error_body": null,
+     "rows": 5,
+     "status": 200
+    }
+   },
+   "default_first_page": {
+    "headers": {
+     "cache-control": "public, max-age=15",
+     "content-type": "application/json"
+    },
+    "ms": 127,
+    "pagination": {
+     "has_more": true,
+     "limit": 5,
+     "next_cursor": "str(179)",
+     "offset": 0
+    },
+    "params": {
+     "limit": 5,
+     "user": "0x56687bf447db6ffa42ffe2204a05edaa20f55839"
+    },
+    "path": "/v2/activity",
+    "rows": [
+     {
+      "bio": "",
+      "condition_id": "0x26ee82bee2493a302d21283cb578f7e2fff2dd15743854f53034d12420863b55",
+      "event_slug": "which-party-will-win-the-2024-united-states-presidential-election",
+      "icon": "https://polymarket-upload.s3.us-east-2.amazonaws.com/which-party-will-win-the-2024-united-states-presidential-election-IMmRIV7YSUE_.jpg",
+      "name": "Theo4",
+      "outcome": "Republican",
+      "outcome_index": 1,
+      "price": 0.0,
+      "profile_image": "",
+      "profile_image_optimized": "",
+      "proxy_wallet": "0x56687bf447db6ffa42ffe2204a05edaa20f55839",
+      "pseudonym": "Ironclad-Tenement",
+      "side": "",
+      "size": 120469.38883,
+      "slug": "which-party-will-win-the-2024-united-states-presidential-election",
+      "timestamp": 1731664609,
+      "title": "Which party wins 2024 US Presidential Election?",
+      "token_id": "65444287174436666395099524416802980027579283433860283898747701594488689243696",
+      "transaction_hash": "0x6db3f0fd9cccd58d4bd59eb5816cc2823f62a85c343e5ff6d1dd177dfb128a6e",
+      "type": "REDEEM",
+      "usdc_size": 120469.38883
+     },
+     {
+      "bio": "",
+      "condition_id": "0xf404052387b0612112823ad31ca9572150cce046590c61b6c98792eb7b264ed1",
+      "event_slug": "next-james-bond-actor",
+      "icon": "https://polymarket-upload.s3.us-east-2.amazonaws.com/henry-cavill-announced-as-next-james-bond-f212f021-960d-462d-ac5a-70dd077d4bcf.png",
+      "name": "Theo4",
+      "outcome": "",
+      "outcome_index": 999,
+      "price": 0.0,
+      "profile_image": "",
+      "profile_image_optimized": "",
+      "proxy_wallet": "0x56687bf447db6ffa42ffe2204a05edaa20f55839",
+      "pseudonym": "Ironclad-Tenement",
+      "side": "",
+      "size": 199.95,
+      "slug": "henry-cavill-announced-as-next-james-bond",
+      "timestamp": 1731489423,
+      "title": "Henry Cavill announced as next James Bond?",
+      "token_id": "",
+      "transaction_hash": "0x0418c78be5154c17f34401c234e881cf85187ce8c9a1beb78c5bd7d0855c436a",
+      "type": "MERGE",
+      "usdc_size": 199.95
+     },
+     {
+      "bio": "",
+      "condition_id": "0xf404052387b0612112823ad31ca9572150cce046590c61b6c98792eb7b264ed1",
+      "event_slug": "next-james-bond-actor",
+      "icon": "https://polymarket-upload.s3.us-east-2.amazonaws.com/henry-cavill-announced-as-next-james-bond-f212f021-960d-462d-ac5a-70dd077d4bcf.png",
+      "name": "Theo4",
+      "outcome": "No",
+      "outcome_index": 1,
+      "price": 0.966,
+      "profile_image": "",
+      "profile_image_optimized": "",
+      "proxy_wallet": "0x56687bf447db6ffa42ffe2204a05edaa20f55839",
+      "pseudonym": "Ironclad-Tenement",
+      "side": "BUY",
+      "size": 199.95,
+      "slug": "henry-cavill-announced-as-next-james-bond",
+      "timestamp": 1731489409,
+      "title": "Henry Cavill announced as next James Bond?",
+      "token_id": "28542071792300007181611447397504994131484152585152031411345975186749097403884",
+      "transaction_hash": "0x20684481425ea4912021f84fc77ef244d23f0dd160913f5d55649f004286c6cc",
+      "type": "TRADE",
+      "usdc_size": 193.1517
+     },
+     {
+      "bio": "",
+      "condition_id": "0xf404052387b0612112823ad31ca9572150cce046590c61b6c98792eb7b264ed1",
+      "event_slug": "next-james-bond-actor",
+      "icon": "https://polymarket-upload.s3.us-east-2.amazonaws.com/henry-cavill-announced-as-next-james-bond-f212f021-960d-462d-ac5a-70dd077d4bcf.png",
+      "name": "Theo4",
+      "outcome": "",
+      "outcome_index": 999,
+      "price": 0.0,
+      "profile_image": "",
+      "profile_image_optimized": "",
+      "proxy_wallet": "0x56687bf447db6ffa42ffe2204a05edaa20f55839",
+      "pseudonym": "Ironclad-Tenement",
+      "side": "",
+      "size": 23.94,
+      "slug": "henry-cavill-announced-as-next-james-bond",
+      "timestamp": 1731489321,
+      "title": "Henry Cavill announced as next James Bond?",
+      "token_id": "",
+      "transaction_hash": "0x36e9cd52ece4fd73b9d6ab588efbbe92baffb47b0096322e0ac285016a62c9e3",
+      "type": "MERGE",
+      "usdc_size": 23.94
+     },
+     {
+      "bio": "",
+      "condition_id": "0xf404052387b0612112823ad31ca9572150cce046590c61b6c98792eb7b264ed1",
+      "event_slug": "next-james-bond-actor",
+      "icon": "https://polymarket-upload.s3.us-east-2.amazonaws.com/henry-cavill-announced-as-next-james-bond-f212f021-960d-462d-ac5a-70dd077d4bcf.png",
+      "name": "Theo4",
+      "outcome": "No",
+      "outcome_index": 1,
+      "price": 0.964,
+      "profile_image": "",
+      "profile_image_optimized": "",
+      "proxy_wallet": "0x56687bf447db6ffa42ffe2204a05edaa20f55839",
+      "pseudonym": "Ironclad-Tenement",
+      "side": "BUY",
+      "size": 23.94,
+      "slug": "henry-cavill-announced-as-next-james-bond",
+      "timestamp": 1731489283,
+      "title": "Henry Cavill announced as next James Bond?",
+      "token_id": "28542071792300007181611447397504994131484152585152031411345975186749097403884",
+      "transaction_hash": "0x1f045b31b3b0184eb99e26a841a622f3357c3723f6572f2d3a1f4b84a4c0f8cf",
+      "type": "TRADE",
+      "usdc_size": 23.07816
+     }
+    ],
+    "shape": {
+     "absent": {},
+     "enum_values": {
+      "outcome_index": {
+       "1": 3,
+       "999": 2
+      },
+      "side": {
+       "\"\"": 3,
+       "\"BUY\"": 2
+      },
+      "type": {
+       "\"MERGE\"": 2,
+       "\"REDEEM\"": 1,
+       "\"TRADE\"": 2
+      }
+     },
+     "keys": {
+      "bio": {
+       "str-empty": 5
+      },
+      "condition_id": {
+       "hex-lower(66)": 5
+      },
+      "event_slug": {
+       "str": 5
+      },
+      "icon": {
+       "str": 5
+      },
+      "name": {
+       "str": 5
+      },
+      "outcome": {
+       "str": 3,
+       "str-empty": 2
+      },
+      "outcome_index": {
+       "int(1 digits)": 3,
+       "int(3 digits)": 2
+      },
+      "price": {
+       "float": 5
+      },
+      "profile_image": {
+       "str-empty": 5
+      },
+      "profile_image_optimized": {
+       "str-empty": 5
+      },
+      "proxy_wallet": {
+       "hex-lower(42)": 5
+      },
+      "pseudonym": {
+       "str": 5
+      },
+      "side": {
+       "str": 2,
+       "str-empty": 3
+      },
+      "size": {
+       "float": 5
+      },
+      "slug": {
+       "str": 5
+      },
+      "timestamp": {
+       "int(10 digits)": 5
+      },
+      "title": {
+       "str": 5
+      },
+      "token_id": {
+       "str-empty": 2,
+       "str-int": 3
+      },
+      "transaction_hash": {
+       "hex-lower(66)": 5
+      },
+      "type": {
+       "str": 5
+      },
+      "usdc_size": {
+       "float": 5
+      }
+     },
+     "rows": 5
+    },
+    "status": 200,
+    "top_level_keys": [
+     "data",
+     "pagination"
+    ]
+   },
+   "default_timestamps": [
+    1731664609,
+    1731489423,
+    1731489409,
+    1731489321,
+    1731489283
+   ],
+   "default_window_oldest": [
+    1728918952
+   ],
+   "exclude_deposits_false": {
+    "error_body": null,
+    "rows": 500,
+    "sides": {
+     "\"\"": 85,
+     "\"BUY\"": 415
+    },
+    "status": 200,
+    "types": {
+     "DEPOSIT": 54,
+     "MERGE": 2,
+     "REDEEM": 13,
+     "REWARD": 1,
+     "TRADE": 415,
+     "WITHDRAWAL": 15
+    }
+   },
+   "exclude_deposits_true": {
+    "error_body": null,
+    "rows": 500,
+    "sides": {
+     "\"\"": 16,
+     "\"BUY\"": 484
+    },
+    "status": 200,
+    "types": {
+     "MERGE": 2,
+     "REDEEM": 13,
+     "REWARD": 1,
+     "TRADE": 484
+    }
+   },
+   "full_history_oldest": {
+    "headers": {
+     "cache-control": "public, max-age=15",
+     "content-type": "application/json"
+    },
+    "ms": 309,
+    "pagination": {
+     "has_more": true,
+     "limit": 3,
+     "next_cursor": "str(195)",
+     "offset": 0
+    },
+    "params": {
+     "limit": 3,
+     "sort_direction": "ASC",
+     "start": 1,
+     "user": "0x56687bf447db6ffa42ffe2204a05edaa20f55839"
+    },
+    "path": "/v2/activity",
+    "rows": [
+     {
+      "bio": "",
+      "condition_id": "0xcd1b6b71a1964f15e2c14809594cbfa0d576270e8ef94c8c24913121097e09e5",
+      "event_slug": "presidential-election-popular-vote-winner-2024",
+      "icon": "https://polymarket-upload.s3.us-east-2.amazonaws.com/will-donald-trump-win-the-popular-vote-in-the-2024-presidential-election-20e4382f-7bc6-4d9b-aecc-d5f857dc3802.png",
+      "name": "Theo4",
+      "outcome": "Yes",
+      "outcome_index": 0,
+      "price": 0.26,
+      "profile_image": "",
+      "profile_image_optimized": "",
+      "proxy_wallet": "0x56687bf447db6ffa42ffe2204a05edaa20f55839",
+      "pseudonym": "Ironclad-Tenement",
+      "side": "BUY",
+      "size": 1.0,
+      "slug": "will-donald-trump-win-the-popular-vote-in-the-2024-presidential-election",
+      "timestamp": 1728918952,
+      "title": "Will Donald Trump win the popular vote in the 2024 Presidential Election?",
+      "token_id": "42699080635179861375280720242213672850141860123562672932351602811041149946128",
+      "transaction_hash": "0x52d0f8ad1a48f32b8a322f67643c68badc2ad183bef4b572baa42b9115c3da0c",
+      "type": "TRADE",
+      "usdc_size": 0.26
+     },
+     {
+      "bio": "",
+      "condition_id": "0xcd1b6b71a1964f15e2c14809594cbfa0d576270e8ef94c8c24913121097e09e5",
+      "event_slug": "presidential-election-popular-vote-winner-2024",
+      "icon": "https://polymarket-upload.s3.us-east-2.amazonaws.com/will-donald-trump-win-the-popular-vote-in-the-2024-presidential-election-20e4382f-7bc6-4d9b-aecc-d5f857dc3802.png",
+      "name": "Theo4",
+      "outcome": "Yes",
+      "outcome_index": 0,
+      "price": 0.26,
+      "profile_image": "",
+      "profile_image_optimized": "",
+      "proxy_wallet": "0x56687bf447db6ffa42ffe2204a05edaa20f55839",
+      "pseudonym": "Ironclad-Tenement",
+      "side": "BUY",
+      "size": 199.0,
+      "slug": "will-donald-trump-win-the-popular-vote-in-the-2024-presidential-election",
+      "timestamp": 1728918954,
+      "title": "Will Donald Trump win the popular vote in the 2024 Presidential Election?",
+      "token_id": "42699080635179861375280720242213672850141860123562672932351602811041149946128",
+      "transaction_hash": "0x1a77a53109d11db10af6d46dbae3b734b59aeac75c12191c796a97869e974c97",
+      "type": "TRADE",
+      "usdc_size": 51.74
+     },
+     {
+      "bio": "",
+      "condition_id": "0xcd1b6b71a1964f15e2c14809594cbfa0d576270e8ef94c8c24913121097e09e5",
+      "event_slug": "presidential-election-popular-vote-winner-2024",
+      "icon": "https://polymarket-upload.s3.us-east-2.amazonaws.com/will-donald-trump-win-the-popular-vote-in-the-2024-presidential-election-20e4382f-7bc6-4d9b-aecc-d5f857dc3802.png",
+      "name": "Theo4",
+      "outcome": "Yes",
+      "outcome_index": 0,
+      "price": 0.26,
+      "profile_image": "",
+      "profile_image_optimized": "",
+      "proxy_wallet": "0x56687bf447db6ffa42ffe2204a05edaa20f55839",
+      "pseudonym": "Ironclad-Tenement",
+      "side": "BUY",
+      "size": 1000.0,
+      "slug": "will-donald-trump-win-the-popular-vote-in-the-2024-presidential-election",
+      "timestamp": 1728918962,
+      "title": "Will Donald Trump win the popular vote in the 2024 Presidential Election?",
+      "token_id": "42699080635179861375280720242213672850141860123562672932351602811041149946128",
+      "transaction_hash": "0xf3ff9cf7132d4dee9a6c05ed86d8026020eab57120cfaaec96ed003da1953a92",
+      "type": "TRADE",
+      "usdc_size": 260.0
+     }
+    ],
+    "shape": {
+     "absent": {},
+     "enum_values": {
+      "outcome_index": {
+       "0": 3
+      },
+      "side": {
+       "\"BUY\"": 3
+      },
+      "type": {
+       "\"TRADE\"": 3
+      }
+     },
+     "keys": {
+      "bio": {
+       "str-empty": 3
+      },
+      "condition_id": {
+       "hex-lower(66)": 3
+      },
+      "event_slug": {
+       "str": 3
+      },
+      "icon": {
+       "str": 3
+      },
+      "name": {
+       "str": 3
+      },
+      "outcome": {
+       "str": 3
+      },
+      "outcome_index": {
+       "int(1 digits)": 3
+      },
+      "price": {
+       "float": 3
+      },
+      "profile_image": {
+       "str-empty": 3
+      },
+      "profile_image_optimized": {
+       "str-empty": 3
+      },
+      "proxy_wallet": {
+       "hex-lower(42)": 3
+      },
+      "pseudonym": {
+       "str": 3
+      },
+      "side": {
+       "str": 3
+      },
+      "size": {
+       "float": 3
+      },
+      "slug": {
+       "str": 3
+      },
+      "timestamp": {
+       "int(10 digits)": 3
+      },
+      "title": {
+       "str": 3
+      },
+      "token_id": {
+       "str-int": 3
+      },
+      "transaction_hash": {
+       "hex-lower(66)": 3
+      },
+      "type": {
+       "str": 3
+      },
+      "usdc_size": {
+       "float": 3
+      }
+     },
+     "rows": 3
+    },
+    "status": 200,
+    "top_level_keys": [
+     "data",
+     "pagination"
+    ]
+   },
+   "full_history_oldest_timestamps": [
+    1728918952,
+    1728918954,
+    1728918962
+   ],
+   "limit_1000": {
+    "error_body": null,
+    "rows": 1000,
+    "status": 200
+   },
+   "limit_1001": {
+    "error_body": {
+     "code": "invalid_request",
+     "error": "Failed to deserialize query string: limit: limit must be between 0 and 1000",
+     "retryable": false,
+     "trace_id": "e9c5786bb5c341a58d3eb92da785c004"
+    },
+    "rows": 0,
+    "status": 400
+   },
+   "offset_param": {
+    "body_if_error": {
+     "code": "invalid_request",
+     "error": "'offset' is not a query param on this API: pages are cursor-only, pass 'cursor' from a prior response's next_cursor",
+     "retryable": false,
+     "trace_id": "7177530369234d82b9724664cae27732"
+    },
+    "rows": 0,
+    "status": 400
+   },
+   "side_buy": {
+    "error_body": null,
+    "rows": 500,
+    "sides": {
+     "\"BUY\"": 500
+    },
+    "status": 200,
+    "types": {
+     "TRADE": 500
+    }
+   },
+   "type_trade": {
+    "error_body": null,
+    "rows": 500,
+    "sides": {
+     "\"BUY\"": 500
+    },
+    "status": 200,
+    "types": {
+     "TRADE": 500
+    }
+   },
+   "type_trade_redeem": {
+    "error_body": null,
+    "rows": 500,
+    "sides": {
+     "\"\"": 13,
+     "\"BUY\"": 487
+    },
+    "status": 200,
+    "types": {
+     "REDEEM": 13,
+     "TRADE": 487
+    }
+   },
+   "v1_style_market_param": {
+    "body_if_error": {
+     "code": "invalid_request",
+     "error": "'market' is not a query param on this API: filter by condition id with 'condition' (aliases 'condition_id', 'conditionId')",
+     "retryable": false,
+     "trace_id": "c6dd6e26b60d4f708e5cc61c9bedcc20"
+    },
+    "rows": 0,
+    "status": 400
+   },
+   "walk_default_window": {
+    "collision_examples_by_type": {
+     "TRADE": 7
+    },
+    "collision_groups": [],
+    "dedupe_key_collisions": 7,
+    "has_more_after_last_page": true,
+    "identical_rows_repeated": 0,
+    "max_rows_sharing_one_second": 8,
+    "newest": 1731664609,
+    "oldest": 1730190354,
+    "page_sizes": [
+     500,
+     500
+    ],
+    "params": {
+     "limit": 500,
+     "user": "0x56687bf447db6ffa42ffe2204a05edaa20f55839"
+    },
+    "rows": 1000,
+    "shape_by_type": {
+     "MERGE": {
+      "absent": {},
+      "enum_values": {
+       "outcome_index": {
+        "999": 2
+       },
+       "side": {
+        "\"\"": 2
+       },
+       "type": {
+        "\"MERGE\"": 2
+       }
+      },
+      "keys": {
+       "bio": {
+        "str-empty": 2
+       },
+       "condition_id": {
+        "hex-lower(66)": 2
+       },
+       "event_slug": {
+        "str": 2
+       },
+       "icon": {
+        "str": 2
+       },
+       "name": {
+        "str": 2
+       },
+       "outcome": {
+        "str-empty": 2
+       },
+       "outcome_index": {
+        "int(3 digits)": 2
+       },
+       "price": {
+        "float": 2
+       },
+       "profile_image": {
+        "str-empty": 2
+       },
+       "profile_image_optimized": {
+        "str-empty": 2
+       },
+       "proxy_wallet": {
+        "hex-lower(42)": 2
+       },
+       "pseudonym": {
+        "str": 2
+       },
+       "side": {
+        "str-empty": 2
+       },
+       "size": {
+        "float": 2
+       },
+       "slug": {
+        "str": 2
+       },
+       "timestamp": {
+        "int(10 digits)": 2
+       },
+       "title": {
+        "str": 2
+       },
+       "token_id": {
+        "str-empty": 2
+       },
+       "transaction_hash": {
+        "hex-lower(66)": 2
+       },
+       "type": {
+        "str": 2
+       },
+       "usdc_size": {
+        "float": 2
+       }
+      },
+      "rows": 2
+     },
+     "REDEEM": {
+      "absent": {},
+      "enum_values": {
+       "outcome_index": {
+        "0": 8,
+        "1": 5
+       },
+       "side": {
+        "\"\"": 13
+       },
+       "type": {
+        "\"REDEEM\"": 13
+       }
+      },
+      "keys": {
+       "bio": {
+        "str-empty": 13
+       },
+       "condition_id": {
+        "hex-lower(66)": 13
+       },
+       "event_slug": {
+        "str": 13
+       },
+       "icon": {
+        "str": 13
+       },
+       "name": {
+        "str": 13
+       },
+       "outcome": {
+        "str": 13
+       },
+       "outcome_index": {
+        "int(1 digits)": 13
+       },
+       "price": {
+        "float": 13
+       },
+       "profile_image": {
+        "str-empty": 13
+       },
+       "profile_image_optimized": {
+        "str-empty": 13
+       },
+       "proxy_wallet": {
+        "hex-lower(42)": 13
+       },
+       "pseudonym": {
+        "str": 13
+       },
+       "side": {
+        "str-empty": 13
+       },
+       "size": {
+        "float": 13
+       },
+       "slug": {
+        "str": 13
+       },
+       "timestamp": {
+        "int(10 digits)": 13
+       },
+       "title": {
+        "str": 13
+       },
+       "token_id": {
+        "str-int": 13
+       },
+       "transaction_hash": {
+        "hex-lower(66)": 13
+       },
+       "type": {
+        "str": 13
+       },
+       "usdc_size": {
+        "float": 13
+       }
+      },
+      "rows": 13
+     },
+     "REWARD": {
+      "absent": {},
+      "enum_values": {
+       "outcome_index": {
+        "999": 2
+       },
+       "side": {
+        "\"\"": 2
+       },
+       "type": {
+        "\"REWARD\"": 2
+       }
+      },
+      "keys": {
+       "bio": {
+        "str-empty": 2
+       },
+       "condition_id": {
+        "str-empty": 2
+       },
+       "event_slug": {
+        "str-empty": 2
+       },
+       "icon": {
+        "str-empty": 2
+       },
+       "name": {
+        "str": 2
+       },
+       "outcome": {
+        "str-empty": 2
+       },
+       "outcome_index": {
+        "int(3 digits)": 2
+       },
+       "price": {
+        "float": 2
+       },
+       "profile_image": {
+        "str-empty": 2
+       },
+       "profile_image_optimized": {
+        "str-empty": 2
+       },
+       "proxy_wallet": {
+        "hex-lower(42)": 2
+       },
+       "pseudonym": {
+        "str": 2
+       },
+       "side": {
+        "str-empty": 2
+       },
+       "size": {
+        "float": 2
+       },
+       "slug": {
+        "str-empty": 2
+       },
+       "timestamp": {
+        "int(10 digits)": 2
+       },
+       "title": {
+        "str-empty": 2
+       },
+       "token_id": {
+        "str-empty": 2
+       },
+       "transaction_hash": {
+        "hex-lower(66)": 2
+       },
+       "type": {
+        "str": 2
+       },
+       "usdc_size": {
+        "float": 2
+       }
+      },
+      "rows": 2
+     },
+     "TRADE": {
+      "absent": {},
+      "enum_values": {
+       "outcome_index": {
+        "0": 893,
+        "1": 90
+       },
+       "side": {
+        "\"BUY\"": 983
+       },
+       "type": {
+        "\"TRADE\"": 983
+       }
+      },
+      "keys": {
+       "bio": {
+        "str-empty": 983
+       },
+       "condition_id": {
+        "hex-lower(66)": 983
+       },
+       "event_slug": {
+        "str": 983
+       },
+       "icon": {
+        "str": 983
+       },
+       "name": {
+        "str": 983
+       },
+       "outcome": {
+        "str": 983
+       },
+       "outcome_index": {
+        "int(1 digits)": 983
+       },
+       "price": {
+        "float": 983
+       },
+       "profile_image": {
+        "str-empty": 983
+       },
+       "profile_image_optimized": {
+        "str-empty": 983
+       },
+       "proxy_wallet": {
+        "hex-lower(42)": 983
+       },
+       "pseudonym": {
+        "str": 983
+       },
+       "side": {
+        "str": 983
+       },
+       "size": {
+        "float": 983
+       },
+       "slug": {
+        "str": 983
+       },
+       "timestamp": {
+        "int(10 digits)": 983
+       },
+       "title": {
+        "str": 983
+       },
+       "token_id": {
+        "str-int": 983
+       },
+       "transaction_hash": {
+        "hex-lower(66)": 983
+       },
+       "type": {
+        "str": 983
+       },
+       "usdc_size": {
+        "float": 983
+       }
+      },
+      "rows": 983
+     }
+    },
+    "statuses": [
+     200,
+     200
+    ],
+    "timestamps_non_decreasing": false,
+    "timestamps_non_increasing": true,
+    "types": {
+     "MERGE": 2,
+     "REDEEM": 13,
+     "REWARD": 2,
+     "TRADE": 983
+    }
+   },
+   "walk_desc_full_history": {
+    "collision_examples_by_type": {
+     "TRADE": 12
+    },
+    "collision_groups": [
+     [
+      {
+       "bio": "",
+       "condition_id": "0x2010ff3939e8e664dd57369aa907bbaa6d03ae18be27fe3ab2f4cdcb95a8b2ab",
+       "event_slug": "which-party-wins-presidency-popular-vote",
+       "icon": "https://polymarket-upload.s3.us-east-2.amazonaws.com/will-a-republican-win-the-popular-vote-and-the-presidency-Oel9nyrhQsmi.png",
+       "name": "Theo4",
+       "outcome": "Yes",
+       "outcome_index": 0,
+       "price": 0.26,
+       "profile_image": "",
+       "profile_image_optimized": "",
+       "proxy_wallet": "0x56687bf447db6ffa42ffe2204a05edaa20f55839",
+       "pseudonym": "Ironclad-Tenement",
+       "side": "BUY",
+       "size": 231.19,
+       "slug": "will-a-republican-win-the-popular-vote-and-the-presidency",
+       "timestamp": 1730839614,
+       "title": "Will a Republican win the popular vote and the Presidency? ",
+       "token_id": "67648321332889562720702742465853245863647268672651902649177972067583993370930",
+       "transaction_hash": "0x8934c3f4b6639928c849206bf8b727ddef0341d1fc23676652250dae6e9bcf10",
+       "type": "TRADE",
+       "usdc_size": 60.1094
+      },
+      {
+       "bio": "",
+       "condition_id": "0x2010ff3939e8e664dd57369aa907bbaa6d03ae18be27fe3ab2f4cdcb95a8b2ab",
+       "event_slug": "which-party-wins-presidency-popular-vote",
+       "icon": "https://polymarket-upload.s3.us-east-2.amazonaws.com/will-a-republican-win-the-popular-vote-and-the-presidency-Oel9nyrhQsmi.png",
+       "name": "Theo4",
+       "outcome": "Yes",
+       "outcome_index": 0,
+       "price": 0.26,
+       "profile_image": "",
+       "profile_image_optimized": "",
+       "proxy_wallet": "0x56687bf447db6ffa42ffe2204a05edaa20f55839",
+       "pseudonym": "Ironclad-Tenement",
+       "side": "BUY",
+       "size": 5768.81,
+       "slug": "will-a-republican-win-the-popular-vote-and-the-presidency",
+       "timestamp": 1730839614,
+       "title": "Will a Republican win the popular vote and the Presidency? ",
+       "token_id": "67648321332889562720702742465853245863647268672651902649177972067583993370930",
+       "transaction_hash": "0x8934c3f4b6639928c849206bf8b727ddef0341d1fc23676652250dae6e9bcf10",
+       "type": "TRADE",
+       "usdc_size": 1499.8906
+      }
+     ],
+     [
+      {
+       "bio": "",
+       "condition_id": "0xa59e2e79dc1a564477c8d77dc32c30b37c0f4c8782c8cc062a7f788295cd91bb",
+       "event_slug": "wisconsin-presidential-election-winner",
+       "icon": "https://polymarket-upload.s3.us-east-2.amazonaws.com/trump+red+hq.jpeg",
+       "name": "Theo4",
+       "outcome": "Yes",
+       "outcome_index": 0,
+       "price": 0.47,
+       "profile_image": "",
+       "profile_image_optimized": "",
+       "proxy_wallet": "0x56687bf447db6ffa42ffe2204a05edaa20f55839",
+       "pseudonym": "Ironclad-Tenement",
+       "side": "BUY",
+       "size": 10000.0,
+       "slug": "will-a-republican-win-wisconsin-presidential-election",
+       "timestamp": 1730837493,
+       "title": "Will a Republican win Wisconsin Presidential Election?",
+       "token_id": "8506489790932625039746959405160059426243994232527626857062384302531008283468",
+       "transaction_hash": "0xa86c8a3ec70542e017ee9e7813f7d488337cb01c240c9b13256c1c78b354fda7",
+       "type": "TRADE",
+       "usdc_size": 4700.0
+      },
+      {
+       "bio": "",
+       "condition_id": "0xa59e2e79dc1a564477c8d77dc32c30b37c0f4c8782c8cc062a7f788295cd91bb",
+       "event_slug": "wisconsin-presidential-election-winner",
+       "icon": "https://polymarket-upload.s3.us-east-2.amazonaws.com/trump+red+hq.jpeg",
+       "name": "Theo4",
+       "outcome": "Yes",
+       "outcome_index": 0,
+       "price": 0.47,
+       "profile_image": "",
+       "profile_image_optimized": "",
+       "proxy_wallet": "0x56687bf447db6ffa42ffe2204a05edaa20f55839",
+       "pseudonym": "Ironclad-Tenement",
+       "side": "BUY",
+       "size": 4744.09,
+       "slug": "will-a-republican-win-wisconsin-presidential-election",
+       "timestamp": 1730837493,
+       "title": "Will a Republican win Wisconsin Presidential Election?",
+       "token_id": "8506489790932625039746959405160059426243994232527626857062384302531008283468",
+       "transaction_hash": "0xa86c8a3ec70542e017ee9e7813f7d488337cb01c240c9b13256c1c78b354fda7",
+       "type": "TRADE",
+       "usdc_size": 2229.7223
+      }
+     ],
+     [
+      {
+       "bio": "",
+       "condition_id": "0xdd22472e552920b8438158ea7238bfadfa4f736aa4cee91a6b86c39ead110917",
+       "event_slug": "presidential-election-winner-2024",
+       "icon": "https://polymarket-upload.s3.us-east-2.amazonaws.com/will-donald-trump-win-the-2024-us-presidential-election-c83f01bb-5089-4222-9347-3f12673b6a48.png",
+       "name": "Theo4",
+       "outcome": "Yes",
+       "outcome_index": 0,
+       "price": 0.62,
+       "profile_image": "",
+       "profile_image_optimized": "",
+       "proxy_wallet": "0x56687bf447db6ffa42ffe2204a05edaa20f55839",
+       "pseudonym": "Ironclad-Tenement",
+       "side": "BUY",
+       "size": 2264.98,
+       "slug": "will-donald-trump-win-the-2024-us-presidential-election",
+       "timestamp": 1730836744,
+       "title": "Will Donald Trump win the 2024 US Presidential Election?",
+       "token_id": "21742633143463906290569050155826241533067272736897614950488156847949938836455",
+       "transaction_hash": "0x9789d019641be26a401bc4994ff5e0054fb8be40ee3d8cd3d3c743d5af561552",
+       "type": "TRADE",
+       "usdc_size": 1404.2876
+      },
+      {
+       "bio": "",
+       "condition_id": "0xdd22472e552920b8438158ea7238bfadfa4f736aa4cee91a6b86c39ead110917",
+       "event_slug": "presidential-election-winner-2024",
+       "icon": "https://polymarket-upload.s3.us-east-2.amazonaws.com/will-donald-trump-win-the-2024-us-presidential-election-c83f01bb-5089-4222-9347-3f12673b6a48.png",
+       "name": "Theo4",
+       "outcome": "Yes",
+       "outcome_index": 0,
+       "price": 0.62,
+       "profile_image": "",
+       "profile_image_optimized": "",
+       "proxy_wallet": "0x56687bf447db6ffa42ffe2204a05edaa20f55839",
+       "pseudonym": "Ironclad-Tenement",
+       "side": "BUY",
+       "size": 209.98,
+       "slug": "will-donald-trump-win-the-2024-us-presidential-election",
+       "timestamp": 1730836744,
+       "title": "Will Donald Trump win the 2024 US Presidential Election?",
+       "token_id": "21742633143463906290569050155826241533067272736897614950488156847949938836455",
+       "transaction_hash": "0x9789d019641be26a401bc4994ff5e0054fb8be40ee3d8cd3d3c743d5af561552",
+       "type": "TRADE",
+       "usdc_size": 130.1876
+      }
+     ]
+    ],
+    "dedupe_key_collisions": 12,
+    "has_more_after_last_page": true,
+    "identical_rows_repeated": 0,
+    "max_rows_sharing_one_second": 8,
+    "newest": 1731664609,
+    "oldest": 1729852228,
+    "page_sizes": [
+     500,
+     500,
+     500
+    ],
+    "params": {
+     "limit": 500,
+     "start": 1,
+     "user": "0x56687bf447db6ffa42ffe2204a05edaa20f55839"
+    },
+    "rows": 1500,
+    "shape_by_type": {
+     "MERGE": {
+      "absent": {},
+      "enum_values": {
+       "outcome_index": {
+        "999": 4
+       },
+       "side": {
+        "\"\"": 4
+       },
+       "type": {
+        "\"MERGE\"": 4
+       }
+      },
+      "keys": {
+       "bio": {
+        "str-empty": 4
+       },
+       "condition_id": {
+        "hex-lower(66)": 4
+       },
+       "event_slug": {
+        "str": 4
+       },
+       "icon": {
+        "str": 4
+       },
+       "name": {
+        "str": 4
+       },
+       "outcome": {
+        "str-empty": 4
+       },
+       "outcome_index": {
+        "int(3 digits)": 4
+       },
+       "price": {
+        "float": 4
+       },
+       "profile_image": {
+        "str-empty": 4
+       },
+       "profile_image_optimized": {
+        "str-empty": 4
+       },
+       "proxy_wallet": {
+        "hex-lower(42)": 4
+       },
+       "pseudonym": {
+        "str": 4
+       },
+       "side": {
+        "str-empty": 4
+       },
+       "size": {
+        "float": 4
+       },
+       "slug": {
+        "str": 4
+       },
+       "timestamp": {
+        "int(10 digits)": 4
+       },
+       "title": {
+        "str": 4
+       },
+       "token_id": {
+        "str-empty": 4
+       },
+       "transaction_hash": {
+        "hex-lower(66)": 4
+       },
+       "type": {
+        "str": 4
+       },
+       "usdc_size": {
+        "float": 4
+       }
+      },
+      "rows": 4
+     },
+     "REDEEM": {
+      "absent": {},
+      "enum_values": {
+       "outcome_index": {
+        "0": 8,
+        "1": 5
+       },
+       "side": {
+        "\"\"": 13
+       },
+       "type": {
+        "\"REDEEM\"": 13
+       }
+      },
+      "keys": {
+       "bio": {
+        "str-empty": 13
+       },
+       "condition_id": {
+        "hex-lower(66)": 13
+       },
+       "event_slug": {
+        "str": 13
+       },
+       "icon": {
+        "str": 13
+       },
+       "name": {
+        "str": 13
+       },
+       "outcome": {
+        "str": 13
+       },
+       "outcome_index": {
+        "int(1 digits)": 13
+       },
+       "price": {
+        "float": 13
+       },
+       "profile_image": {
+        "str-empty": 13
+       },
+       "profile_image_optimized": {
+        "str-empty": 13
+       },
+       "proxy_wallet": {
+        "hex-lower(42)": 13
+       },
+       "pseudonym": {
+        "str": 13
+       },
+       "side": {
+        "str-empty": 13
+       },
+       "size": {
+        "float": 13
+       },
+       "slug": {
+        "str": 13
+       },
+       "timestamp": {
+        "int(10 digits)": 13
+       },
+       "title": {
+        "str": 13
+       },
+       "token_id": {
+        "str-int": 13
+       },
+       "transaction_hash": {
+        "hex-lower(66)": 13
+       },
+       "type": {
+        "str": 13
+       },
+       "usdc_size": {
+        "float": 13
+       }
+      },
+      "rows": 13
+     },
+     "REWARD": {
+      "absent": {},
+      "enum_values": {
+       "outcome_index": {
+        "999": 4
+       },
+       "side": {
+        "\"\"": 4
+       },
+       "type": {
+        "\"REWARD\"": 4
+       }
+      },
+      "keys": {
+       "bio": {
+        "str-empty": 4
+       },
+       "condition_id": {
+        "str-empty": 4
+       },
+       "event_slug": {
+        "str-empty": 4
+       },
+       "icon": {
+        "str-empty": 4
+       },
+       "name": {
+        "str": 4
+       },
+       "outcome": {
+        "str-empty": 4
+       },
+       "outcome_index": {
+        "int(3 digits)": 4
+       },
+       "price": {
+        "float": 4
+       },
+       "profile_image": {
+        "str-empty": 4
+       },
+       "profile_image_optimized": {
+        "str-empty": 4
+       },
+       "proxy_wallet": {
+        "hex-lower(42)": 4
+       },
+       "pseudonym": {
+        "str": 4
+       },
+       "side": {
+        "str-empty": 4
+       },
+       "size": {
+        "float": 4
+       },
+       "slug": {
+        "str-empty": 4
+       },
+       "timestamp": {
+        "int(10 digits)": 4
+       },
+       "title": {
+        "str-empty": 4
+       },
+       "token_id": {
+        "str-empty": 4
+       },
+       "transaction_hash": {
+        "hex-lower(66)": 4
+       },
+       "type": {
+        "str": 4
+       },
+       "usdc_size": {
+        "float": 4
+       }
+      },
+      "rows": 4
+     },
+     "TRADE": {
+      "absent": {},
+      "enum_values": {
+       "outcome_index": {
+        "0": 1168,
+        "1": 311
+       },
+       "side": {
+        "\"BUY\"": 1479
+       },
+       "type": {
+        "\"TRADE\"": 1479
+       }
+      },
+      "keys": {
+       "bio": {
+        "str-empty": 1479
+       },
+       "condition_id": {
+        "hex-lower(66)": 1479
+       },
+       "event_slug": {
+        "str": 1479
+       },
+       "icon": {
+        "str": 1479
+       },
+       "name": {
+        "str": 1479
+       },
+       "outcome": {
+        "str": 1479
+       },
+       "outcome_index": {
+        "int(1 digits)": 1479
+       },
+       "price": {
+        "float": 1479
+       },
+       "profile_image": {
+        "str-empty": 1479
+       },
+       "profile_image_optimized": {
+        "str-empty": 1479
+       },
+       "proxy_wallet": {
+        "hex-lower(42)": 1479
+       },
+       "pseudonym": {
+        "str": 1479
+       },
+       "side": {
+        "str": 1479
+       },
+       "size": {
+        "float": 1479
+       },
+       "slug": {
+        "str": 1479
+       },
+       "timestamp": {
+        "int(10 digits)": 1479
+       },
+       "title": {
+        "str": 1479
+       },
+       "token_id": {
+        "str-int": 1479
+       },
+       "transaction_hash": {
+        "hex-lower(66)": 1479
+       },
+       "type": {
+        "str": 1479
+       },
+       "usdc_size": {
+        "float": 1479
+       }
+      },
+      "rows": 1479
+     }
+    },
+    "statuses": [
+     200,
+     200,
+     200
+    ],
+    "timestamps_non_decreasing": false,
+    "timestamps_non_increasing": true,
+    "types": {
+     "MERGE": 4,
+     "REDEEM": 13,
+     "REWARD": 4,
+     "TRADE": 1479
+    }
+   },
+   "window_bounds": {
+    "end_equals_mid_newest": 1730846019,
+    "end_is_inclusive": true,
+    "end_minus_one_newest": 1730842080,
+    "mid": 1730846019,
+    "rows_at_mid_in_first_page": 1,
+    "start_and_end_equal_all_at_mid": true,
+    "start_and_end_equal_rows": 1,
+    "start_equals_mid_oldest": 1730846019,
+    "start_is_inclusive": true
+   }
+  },
+  "positions": {
+   "closed": {
+    "current_size_below_one": 22,
+    "current_size_zero": 21,
+    "headers": {
+     "cache-control": "public, max-age=5",
+     "content-type": "application/json"
+    },
+    "ms": 155,
+    "pagination": {
+     "has_more": false,
+     "limit": 500,
+     "next_cursor": null,
+     "offset": 0
+    },
+    "params": {
+     "limit": 500,
+     "status": "CLOSED",
+     "user": "0x56687bf447db6ffa42ffe2204a05edaa20f55839"
+    },
+    "path": "/v2/positions",
+    "rows": [
+     {
+      "archived": false,
+      "avg_price": 0.3695,
+      "condition_id": "0xcd1b6b71a1964f15e2c14809594cbfa0d576270e8ef94c8c24913121097e09e5",
+      "current_price": 1.0,
+      "current_size": 0.0,
+      "current_value": 0.0,
+      "end_date": "2024-11-05",
+      "entry_cost_usdc": 0.0,
+      "entry_fees_usdc": 0.0,
+      "event_id": "903216",
+      "event_slug": "presidential-election-popular-vote-winner-2024",
+      "first_entry_at": 1728918952,
+      "icon": "https://polymarket-upload.s3.us-east-2.amazonaws.com/will-donald-trump-win-the-popular-vote-in-the-2024-presidential-election-20e4382f-7bc6-4d9b-aecc-d5f857dc3802.png",
+      "last_event_at": 1731423425,
+      "mergeable": false,
+      "name": "Theo4",
+      "negative_risk": true,
+      "opposite_outcome": "No",
+      "opposite_token_id": "52646153159016006621189163812433115969858888637703551736022048114666679879653",
+      "outcome": "Yes",
+      "outcome_index": 0,
+      "percent_pnl": 0.0,
+      "percent_realized_pnl": 170.5559,
+      "profile_image": "",
+      "proxy_wallet": "0x56687bf447db6ffa42ffe2204a05edaa20f55839",
+      "realized_pnl": 8303171.2313,
+      "redeemable": false,
+      "slug": "will-donald-trump-win-the-popular-vote-in-the-2024-presidential-election",
+      "status": "CLOSED",
+      "title": "Will Donald Trump win the popular vote in the 2024 Presidential Election?",
+      "token_id": "42699080635179861375280720242213672850141860123562672932351602811041149946128",
+      "total_cost_usdc": 0.0,
+      "total_pnl": 8303171.2313,
+      "total_size": 13175255.227,
+      "unrealized_pnl": 0.0,
+      "verified": false
+     },
+     {
+      "archived": false,
+      "avg_price": 0.3742,
+      "condition_id": "0x265366ede72d73e137b2b9095a6cdc9be6149290caa295738a95e3d881ad0865",
+      "current_price": 1.0,
+      "current_size": 0.0,
+      "current_value": 0.0,
+      "end_date": "2024-11-05",
+      "entry_cost_usdc": 0.0,
+      "entry_fees_usdc": 0.0,
+      "event_id": "903216",
+      "event_slug": "presidential-election-popular-vote-winner-2024",
+      "first_entry_at": 1729147327,
+      "icon": "https://polymarket-upload.s3.us-east-2.amazonaws.com/will-kamala-harris-win-the-popular-vote-in-the-2024-presidential-election-09127943-2d88-4d4a-9971-2e143ae86bcf.png",
+      "last_event_at": 1731423433,
+      "mergeable": false,
+      "name": "Theo4",
+      "negative_risk": true,
+      "opposite_outcome": "Yes",
+      "opposite_token_id": "21271000291843361249209065706097167029083067325856089903026951915683588703117",
+      "outcome": "No",
+      "outcome_index": 1,
+      "percent_pnl": 0.0,
+      "percent_realized_pnl": 167.1732,
+      "profile_image": "",
+      "proxy_wallet": "0x56687bf447db6ffa42ffe2204a05edaa20f55839",
+      "realized_pnl": 6061140.1804,
+      "redeemable": false,
+      "slug": "will-kamala-harris-win-the-popular-vote-in-the-2024-presidential-election",
+      "status": "CLOSED",
+      "title": "Kamala Harris wins the popular vote?",
+      "token_id": "43898019188443109254544011644141095748327433947336326565220861409147408981284",
+      "total_cost_usdc": 0.0,
+      "total_pnl": 6061140.1804,
+      "total_size": 9686804.5798,
+      "unrealized_pnl": 0.0,
+      "verified": false
+     },
+     {
+      "archived": false,
+      "avg_price": 0.6011,
+      "condition_id": "0xdd22472e552920b8438158ea7238bfadfa4f736aa4cee91a6b86c39ead110917",
+      "current_price": 1.0,
+      "current_size": 0.0,
+      "current_value": 0.0,
+      "end_date": "2024-11-05",
+      "entry_cost_usdc": 0.0,
+      "entry_fees_usdc": 0.0,
+      "event_id": "903193",
+      "event_slug": "presidential-election-winner-2024",
+      "first_entry_at": 1728920192,
+      "icon": "https://polymarket-upload.s3.us-east-2.amazonaws.com/will-donald-trump-win-the-2024-us-presidential-election-c83f01bb-5089-4222-9347-3f12673b6a48.png",
+      "last_event_at": 1730924464,
+      "mergeable": false,
+      "name": "Theo4",
+      "negative_risk": true,
+      "opposite_outcome": "No",
+      "opposite_token_id": "48331043336612883890938759509493159234755048973500640148014422747788308965732",
+      "outcome": "Yes",
+      "outcome_index": 0,
+      "percent_pnl": 0.0,
+      "percent_realized_pnl": 65.3665,
+      "profile_image": "",
+      "proxy_wallet": "0x56687bf447db6ffa42ffe2204a05edaa20f55839",
+      "realized_pnl": 5872184.9461,
+      "redeemable": false,
+      "slug": "will-donald-trump-win-the-2024-us-presidential-election",
+      "status": "CLOSED",
+      "title": "Will Donald Trump win the 2024 US Presidential Election?",
+      "token_id": "21742633143463906290569050155826241533067272736897614950488156847949938836455",
+      "total_cost_usdc": 0.0,
+      "total_pnl": 5872184.9461,
+      "total_size": 14943467.6577,
+      "unrealized_pnl": 0.0,
+      "verified": false
+     },
+     {
+      "archived": false,
+      "avg_price": 0.3487,
+      "condition_id": "0x2010ff3939e8e664dd57369aa907bbaa6d03ae18be27fe3ab2f4cdcb95a8b2ab",
+      "current_price": 1.0,
+      "current_size": 0.0,
+      "current_value": 0.0,
+      "end_date": "2024-11-05",
+      "entry_cost_usdc": 0.0,
+      "entry_fees_usdc": 0.0,
+      "event_id": "10656",
+      "event_slug": "which-party-wins-presidency-popular-vote",
+      "first_entry_at": 1728919972,
+      "icon": "https://polymarket-upload.s3.us-east-2.amazonaws.com/will-a-republican-win-the-popular-vote-and-the-presidency-Oel9nyrhQsmi.png",
+      "last_event_at": 1730969802,
+      "mergeable": false,
+      "name": "Theo4",
+      "negative_risk": true,
+      "opposite_outcome": "No",
+      "opposite_token_id": "92848768921367210485187039202894189254214421377536495082521089096497548879926",
+      "outcome": "Yes",
+      "outcome_index": 0,
+      "percent_pnl": 0.0,
+      "percent_realized_pnl": 186.7769,
+      "profile_image": "",
+      "proxy_wallet": "0x56687bf447db6ffa42ffe2204a05edaa20f55839",
+      "realized_pnl": 1164645.5628,
+      "redeemable": false,
+      "slug": "will-a-republican-win-the-popular-vote-and-the-presidency",
+      "status": "CLOSED",
+      "title": "Will a Republican win the popular vote and the Presidency? ",
+      "token_id": "67648321332889562720702742465853245863647268672651902649177972067583993370930",
+      "total_cost_usdc": 0.0,
+      "total_pnl": 1164645.5628,
+      "total_size": 1788194.2689,
+      "unrealized_pnl": 0.0,
+      "verified": false
+     }
+    ],
+    "shape": {
+     "absent": {},
+     "enum_values": {
+      "archived": {
+       "false": 22
+      },
+      "mergeable": {
+       "false": 22
+      },
+      "negative_risk": {
+       "false": 4,
+       "true": 18
+      },
+      "outcome_index": {
+       "0": 11,
+       "1": 11
+      },
+      "redeemable": {
+       "false": 21,
+       "true": 1
+      },
+      "status": {
+       "\"CLOSED\"": 22
+      },
+      "verified": {
+       "false": 22
+      }
+     },
+     "keys": {
+      "archived": {
+       "bool": 22
+      },
+      "avg_price": {
+       "float": 22
+      },
+      "condition_id": {
+       "hex-lower(66)": 22
+      },
+      "current_price": {
+       "float": 22
+      },
+      "current_size": {
+       "float": 22
+      },
+      "current_value": {
+       "float": 22
+      },
+      "end_date": {
+       "str": 22
+      },
+      "entry_cost_usdc": {
+       "float": 22
+      },
+      "entry_fees_usdc": {
+       "float": 22
+      },
+      "event_id": {
+       "str-int": 22
+      },
+      "event_slug": {
+       "str": 22
+      },
+      "first_entry_at": {
+       "int(10 digits)": 22
+      },
+      "icon": {
+       "str": 22
+      },
+      "last_event_at": {
+       "int(10 digits)": 22
+      },
+      "mergeable": {
+       "bool": 22
+      },
+      "name": {
+       "str": 22
+      },
+      "negative_risk": {
+       "bool": 22
+      },
+      "opposite_outcome": {
+       "str": 22
+      },
+      "opposite_token_id": {
+       "str-int": 22
+      },
+      "outcome": {
+       "str": 22
+      },
+      "outcome_index": {
+       "int(1 digits)": 22
+      },
+      "percent_pnl": {
+       "float": 22
+      },
+      "percent_realized_pnl": {
+       "float": 22
+      },
+      "profile_image": {
+       "str-empty": 22
+      },
+      "proxy_wallet": {
+       "hex-lower(42)": 22
+      },
+      "realized_pnl": {
+       "float": 22
+      },
+      "redeemable": {
+       "bool": 22
+      },
+      "slug": {
+       "str": 22
+      },
+      "status": {
+       "str": 22
+      },
+      "title": {
+       "str": 22
+      },
+      "token_id": {
+       "str-int": 22
+      },
+      "total_cost_usdc": {
+       "float": 22
+      },
+      "total_pnl": {
+       "float": 22
+      },
+      "total_size": {
+       "float": 22
+      },
+      "unrealized_pnl": {
+       "float": 22
+      },
+      "verified": {
+       "bool": 22
+      }
+     },
+     "rows": 22
+    },
+    "status": 200,
+    "statuses_reported": {
+     "CLOSED": 22
+    },
+    "top_level_keys": [
+     "data",
+     "pagination"
+    ]
+   },
+   "cursor_walk_limit_5": {
+    "has_more_after_last_page": false,
+    "identical_rows_repeated": 0,
+    "page_sizes": [
+     0
+    ],
+    "rows": 0,
+    "statuses": [
+     200
+    ]
+   },
+   "default": {
+    "current_size_below_one": 0,
+    "current_size_zero": 0,
+    "headers": {
+     "cache-control": "public, max-age=5",
+     "content-type": "application/json"
+    },
+    "ms": 155,
+    "pagination": {
+     "has_more": false,
+     "limit": 500,
+     "next_cursor": null,
+     "offset": 0
+    },
+    "params": {
+     "limit": 500,
+     "user": "0x56687bf447db6ffa42ffe2204a05edaa20f55839"
+    },
+    "path": "/v2/positions",
+    "rows": [],
+    "shape": {
+     "absent": {},
+     "enum_values": {},
+     "keys": {},
+     "rows": 0
+    },
+    "status": 200,
+    "statuses_reported": {},
+    "top_level_keys": [
+     "data",
+     "pagination"
+    ]
+   },
+   "default_vs_statuses": {
+    "default": 0,
+    "default_equals_open": true,
+    "default_equals_open_plus_redeemable": true,
+    "note": "only the first page (500) of each listing is compared",
+    "open": 0,
+    "redeemable": 0,
+    "redeemable_inside_default": 0
+   },
+   "include_archived": {
+    "current_size_below_one": 0,
+    "current_size_zero": 0,
+    "headers": {
+     "cache-control": "public, max-age=5",
+     "content-type": "application/json"
+    },
+    "ms": 167,
+    "pagination": {
+     "has_more": false,
+     "limit": 500,
+     "next_cursor": null,
+     "offset": 0
+    },
+    "params": {
+     "include_archived": "true",
+     "limit": 500,
+     "user": "0x56687bf447db6ffa42ffe2204a05edaa20f55839"
+    },
+    "path": "/v2/positions",
+    "shape": {
+     "absent": {},
+     "enum_values": {},
+     "keys": {},
+     "rows": 0
+    },
+    "status": 200,
+    "statuses_reported": {},
+    "top_level_keys": [
+     "data",
+     "pagination"
+    ]
+   },
+   "mergeable": {
+    "current_size_below_one": 0,
+    "current_size_zero": 0,
+    "headers": {
+     "cache-control": "public, max-age=5",
+     "content-type": "application/json"
+    },
+    "ms": 143,
+    "pagination": {
+     "has_more": false,
+     "limit": 500,
+     "next_cursor": null,
+     "offset": 0
+    },
+    "params": {
+     "limit": 500,
+     "status": "MERGEABLE",
+     "user": "0x56687bf447db6ffa42ffe2204a05edaa20f55839"
+    },
+    "path": "/v2/positions",
+    "shape": {
+     "absent": {},
+     "enum_values": {},
+     "keys": {},
+     "rows": 0
+    },
+    "status": 200,
+    "statuses_reported": {},
+    "top_level_keys": [
+     "data",
+     "pagination"
+    ]
+   },
+   "open": {
+    "current_size_below_one": 0,
+    "current_size_zero": 0,
+    "headers": {
+     "cache-control": "public, max-age=5",
+     "content-type": "application/json"
+    },
+    "ms": 129,
+    "pagination": {
+     "has_more": false,
+     "limit": 500,
+     "next_cursor": null,
+     "offset": 0
+    },
+    "params": {
+     "limit": 500,
+     "status": "OPEN",
+     "user": "0x56687bf447db6ffa42ffe2204a05edaa20f55839"
+    },
+    "path": "/v2/positions",
+    "shape": {
+     "absent": {},
+     "enum_values": {},
+     "keys": {},
+     "rows": 0
+    },
+    "status": 200,
+    "statuses_reported": {},
+    "top_level_keys": [
+     "data",
+     "pagination"
+    ]
+   },
+   "open_and_redeemable": {
+    "current_size_below_one": 0,
+    "current_size_zero": 0,
+    "error_body": {
+     "code": "invalid_request",
+     "error": "invalid position status: OPEN,REDEEMABLE",
+     "parameter": "status",
+     "retryable": false,
+     "trace_id": "ee63651c36a54462a0738a2ff98b00bf"
+    },
+    "headers": {
+     "content-type": "application/json"
+    },
+    "ms": 123,
+    "pagination": {},
+    "params": {
+     "limit": 500,
+     "status": "OPEN,REDEEMABLE",
+     "user": "0x56687bf447db6ffa42ffe2204a05edaa20f55839"
+    },
+    "path": "/v2/positions",
+    "shape": {
+     "absent": {},
+     "enum_values": {},
+     "keys": {},
+     "rows": 0
+    },
+    "status": 400,
+    "statuses_reported": {},
+    "top_level_keys": [
+     "code",
+     "error",
+     "parameter",
+     "retryable",
+     "trace_id"
+    ]
+   },
+   "redeemable": {
+    "current_size_below_one": 0,
+    "current_size_zero": 0,
+    "headers": {
+     "cache-control": "public, max-age=5",
+     "content-type": "application/json"
+    },
+    "ms": 155,
+    "pagination": {
+     "has_more": false,
+     "limit": 500,
+     "next_cursor": null,
+     "offset": 0
+    },
+    "params": {
+     "limit": 500,
+     "status": "REDEEMABLE",
+     "user": "0x56687bf447db6ffa42ffe2204a05edaa20f55839"
+    },
+    "path": "/v2/positions",
+    "shape": {
+     "absent": {},
+     "enum_values": {},
+     "keys": {},
+     "rows": 0
+    },
+    "status": 200,
+    "statuses_reported": {},
+    "top_level_keys": [
+     "data",
+     "pagination"
+    ]
+   },
+   "redeemable_lost": {
+    "current_size_below_one": 0,
+    "current_size_zero": 0,
+    "headers": {
+     "cache-control": "public, max-age=5",
+     "content-type": "application/json"
+    },
+    "ms": 138,
+    "pagination": {
+     "has_more": false,
+     "limit": 500,
+     "next_cursor": null,
+     "offset": 0
+    },
+    "params": {
+     "limit": 500,
+     "status": "REDEEMABLE_LOST",
+     "user": "0x56687bf447db6ffa42ffe2204a05edaa20f55839"
+    },
+    "path": "/v2/positions",
+    "shape": {
+     "absent": {},
+     "enum_values": {},
+     "keys": {},
+     "rows": 0
+    },
+    "status": 200,
+    "statuses_reported": {},
+    "top_level_keys": [
+     "data",
+     "pagination"
+    ]
+   },
+   "tokens_at_least_one": {
+    "current_size_below_one": 0,
+    "current_size_zero": 0,
+    "headers": {
+     "cache-control": "public, max-age=5",
+     "content-type": "application/json"
+    },
+    "ms": 150,
+    "pagination": {
+     "has_more": false,
+     "limit": 500,
+     "next_cursor": null,
+     "offset": 0
+    },
+    "params": {
+     "filter_amount": 1,
+     "filter_type": "TOKENS",
+     "limit": 500,
+     "user": "0x56687bf447db6ffa42ffe2204a05edaa20f55839"
+    },
+    "path": "/v2/positions",
+    "shape": {
+     "absent": {},
+     "enum_values": {},
+     "keys": {},
+     "rows": 0
+    },
+    "status": 200,
+    "statuses_reported": {},
+    "top_level_keys": [
+     "data",
+     "pagination"
+    ]
+   }
+  },
+  "scalars": {
+   "leaderboard_volume_unit": {
+    "standing_over_user_volume_shares": 1.0,
+    "standing_over_user_volume_usdc": 2.1435
+   },
+   "standing_all": {
+    "data_object_shape": {
+     "pnl": "float",
+     "profile_image": "str-empty",
+     "rank_pnl": "int(1 digits)",
+     "rank_volume": "int(3 digits)",
+     "user_id": "hex-lower(42)",
+     "user_name": "str",
+     "verified": "bool",
+     "volume": "float",
+     "x_username": "str-empty"
+    },
+    "headers": {
+     "content-type": "application/json"
+    },
+    "ms": 130,
+    "pagination": {},
+    "params": {
+     "category": "OVERALL",
+     "time_period": "all",
+     "user": "0x56687bf447db6ffa42ffe2204a05edaa20f55839"
+    },
+    "path": "/v2/leaderboard",
+    "shape": {
+     "absent": {},
+     "enum_values": {},
+     "keys": {},
+     "rows": 0
+    },
+    "status": 200,
+    "top_level_keys": [
+     "data"
+    ]
+   },
+   "standing_month": {
+    "data_is_null": true,
+    "headers": {
+     "content-type": "application/json"
+    },
+    "ms": 133,
+    "pagination": {},
+    "params": {
+     "category": "OVERALL",
+     "time_period": "month",
+     "user": "0x56687bf447db6ffa42ffe2204a05edaa20f55839"
+    },
+    "path": "/v2/leaderboard",
+    "shape": {
+     "absent": {},
+     "enum_values": {},
+     "keys": {},
+     "rows": 0
+    },
+    "status": 200,
+    "top_level_keys": [
+     "data"
+    ]
+   },
+   "standing_no_category": {
+    "data_object_shape": {
+     "pnl": "float",
+     "profile_image": "str-empty",
+     "rank_pnl": "int(1 digits)",
+     "rank_volume": "int(3 digits)",
+     "user_id": "hex-lower(42)",
+     "user_name": "str",
+     "verified": "bool",
+     "volume": "float",
+     "x_username": "str-empty"
+    },
+    "headers": {
+     "content-type": "application/json"
+    },
+    "ms": 141,
+    "pagination": {},
+    "params": {
+     "time_period": "all",
+     "user": "0x56687bf447db6ffa42ffe2204a05edaa20f55839"
+    },
+    "path": "/v2/leaderboard",
+    "shape": {
+     "absent": {},
+     "enum_values": {},
+     "keys": {},
+     "rows": 0
+    },
+    "status": 200,
+    "top_level_keys": [
+     "data"
+    ]
+   },
+   "user_stats": {
+    "data_object_shape": {
+     "all_time_pnl": "dict",
+     "biggest_win": "float",
+     "join_date": "int(10 digits)",
+     "proxy_wallet": "hex-lower(42)",
+     "trades": "int(2 digits)",
+     "views": "int(6 digits)"
+    },
+    "headers": {
+     "content-type": "application/json"
+    },
+    "ms": 113,
+    "pagination": {},
+    "params": {
+     "user": "0x56687bf447db6ffa42ffe2204a05edaa20f55839"
+    },
+    "path": "/v2/user-stats",
+    "shape": {
+     "absent": {},
+     "enum_values": {},
+     "keys": {},
+     "rows": 0
+    },
+    "status": 200,
+    "top_level_keys": [
+     "data"
+    ]
+   },
+   "user_volume_default": {
+    "data_object_shape": {
+     "trade_count": "int(5 digits)",
+     "volume": "float",
+     "volume_usdc": "float"
+    },
+    "headers": {
+     "content-type": "application/json"
+    },
+    "ms": 145,
+    "pagination": {},
+    "params": {
+     "user": "0x56687bf447db6ffa42ffe2204a05edaa20f55839"
+    },
+    "path": "/v2/user-volume",
+    "shape": {
+     "absent": {},
+     "enum_values": {},
+     "keys": {},
+     "rows": 0
+    },
+    "status": 200,
+    "top_level_keys": [
+     "data"
+    ]
+   },
+   "user_volume_full_history": {
+    "data_object_shape": {
+     "trade_count": "int(5 digits)",
+     "volume": "float",
+     "volume_usdc": "float"
+    },
+    "headers": {
+     "content-type": "application/json"
+    },
+    "ms": 144,
+    "pagination": {},
+    "params": {
+     "start": 1,
+     "user": "0x56687bf447db6ffa42ffe2204a05edaa20f55839"
+    },
+    "path": "/v2/user-volume",
+    "shape": {
+     "absent": {},
+     "enum_values": {},
+     "keys": {},
+     "rows": 0
+    },
+    "status": 200,
+    "top_level_keys": [
+     "data"
+    ]
+   },
+   "value": {
+    "data_object_shape": {
+     "proxy_wallet": "hex-lower(42)",
+     "value": "float"
+    },
+    "headers": {
+     "cache-control": "public, max-age=6",
+     "content-type": "application/json"
+    },
+    "ms": 148,
+    "pagination": {},
+    "params": {
+     "user": "0x56687bf447db6ffa42ffe2204a05edaa20f55839"
+    },
+    "path": "/v2/value",
+    "shape": {
+     "absent": {},
+     "enum_values": {},
+     "keys": {},
+     "rows": 0
+    },
+    "status": 200,
+    "top_level_keys": [
+     "data"
+    ]
+   }
+  }
+ },
+ "legacy_wallet": "0x56687bf447db6ffa42ffe2204a05edaa20f55839",
+ "requests": 117,
+ "schema_version": 1,
+ "started_at": "2026-11-17T07:16:08.217922+00:00",
+ "status_counts": {
+  "200": 97,
+  "400": 13,
+  "410": 6,
+  "503": 1
+ },
+ "unknown_wallet": {
+  "activity": {
+   "headers": {
+    "cache-control": "public, max-age=15",
+    "content-type": "application/json"
+   },
+   "ms": 303,
+   "pagination": {
+    "has_more": false,
+    "limit": 5,
+    "next_cursor": null,
+    "offset": 0
+   },
+   "params": {
+    "limit": 5,
+    "start": 1,
+    "user": "0x0000000000000000000000000000000000000001"
+   },
+   "path": "/v2/activity",
+   "shape": {
+    "absent": {},
+    "enum_values": {},
+    "keys": {},
+    "rows": 0
+   },
+   "status": 200,
+   "top_level_keys": [
+    "data",
+    "pagination"
+   ]
+  },
+  "no_user": {
+   "error_body": {
+    "code": "invalid_request",
+    "error": "required query param 'user' not provided",
+    "parameter": "user",
+    "retryable": false,
+    "trace_id": "ea9874bea3144ad79ff249765a2d18e7"
+   },
+   "headers": {
+    "content-type": "application/json"
+   },
+   "ms": 135,
+   "pagination": {},
+   "params": {
+    "limit": 5
+   },
+   "path": "/v2/activity",
+   "shape": {
+    "absent": {},
+    "enum_values": {},
+    "keys": {},
+    "rows": 0
+   },
+   "status": 400,
+   "top_level_keys": [
+    "code",
+    "error",
+    "parameter",
+    "retryable",
+    "trace_id"
+   ]
+  },
+  "positions": {
+   "headers": {
+    "cache-control": "public, max-age=5",
+    "content-type": "application/json"
+   },
+   "ms": 155,
+   "pagination": {
+    "has_more": false,
+    "limit": 5,
+    "next_cursor": null,
+    "offset": 0
+   },
+   "params": {
+    "limit": 5,
+    "user": "0x0000000000000000000000000000000000000001"
+   },
+   "path": "/v2/positions",
+   "shape": {
+    "absent": {},
+    "enum_values": {
+     "archived": {
+      "false": 2
+     },
+     "mergeable": {
+      "false": 2
+     },
+     "negative_risk": {
+      "true": 2
+     },
+     "outcome_index": {
+      "0": 1,
+      "1": 1
+     },
+     "redeemable": {
+      "true": 2
+     },
+     "status": {
+      "\"REDEEMABLE\"": 2
+     },
+     "verified": {
+      "false": 2
+     }
+    },
+    "keys": {
+     "archived": {
+      "bool": 2
+     },
+     "avg_price": {
+      "float": 2
+     },
+     "condition_id": {
+      "hex-lower(66)": 2
+     },
+     "current_price": {
+      "float": 2
+     },
+     "current_size": {
+      "float": 2
+     },
+     "current_value": {
+      "float": 2
+     },
+     "end_date": {
+      "str": 2
+     },
+     "entry_cost_usdc": {
+      "float": 2
+     },
+     "entry_fees_usdc": {
+      "float": 2
+     },
+     "event_id": {
+      "str-int": 2
+     },
+     "event_slug": {
+      "str": 2
+     },
+     "first_entry_at": {
+      "int(1 digits)": 2
+     },
+     "icon": {
+      "str": 2
+     },
+     "last_event_at": {
+      "int(1 digits)": 2
+     },
+     "mergeable": {
+      "bool": 2
+     },
+     "name": {
+      "str": 2
+     },
+     "negative_risk": {
+      "bool": 2
+     },
+     "opposite_outcome": {
+      "str": 2
+     },
+     "opposite_token_id": {
+      "str-int": 2
+     },
+     "outcome": {
+      "str": 2
+     },
+     "outcome_index": {
+      "int(1 digits)": 2
+     },
+     "percent_pnl": {
+      "float": 2
+     },
+     "percent_realized_pnl": {
+      "float": 2
+     },
+     "profile_image": {
+      "str-empty": 2
+     },
+     "proxy_wallet": {
+      "hex-lower(42)": 2
+     },
+     "realized_pnl": {
+      "float": 2
+     },
+     "redeemable": {
+      "bool": 2
+     },
+     "slug": {
+      "str": 2
+     },
+     "status": {
+      "str": 2
+     },
+     "title": {
+      "str": 2
+     },
+     "token_id": {
+      "str-int": 2
+     },
+     "total_cost_usdc": {
+      "float": 2
+     },
+     "total_pnl": {
+      "float": 2
+     },
+     "total_size": {
+      "float": 2
+     },
+     "unrealized_pnl": {
+      "float": 2
+     },
+     "verified": {
+      "bool": 2
+     }
+    },
+    "rows": 2
+   },
+   "status": 200,
+   "top_level_keys": [
+    "data",
+    "pagination"
+   ]
+  },
+  "standing": {
+   "data_is_null": true,
+   "headers": {
+    "content-type": "application/json"
+   },
+   "ms": 129,
+   "pagination": {},
+   "params": {
+    "time_period": "all",
+    "user": "0x0000000000000000000000000000000000000001"
+   },
+   "path": "/v2/leaderboard",
+   "shape": {
+    "absent": {},
+    "enum_values": {},
+    "keys": {},
+    "rows": 0
+   },
+   "status": 200,
+   "top_level_keys": [
+    "data"
+   ]
+  },
+  "uppercase_address": {
+   "headers": {
+    "cache-control": "public, max-age=15",
+    "content-type": "application/json"
+   },
+   "ms": 311,
+   "pagination": {
+    "has_more": true,
+    "limit": 2,
+    "next_cursor": "str(179)",
+    "offset": 0
+   },
+   "params": {
+    "limit": 2,
+    "start": 1,
+    "user": "0x56687BF447DB6FFA42FFE2204A05EDAA20F55839"
+   },
+   "path": "/v2/activity",
+   "shape": {
+    "absent": {},
+    "enum_values": {
+     "outcome_index": {
+      "1": 1,
+      "999": 1
+     },
+     "side": {
+      "\"\"": 2
+     },
+     "type": {
+      "\"MERGE\"": 1,
+      "\"REDEEM\"": 1
+     }
+    },
+    "keys": {
+     "bio": {
+      "str-empty": 2
+     },
+     "condition_id": {
+      "hex-lower(66)": 2
+     },
+     "event_slug": {
+      "str": 2
+     },
+     "icon": {
+      "str": 2
+     },
+     "name": {
+      "str": 2
+     },
+     "outcome": {
+      "str": 1,
+      "str-empty": 1
+     },
+     "outcome_index": {
+      "int(1 digits)": 1,
+      "int(3 digits)": 1
+     },
+     "price": {
+      "float": 2
+     },
+     "profile_image": {
+      "str-empty": 2
+     },
+     "profile_image_optimized": {
+      "str-empty": 2
+     },
+     "proxy_wallet": {
+      "hex-lower(42)": 2
+     },
+     "pseudonym": {
+      "str": 2
+     },
+     "side": {
+      "str-empty": 2
+     },
+     "size": {
+      "float": 2
+     },
+     "slug": {
+      "str": 2
+     },
+     "timestamp": {
+      "int(10 digits)": 2
+     },
+     "title": {
+      "str": 2
+     },
+     "token_id": {
+      "str-empty": 1,
+      "str-int": 1
+     },
+     "transaction_hash": {
+      "hex-lower(66)": 2
+     },
+     "type": {
+      "str": 2
+     },
+     "usdc_size": {
+      "float": 2
+     }
+    },
+    "rows": 2
+   },
+   "status": 200,
+   "top_level_keys": [
+    "data",
+    "pagination"
+   ]
+  },
+  "value": {
+   "data_object_shape": {
+    "proxy_wallet": "hex-lower(42)",
+    "value": "float"
+   },
+   "headers": {
+    "cache-control": "public, max-age=6",
+    "content-type": "application/json"
+   },
+   "ms": 147,
+   "pagination": {},
+   "params": {
+    "user": "0x0000000000000000000000000000000000000001"
+   },
+   "path": "/v2/value",
+   "shape": {
+    "absent": {},
+    "enum_values": {},
+    "keys": {},
+    "rows": 0
+   },
+   "status": 200,
+   "top_level_keys": [
+    "data"
+   ]
+  }
+ },
+ "v1_routes_now": {
+  "activity": {
+   "body": {
+    "docs": "https://docs.polymarket.com/api-reference/data-api/overview",
+    "error": "Data API v1 has been retired",
+    "migration": "https://data-api.polymarket.com/v2/"
+   },
+   "error": null,
+   "status": 410
+  },
+  "closed_positions": {
+   "body": {
+    "docs": "https://docs.polymarket.com/api-reference/data-api/overview",
+    "error": "Data API v1 has been retired",
+    "migration": "https://data-api.polymarket.com/v2/"
+   },
+   "error": null,
+   "status": 410
+  },
+  "leaderboard": {
+   "body": {
+    "docs": "https://docs.polymarket.com/api-reference/data-api/overview",
+    "error": "Data API v1 has been retired",
+    "migration": "https://data-api.polymarket.com/v2/"
+   },
+   "error": null,
+   "status": 410
+  },
+  "positions": {
+   "body": {
+    "docs": "https://docs.polymarket.com/api-reference/data-api/overview",
+    "error": "Data API v1 has been retired",
+    "migration": "https://data-api.polymarket.com/v2/"
+   },
+   "error": null,
+   "status": 410
+  },
+  "trades": {
+   "body": {
+    "docs": "https://docs.polymarket.com/api-reference/data-api/overview",
+    "error": "Data API v1 has been retired",
+    "migration": "https://data-api.polymarket.com/v2/"
+   },
+   "error": null,
+   "status": 410
+  },
+  "value": {
+   "body": {
+    "docs": "https://docs.polymarket.com/api-reference/data-api/overview",
+    "error": "Data API v1 has been retired",
+    "migration": "https://data-api.polymarket.com/v2/"
+   },
+   "error": null,
+   "status": 410
+  }
+ }
+}

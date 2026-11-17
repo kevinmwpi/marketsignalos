@@ -24,9 +24,9 @@ NOW = datetime(2026, 10, 3, 8, 15, tzinfo=UTC)
 
 
 def _trade(wallet: str, tx: str) -> dict[str, Any]:
-    return {"proxyWallet": wallet, "timestamp": 1_790_000_000, "conditionId": "0xm",
-            "type": "TRADE", "side": "BUY", "size": 10.0, "usdcSize": 4.0, "price": 0.4,
-            "outcomeIndex": 0, "transactionHash": tx}
+    return {"proxy_wallet": wallet, "timestamp": 1_790_000_000, "condition_id": "0xm",
+            "type": "TRADE", "side": "BUY", "size": 10.0, "usdc_size": 4.0, "price": 0.4,
+            "outcome_index": 0, "transaction_hash": tx}
 
 
 def _jsonl_wallets(path: Path) -> list[str]:

@@ -396,7 +396,6 @@ def _execute_stage(stage: str, data_dir: Path, config: PilotConfig,
                                          max_seconds=config.closing_lines_max_seconds,
                                          priority=horizon_diagnostic.priority_markets(data_dir))
     from .cohort import excluded_wallets
-    from .cohort_capture import activity_offset
     from .cohort_v1 import frozen_members, member_wallets
     from .runner import run_pipeline
     from .storage import ACTIVITY_GAPS_FILE, JsonActivityGapStore
@@ -406,7 +405,7 @@ def _execute_stage(stage: str, data_dir: Path, config: PilotConfig,
     # (2026-10-07 09:07).
     excluded = excluded_wallets(data_dir) - frozen_members(data_dir)
     members = member_wallets(data_dir) - excluded
-    offset = activity_offset(data_dir)  # rows past it are this run's (Stage 3 capture)
+    offset, cursor = _capture_start(data_dir)  # rows past it are uncaptured (Stage 3)
     result = run_pipeline(
         windows=[config.leaderboard_window], leaderboard_limit=config.leaderboard_limit,
         seed_metrics=(config.leaderboard_metric,),
@@ -425,6 +424,7 @@ def _execute_stage(stage: str, data_dir: Path, config: PilotConfig,
         else "succeeded"
     )
     result["cohort_v1_capture"] = _capture_signals(data_dir, offset, run_id)  # before compaction
+    result["capture_cursor"] = cursor
     result["positions_retention"] = _compact_positions(data_dir)
     result["activity_compaction"] = _compact_activity(data_dir)
     try:
@@ -443,6 +443,18 @@ POSITION_SNAPSHOTS_KEPT = 2
 # (jsonl_archive; Stage 3 step 0). About a day of collection at 2026-10-06 rates,
 # so segments stay few and the plain tail stays small.
 ACTIVITY_COMPACT_MIN_BYTES = 32 * 1024 * 1024
+
+
+def _capture_start(data_dir: Path) -> tuple[int, str]:
+    """Where capture starts reading (cohort_capture.capture_start). Like capture, it
+    never fails collection: without its saved place, only this run's rows are read."""
+    from .cohort_capture import activity_offset, capture_start
+
+    try:
+        return capture_start(data_dir)
+    except Exception as exc:  # noqa: BLE001 - any capture fault must leave collection intact
+        log.warning("Cohort capture cursor failed: %s", type(exc).__name__)
+        return activity_offset(data_dir), "failed"
 
 
 def _capture_signals(data_dir: Path, offset: int, run_id: str) -> dict[str, Any]:

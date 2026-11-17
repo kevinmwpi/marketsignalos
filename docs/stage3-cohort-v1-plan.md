@@ -228,18 +228,29 @@ the pilot, so they should land by about 2026-10-13 (S7).
      reached.
    - **Failures.** A capture failure is reported in the collection result and never
      fails collection.
-   - **Interrupted collections** *(found 2026-10-09; not fixed)*.
-     - **The loss.** Capture reads only the rows its own collection appended. A
+   - **Interrupted collections** *(found 2026-10-09; fixed 2026-10-15)*.
+     - **The loss.** Capture read only the rows its own collection appended. A
        collection that stops after storing member fills, whether killed or by an
        exception, never reaches capture. Recovery keeps the stored rows and rebuilds
-       the dedupe index, so later runs never store them again and no capture reads
-       them. Those fills never become signals, and nothing counts them.
-     - **Why it is not fixed.** Fixing capture changes what the pilot collects, which
-       restarts the 14-day count (S7). Bundle the fix with the next collection change.
+       the dedupe index, so later runs never stored them again and no capture read
+       them. Those fills never became signals, and nothing counted them.
      - **Its size.** At most one run's member fills per incident: about 0.2 signals
        an hour at the yield of the first two days (10 signals). Its timing is
        unrelated to outcomes, so it costs power, not validity.
-     - **Disclosure.** The evaluation counts these collections (`collections_stopped`,
+     - **The fix.** Bundled with the 2026-10-15 stuck-checkpoint fix (step 4), as
+       planned, so one restart of the 14-day count (S7) covers both. Capture now starts
+       where the last capture stopped reading. The place is saved to
+       `cohort-v1/capture_cursor.json` before collection appends, and moved on before
+       any signal is written. So the next collection reads what a stopped one stored:
+       fills still within the 3 h lag become signals, older ones count as stale, and no
+       signal is ever recorded twice. The place is checked against the file and the
+       bytes before it. When compaction or the cohort purge has replaced the file
+       after a finished capture, only the new collection's rows are read, as before.
+       Recovery cuts a torn row in place, so the place survives it.
+     - **What remains.** A capture that fails, or stops while writing, loses the
+       signals it had not written; the next capture does not read those rows again.
+     - **Disclosure.** The evaluation counts stopped collections (`collections_stopped`)
+       and the collections that read a stopped one's rows (`collections_resumed`,
        step 6).
    - **Verified live** *(2026-10-07)*. The field names were first checked against
      Polymarket's client source, because this build environment cannot reach
@@ -299,6 +310,16 @@ the pilot, so they should land by about 2026-10-13 (S7).
      (`docs/lean-pilot.md`). Late-filled trades are more than 3 h old, so capture
      counts them as stale fills, not signals. The fix changes what the pilot
      collects, so it restarts the 14-day count (S7).
+   - *Fixed 2026-11-17:* Polymarket retired Data API v1 on 2026-11-02 and every
+     wallet request answered HTTP 410 from 23:08 UTC. For fifteen days the pilot
+     stored no activity, the provisional list emptied and no signal was captured.
+     The collector now reads v2 (`docs/lean-pilot.md`). Trades made during the
+     outage are collected as history, but they are more than 3 h old, so capture
+     counts them as stale fills: the burn-in has no signals for 2026-11-02 to
+     2026-11-17. The fix changes how the pilot collects, so it restarts the 14-day
+     count (S7): the earliest freeze is 14 days after the deploy. Each provisional
+     build now also logs, as counts, why wallets are out of T2 (`diagnostic`), which
+     is logging only.
 5. **Power count and freeze.** Count T2's events over the last 14 days and set the
    window (S6). Commit the frozen config, record its hash in the blueprint, and open
    the window.
@@ -334,8 +355,9 @@ the pilot, so they should land by about 2026-10-13 (S7).
    - **Collection** *(added 2026-10-09, before the freeze)*. Read from the pilot's run
      and recovery receipts, for runs started in the window:
      - finished collections, and how many were partial;
-     - collections that stopped before finishing, meaning the runs recovery repaired.
-       Their stored member fills are lost and not counted (step 2);
+     - collections that stopped before finishing, meaning the runs recovery repaired,
+       and the collections that read what they stored (step 2; before 2026-10-15
+       those fills were lost and not counted);
      - the longest gap between finished collections, and how many gaps exceed the
        3 h detection lag;
      - stale fills;

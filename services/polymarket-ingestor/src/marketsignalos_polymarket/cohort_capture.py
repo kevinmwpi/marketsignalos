@@ -22,15 +22,19 @@ excluded from the evaluation, never priced at zero cost (plan S4). Fills older t
 ``MAX_DETECTION_LAG`` when seen (a wallet's first poll, or a run outage) are not
 signals: the follower would not have been following in real time. They are counted.
 
-Only rows appended during the current collection are read, from a byte offset taken
-before it, so the archive is never rescanned. Rows go to ``cohort-v1/signals.jsonl``
+Only rows no capture has read are read: from a byte offset saved before the collection
+appends and moved on before any signal is written, so the archive is never rescanned,
+rows a stopped collection stored are read by the next one, and no signal is recorded
+twice. Rows go to ``cohort-v1/signals.jsonl``
 with the cohort ID and config hash of the member list in force. Logs carry counts
 only, never prices or performance (plan step 2).
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
+import os
 import time
 from collections import Counter
 from collections.abc import Callable
@@ -54,6 +58,8 @@ log = logging.getLogger("marketsignalos.polymarket.cohort_capture")
 STAGE_DIR = "cohort-v1"
 SIGNALS_FILE = "signals.jsonl"
 ACTIVITY_FILE = "polymarket_activity.jsonl"
+CURSOR_FILE = "capture_cursor.json"  # where the next capture starts reading
+CURSOR_TAIL_BYTES = 256
 CLIP_USDC = 100.0
 MAX_DETECTION_LAG_SECONDS = 3 * 3600  # one skipped hourly run still counts
 MAX_SECONDS = 120.0
@@ -73,11 +79,16 @@ def activity_offset(data_dir: Path) -> int:
 def appended_rows(data_dir: Path, offset: int) -> list[dict[str, Any]]:
     """Activity rows written after ``offset``. A partial first line is skipped (the
     offset fell inside a row), as is a torn last line."""
+    return _appended(data_dir, offset)[0]
+
+
+def _appended(data_dir: Path, offset: int) -> tuple[list[dict[str, Any]], int]:
+    """:func:`appended_rows`, and the offset just after the last whole line read."""
     path = data_dir / ACTIVITY_FILE
+    start = max(0, offset)
     if not path.exists():
-        return []
+        return [], start
     with path.open("rb") as handle:
-        start = max(0, offset)
         if start:
             handle.seek(start - 1)
             aligned = handle.read(1) == b"\n"
@@ -96,7 +107,52 @@ def appended_rows(data_dir: Path, offset: int) -> list[dict[str, Any]]:
             continue
         if isinstance(row, dict):
             rows.append(row)
-    return rows
+    return rows, start + raw.rfind(b"\n") + 1
+
+
+def _place(path: Path, offset: int) -> dict[str, Any]:
+    """What must still match for a saved offset to mean the same place: the file, and
+    the bytes just before it. Compaction and the cohort purge replace the file, so the
+    offset is dropped; recovery only cuts a torn row after it, in place."""
+    with path.open("rb") as handle:
+        start = max(0, offset - CURSOR_TAIL_BYTES)
+        handle.seek(start)
+        tail = handle.read(offset - start)
+        inode = os.fstat(handle.fileno()).st_ino
+    return {"inode": inode, "offset": offset, "tail_sha256": hashlib.sha256(tail).hexdigest()}
+
+
+def save_cursor(data_dir: Path, offset: int) -> None:
+    """Record that capture has read the activity file up to ``offset``."""
+    from .lean_pilot import _atomic_json
+
+    path = data_dir / ACTIVITY_FILE
+    if path.exists():
+        _atomic_json(data_dir / STAGE_DIR / CURSOR_FILE, _place(path, offset))
+
+
+def capture_start(data_dir: Path) -> tuple[int, str]:
+    """Where this collection's capture starts reading, saved before collection appends.
+
+    ``continued``: the last capture read to the end. ``resumed``: a collection stopped
+    before its capture, so the rows it stored are read now; fills still within
+    ``MAX_DETECTION_LAG_SECONDS`` become signals and older ones are stale. ``reset``: no
+    saved place still matches (none yet, or compaction or the cohort purge replaced the
+    file after a finished capture), so only this collection's rows are read.
+    """
+    end = activity_offset(data_dir)
+    offset, status = end, "reset"
+    try:
+        saved = json.loads((data_dir / STAGE_DIR / CURSOR_FILE).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        saved = None
+    path = data_dir / ACTIVITY_FILE
+    place = saved.get("offset") if isinstance(saved, dict) else None
+    if (path.exists() and isinstance(place, int) and 0 <= place <= end
+            and _place(path, place) == saved):
+        offset, status = place, ("continued" if place == end else "resumed")
+    save_cursor(data_dir, offset)
+    return offset, status
 
 
 def walk_asks(asks: list[tuple[float, float]], clip_usdc: float, *, rate: float,
@@ -285,15 +341,19 @@ def capture(data_dir: Path, offset: int, run_id: str, *, get: GetJson | None = N
     """Record this run's new member signals. Returns counts only."""
     now_fn = now_fn or (lambda: datetime.now(UTC))
     stage = data_dir / STAGE_DIR
+    if activity_offset(data_dir) < offset:  # collection only appends; never guess
+        return {"status": "skipped", "reason": "activity file shrank during collection"}
+    rows, end = _appended(data_dir, offset)
+    # Read means consumed, before any signal is written: a kill while writing loses
+    # the rest, as before, but a later capture never records a signal twice.
+    save_cursor(data_dir, end)
     try:
         roster = json.loads((stage / "members.json").read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return {"status": "skipped", "reason": "no member list"}
     if not isinstance(roster, dict) or not roster.get("wallets"):
         return {"status": "skipped", "reason": "no members"}
-    if activity_offset(data_dir) < offset:  # collection only appends; never guess
-        return {"status": "skipped", "reason": "activity file shrank during collection"}
-    signals, stale = _signals(appended_rows(data_dir, offset), roster, now=now_fn())
+    signals, stale = _signals(rows, roster, now=now_fn())
     result: dict[str, Any] = {"status": "succeeded", "signals": len(signals),
                               "stale_fills": stale, "captured": 0, "excluded": {}}
     if not signals:

@@ -1,0 +1,1145 @@
+{
+  "generated": "2026-11-17",
+  "host": "data-api.polymarket.com",
+  "user_agent": "MarketSignalOS-polymarket/0.1",
+  "note": "Counts, booleans, key names, HTTP statuses, error text, request shapes and timings only.",
+  "row_key": [
+    "condition_id",
+    "outcome_index"
+  ],
+  "requests": {
+    "wallet_selection_and_small_reference_walks": 42,
+    "giant_reference_walk_and_step3": 152,
+    "steps_4_and_5": 37,
+    "follow_up": 15,
+    "docs": 2,
+    "total": 248,
+    "http_429_or_503": 0,
+    "retry_after_waits": []
+  },
+  "step1_docs": {
+    "sources": [
+      "https://docs.polymarket.com/api-reference/wallet/list-positions-for-a-user-or-market.md",
+      "https://data-api.polymarket.com/v2/openapi.json"
+    ],
+    "openapi_parameters": [
+      "user",
+      "condition",
+      "limit",
+      "cursor",
+      "status",
+      "event_id",
+      "title",
+      "filter_type",
+      "filter_amount",
+      "include_archived",
+      "sort_by",
+      "start",
+      "end",
+      "sort_direction"
+    ],
+    "filter_type": "`CASH` or `TOKENS`; defaults to `TOKENS` (the /v2/trades-homogenized filter pair, replacing the former `size_threshold`).",
+    "filter_amount": "The filter floor. `TOKENS`: minimum CURRENT holding in shares (defaults to the 0.1 dust floor; applies to `OPEN`/`REDEEMABLE`; a user's `CLOSED` set is not narrowed by it, and on a market anchor it moves the OPEN/CLOSED boundary). `CASH`: minimum mark-to-market `current_value` in USDC, on top of the token dust floor. Invalid values fall back to the default.",
+    "filter_applies_to_redeemable_rows": "TOKENS: stated (\"applies to `OPEN`/`REDEEMABLE`\"). CASH: not stated.",
+    "start": "Inclusive lower bound on `last_event_at`, epoch seconds; omit or `0` for unbounded (the `/v2/activity` + `/v2/trades` vocabulary).",
+    "end": "Inclusive upper bound on `last_event_at`, epoch seconds; omit or `0` for unbounded. A position with no native economics carries no `last_event_at` and is therefore **excluded by any bound**, in either direction; a window asks which positions moved inside it, and a row with no clock has no answer. Unbounded requests still serve those rows.",
+    "sort_by": "One of `CURRENT_VALUE`, `PRICE`, `TOKENS`, `UNREALIZED_PNL`, `REALIZED_PNL`, `TOTAL_PNL`, or `TIMESTAMP` (the row's `last_event_at`). `PRICE` ranks by the response's effective `current_price` on every supported anchor and status. On `REDEEMABLE`, the existing winners-first partition remains ahead of the requested price order. The default follows the status: `CURRENT_VALUE` for `OPEN`/`REDEEMABLE`, `REALIZED_PNL` for `CLOSED`. On a user's `CLOSED` positions, `TOKENS`, `CURRENT_VALUE`, `PRICE` and `UNREALIZED_PNL` describe a holding that no longer exists, so those pages are served in `REALIZED_PNL` order.",
+    "sort_direction": "`ASC` or `DESC`; defaults to `DESC`.",
+    "parameter_excluding_resolved_or_redeemable": "not stated (no such parameter; `status` only narrows TO `REDEEMABLE`, `REDEEMABLE_LOST` or `MERGEABLE`; `OPEN` is documented as the superset)",
+    "mergeable": "`MERGEABLE` is `OPEN` narrowed to live complementary pairs (conditions where the wallet holds >= 2 servable-live tokens) and defaults to `TOKENS`; it is user-scoped, so a market-anchored request renders as `OPEN`."
+  },
+  "wallets": {
+    "G": "rank 1 of /v2/leaderboard?category=OVERALL&time_period=month&sort_by=PNL",
+    "S1": "rank 2",
+    "S2": "rank 6",
+    "S3": "rank 9",
+    "selection": [
+      {
+        "rank": 2,
+        "pages_read": 3,
+        "ended_within_cap": true
+      },
+      {
+        "rank": 3,
+        "pages_read": 7,
+        "ended_within_cap": false
+      },
+      {
+        "rank": 4,
+        "pages_read": 7,
+        "ended_within_cap": false
+      },
+      {
+        "rank": 5,
+        "pages_read": 7,
+        "ended_within_cap": false
+      },
+      {
+        "rank": 6,
+        "pages_read": 1,
+        "ended_within_cap": true
+      },
+      {
+        "rank": 7,
+        "pages_read": 7,
+        "ended_within_cap": false
+      },
+      {
+        "rank": 8,
+        "pages_read": 7,
+        "ended_within_cap": false
+      },
+      {
+        "rank": 9,
+        "pages_read": 2,
+        "ended_within_cap": true
+      }
+    ]
+  },
+  "step2_reference": {
+    "request": "/v2/positions?user=W&limit=500&filter_type=TOKENS&filter_amount=1&sort_by=TOKENS&sort_direction=DESC",
+    "wallets": {
+      "G": {
+        "pages": 108,
+        "rows": 53667,
+        "walk_finished": true,
+        "http_statuses": {
+          "200": 108
+        },
+        "seconds_per_request": {
+          "min": 0.208,
+          "median": 0.316,
+          "max": 0.72
+        },
+        "by_status": {
+          "REDEEMABLE": 48173,
+          "OPEN": 5494
+        },
+        "redeemable_true": 48173,
+        "redeemable_false": 5494,
+        "redeemable_false_current_value_eq_0": 1,
+        "redeemable_false_current_value_lt_0_001": 16,
+        "redeemable_false_current_price_eq_0": 1,
+        "redeemable_false_status_counts": {
+          "OPEN": 5494
+        },
+        "redeemable_true_current_value_eq_0": 48173,
+        "redeemable_true_current_value_gt_0": 0,
+        "keys_served_twice": 1,
+        "distinct_keys": 53666,
+        "current_size_lt_1": 0,
+        "current_size_non_increasing": true,
+        "leaderboard_rank": 1
+      },
+      "S1": {
+        "pages": 3,
+        "rows": 1061,
+        "walk_finished": true,
+        "http_statuses": {
+          "200": 3
+        },
+        "seconds_per_request": {
+          "min": 0.168,
+          "median": 0.269,
+          "max": 0.29
+        },
+        "by_status": {
+          "REDEEMABLE": 1010,
+          "OPEN": 51
+        },
+        "redeemable_true": 1010,
+        "redeemable_false": 51,
+        "redeemable_false_current_value_eq_0": 0,
+        "redeemable_false_current_value_lt_0_001": 0,
+        "redeemable_false_current_price_eq_0": 0,
+        "redeemable_false_status_counts": {
+          "OPEN": 51
+        },
+        "redeemable_true_current_value_eq_0": 1010,
+        "redeemable_true_current_value_gt_0": 0,
+        "keys_served_twice": 0,
+        "distinct_keys": 1061,
+        "current_size_lt_1": 0,
+        "current_size_non_increasing": true,
+        "leaderboard_rank": 2
+      },
+      "S2": {
+        "pages": 1,
+        "rows": 42,
+        "walk_finished": true,
+        "http_statuses": {
+          "200": 1
+        },
+        "seconds_per_request": {
+          "min": 0.358,
+          "median": 0.358,
+          "max": 0.358
+        },
+        "by_status": {
+          "OPEN": 39,
+          "REDEEMABLE": 3
+        },
+        "redeemable_true": 3,
+        "redeemable_false": 39,
+        "redeemable_false_current_value_eq_0": 0,
+        "redeemable_false_current_value_lt_0_001": 0,
+        "redeemable_false_current_price_eq_0": 0,
+        "redeemable_false_status_counts": {
+          "OPEN": 39
+        },
+        "redeemable_true_current_value_eq_0": 2,
+        "redeemable_true_current_value_gt_0": 1,
+        "keys_served_twice": 0,
+        "distinct_keys": 42,
+        "current_size_lt_1": 0,
+        "current_size_non_increasing": true,
+        "leaderboard_rank": 6
+      },
+      "S3": {
+        "pages": 2,
+        "rows": 666,
+        "walk_finished": true,
+        "http_statuses": {
+          "200": 2
+        },
+        "seconds_per_request": {
+          "min": 0.178,
+          "median": 0.269,
+          "max": 0.36
+        },
+        "by_status": {
+          "REDEEMABLE": 661,
+          "OPEN": 5
+        },
+        "redeemable_true": 661,
+        "redeemable_false": 5,
+        "redeemable_false_current_value_eq_0": 0,
+        "redeemable_false_current_value_lt_0_001": 0,
+        "redeemable_false_current_price_eq_0": 0,
+        "redeemable_false_status_counts": {
+          "OPEN": 5
+        },
+        "redeemable_true_current_value_eq_0": 661,
+        "redeemable_true_current_value_gt_0": 0,
+        "keys_served_twice": 0,
+        "distinct_keys": 666,
+        "current_size_lt_1": 0,
+        "current_size_non_increasing": true,
+        "leaderboard_rank": 9
+      }
+    }
+  },
+  "step3_value_filter": {
+    "request": "/v2/positions?user=W&limit=500&filter_type=CASH&filter_amount=A&sort_by=TOKENS&sort_direction=DESC",
+    "page_cap": 30,
+    "comparison": "keys of filtered rows with redeemable false and current_size >= 1, against LIVE(W) = keys of redeemable-false rows of the step 2 walk; lost_* counts use the step 2 row's current_value",
+    "wallets": {
+      "S1": {
+        "1e-06": {
+          "pages": 1,
+          "rows": 51,
+          "walk_finished": true,
+          "error_text": null,
+          "http_statuses": {
+            "200": 1
+          },
+          "seconds_per_request": {
+            "min": 0.19,
+            "median": 0.19,
+            "max": 0.19
+          },
+          "by_status": {
+            "OPEN": 51
+          },
+          "redeemable_true": 0,
+          "redeemable_false": 51,
+          "current_value_lt_A": 0,
+          "current_value_eq_0": 0,
+          "current_size_lt_1": 0,
+          "current_size_lt_0_1": 0,
+          "keys_served_twice": 0,
+          "current_size_non_increasing": true,
+          "live_reference_keys": 51,
+          "filtered_live_keys_size_ge_1": 51,
+          "only_in_live_reference": 0,
+          "only_in_filtered": 0,
+          "lost_current_value_eq_0": 0,
+          "lost_current_value_between_0_and_A": 0,
+          "lost_unexplained": 0,
+          "filtered_redeemable_false_size_lt_1": 0
+        },
+        "0.001": {
+          "pages": 1,
+          "rows": 51,
+          "walk_finished": true,
+          "error_text": null,
+          "http_statuses": {
+            "200": 1
+          },
+          "seconds_per_request": {
+            "min": 0.181,
+            "median": 0.181,
+            "max": 0.181
+          },
+          "by_status": {
+            "OPEN": 51
+          },
+          "redeemable_true": 0,
+          "redeemable_false": 51,
+          "current_value_lt_A": 0,
+          "current_value_eq_0": 0,
+          "current_size_lt_1": 0,
+          "current_size_lt_0_1": 0,
+          "keys_served_twice": 0,
+          "current_size_non_increasing": true,
+          "live_reference_keys": 51,
+          "filtered_live_keys_size_ge_1": 51,
+          "only_in_live_reference": 0,
+          "only_in_filtered": 0,
+          "lost_current_value_eq_0": 0,
+          "lost_current_value_between_0_and_A": 0,
+          "lost_unexplained": 0,
+          "filtered_redeemable_false_size_lt_1": 0
+        },
+        "0.01": {
+          "pages": 1,
+          "rows": 51,
+          "walk_finished": true,
+          "error_text": null,
+          "http_statuses": {
+            "200": 1
+          },
+          "seconds_per_request": {
+            "min": 0.179,
+            "median": 0.179,
+            "max": 0.179
+          },
+          "by_status": {
+            "OPEN": 51
+          },
+          "redeemable_true": 0,
+          "redeemable_false": 51,
+          "current_value_lt_A": 0,
+          "current_value_eq_0": 0,
+          "current_size_lt_1": 0,
+          "current_size_lt_0_1": 0,
+          "keys_served_twice": 0,
+          "current_size_non_increasing": true,
+          "live_reference_keys": 51,
+          "filtered_live_keys_size_ge_1": 51,
+          "only_in_live_reference": 0,
+          "only_in_filtered": 0,
+          "lost_current_value_eq_0": 0,
+          "lost_current_value_between_0_and_A": 0,
+          "lost_unexplained": 0,
+          "filtered_redeemable_false_size_lt_1": 0
+        }
+      },
+      "S2": {
+        "1e-06": {
+          "pages": 1,
+          "rows": 40,
+          "walk_finished": true,
+          "error_text": null,
+          "http_statuses": {
+            "200": 1
+          },
+          "seconds_per_request": {
+            "min": 4.809,
+            "median": 4.809,
+            "max": 4.809
+          },
+          "by_status": {
+            "OPEN": 39,
+            "REDEEMABLE": 1
+          },
+          "redeemable_true": 1,
+          "redeemable_false": 39,
+          "current_value_lt_A": 0,
+          "current_value_eq_0": 0,
+          "current_size_lt_1": 0,
+          "current_size_lt_0_1": 0,
+          "keys_served_twice": 0,
+          "current_size_non_increasing": true,
+          "live_reference_keys": 39,
+          "filtered_live_keys_size_ge_1": 39,
+          "only_in_live_reference": 0,
+          "only_in_filtered": 0,
+          "lost_current_value_eq_0": 0,
+          "lost_current_value_between_0_and_A": 0,
+          "lost_unexplained": 0,
+          "filtered_redeemable_false_size_lt_1": 0
+        },
+        "0.001": {
+          "pages": 1,
+          "rows": 40,
+          "walk_finished": true,
+          "error_text": null,
+          "http_statuses": {
+            "200": 1
+          },
+          "seconds_per_request": {
+            "min": 5.049,
+            "median": 5.049,
+            "max": 5.049
+          },
+          "by_status": {
+            "OPEN": 39,
+            "REDEEMABLE": 1
+          },
+          "redeemable_true": 1,
+          "redeemable_false": 39,
+          "current_value_lt_A": 0,
+          "current_value_eq_0": 0,
+          "current_size_lt_1": 0,
+          "current_size_lt_0_1": 0,
+          "keys_served_twice": 0,
+          "current_size_non_increasing": true,
+          "live_reference_keys": 39,
+          "filtered_live_keys_size_ge_1": 39,
+          "only_in_live_reference": 0,
+          "only_in_filtered": 0,
+          "lost_current_value_eq_0": 0,
+          "lost_current_value_between_0_and_A": 0,
+          "lost_unexplained": 0,
+          "filtered_redeemable_false_size_lt_1": 0
+        },
+        "0.01": {
+          "pages": 1,
+          "rows": 32,
+          "walk_finished": true,
+          "error_text": null,
+          "http_statuses": {
+            "200": 1
+          },
+          "seconds_per_request": {
+            "min": 0.429,
+            "median": 0.429,
+            "max": 0.429
+          },
+          "by_status": {
+            "OPEN": 31,
+            "REDEEMABLE": 1
+          },
+          "redeemable_true": 1,
+          "redeemable_false": 31,
+          "current_value_lt_A": 0,
+          "current_value_eq_0": 0,
+          "current_size_lt_1": 0,
+          "current_size_lt_0_1": 0,
+          "keys_served_twice": 0,
+          "current_size_non_increasing": true,
+          "live_reference_keys": 39,
+          "filtered_live_keys_size_ge_1": 31,
+          "only_in_live_reference": 8,
+          "only_in_filtered": 0,
+          "lost_current_value_eq_0": 0,
+          "lost_current_value_between_0_and_A": 8,
+          "lost_unexplained": 0,
+          "filtered_redeemable_false_size_lt_1": 0
+        }
+      },
+      "S3": {
+        "1e-06": {
+          "pages": 1,
+          "rows": 7,
+          "walk_finished": true,
+          "error_text": null,
+          "http_statuses": {
+            "200": 1
+          },
+          "seconds_per_request": {
+            "min": 0.165,
+            "median": 0.165,
+            "max": 0.165
+          },
+          "by_status": {
+            "OPEN": 5,
+            "REDEEMABLE": 2
+          },
+          "redeemable_true": 2,
+          "redeemable_false": 5,
+          "current_value_lt_A": 0,
+          "current_value_eq_0": 0,
+          "current_size_lt_1": 2,
+          "current_size_lt_0_1": 0,
+          "keys_served_twice": 0,
+          "current_size_non_increasing": true,
+          "live_reference_keys": 5,
+          "filtered_live_keys_size_ge_1": 5,
+          "only_in_live_reference": 0,
+          "only_in_filtered": 0,
+          "lost_current_value_eq_0": 0,
+          "lost_current_value_between_0_and_A": 0,
+          "lost_unexplained": 0,
+          "filtered_redeemable_false_size_lt_1": 0
+        },
+        "0.001": {
+          "pages": 1,
+          "rows": 7,
+          "walk_finished": true,
+          "error_text": null,
+          "http_statuses": {
+            "200": 1
+          },
+          "seconds_per_request": {
+            "min": 0.167,
+            "median": 0.167,
+            "max": 0.167
+          },
+          "by_status": {
+            "OPEN": 5,
+            "REDEEMABLE": 2
+          },
+          "redeemable_true": 2,
+          "redeemable_false": 5,
+          "current_value_lt_A": 0,
+          "current_value_eq_0": 0,
+          "current_size_lt_1": 2,
+          "current_size_lt_0_1": 0,
+          "keys_served_twice": 0,
+          "current_size_non_increasing": true,
+          "live_reference_keys": 5,
+          "filtered_live_keys_size_ge_1": 5,
+          "only_in_live_reference": 0,
+          "only_in_filtered": 0,
+          "lost_current_value_eq_0": 0,
+          "lost_current_value_between_0_and_A": 0,
+          "lost_unexplained": 0,
+          "filtered_redeemable_false_size_lt_1": 0
+        },
+        "0.01": {
+          "pages": 1,
+          "rows": 7,
+          "walk_finished": true,
+          "error_text": null,
+          "http_statuses": {
+            "200": 1
+          },
+          "seconds_per_request": {
+            "min": 0.176,
+            "median": 0.176,
+            "max": 0.176
+          },
+          "by_status": {
+            "OPEN": 5,
+            "REDEEMABLE": 2
+          },
+          "redeemable_true": 2,
+          "redeemable_false": 5,
+          "current_value_lt_A": 0,
+          "current_value_eq_0": 0,
+          "current_size_lt_1": 2,
+          "current_size_lt_0_1": 0,
+          "keys_served_twice": 0,
+          "current_size_non_increasing": true,
+          "live_reference_keys": 5,
+          "filtered_live_keys_size_ge_1": 5,
+          "only_in_live_reference": 0,
+          "only_in_filtered": 0,
+          "lost_current_value_eq_0": 0,
+          "lost_current_value_between_0_and_A": 0,
+          "lost_unexplained": 0,
+          "filtered_redeemable_false_size_lt_1": 0
+        }
+      },
+      "G": {
+        "1e-06": {
+          "pages": 12,
+          "rows": 5750,
+          "walk_finished": true,
+          "error_text": null,
+          "http_statuses": {
+            "200": 12
+          },
+          "seconds_per_request": {
+            "min": 0.214,
+            "median": 0.477,
+            "max": 0.918
+          },
+          "by_status": {
+            "OPEN": 5747,
+            "REDEEMABLE": 3
+          },
+          "redeemable_true": 3,
+          "redeemable_false": 5747,
+          "current_value_lt_A": 0,
+          "current_value_eq_0": 0,
+          "current_size_lt_1": 253,
+          "current_size_lt_0_1": 0,
+          "keys_served_twice": 1,
+          "current_size_non_increasing": true,
+          "live_reference_keys": 5493,
+          "filtered_live_keys_size_ge_1": 5496,
+          "only_in_live_reference": 2,
+          "only_in_filtered": 5,
+          "lost_current_value_eq_0": 1,
+          "lost_current_value_between_0_and_A": 0,
+          "lost_unexplained": 1,
+          "filtered_redeemable_false_size_lt_1": 250
+        },
+        "0.001": {
+          "pages": 12,
+          "rows": 5685,
+          "walk_finished": true,
+          "error_text": null,
+          "http_statuses": {
+            "200": 12
+          },
+          "seconds_per_request": {
+            "min": 0.208,
+            "median": 0.524,
+            "max": 0.927
+          },
+          "by_status": {
+            "OPEN": 5682,
+            "REDEEMABLE": 3
+          },
+          "redeemable_true": 3,
+          "redeemable_false": 5682,
+          "current_value_lt_A": 0,
+          "current_value_eq_0": 0,
+          "current_size_lt_1": 204,
+          "current_size_lt_0_1": 0,
+          "keys_served_twice": 1,
+          "current_size_non_increasing": true,
+          "live_reference_keys": 5493,
+          "filtered_live_keys_size_ge_1": 5480,
+          "only_in_live_reference": 18,
+          "only_in_filtered": 5,
+          "lost_current_value_eq_0": 1,
+          "lost_current_value_between_0_and_A": 15,
+          "lost_unexplained": 2,
+          "filtered_redeemable_false_size_lt_1": 201
+        },
+        "0.01": {
+          "pages": 11,
+          "rows": 5087,
+          "walk_finished": true,
+          "error_text": null,
+          "http_statuses": {
+            "200": 11
+          },
+          "seconds_per_request": {
+            "min": 0.193,
+            "median": 0.509,
+            "max": 0.865
+          },
+          "by_status": {
+            "OPEN": 5084,
+            "REDEEMABLE": 3
+          },
+          "redeemable_true": 3,
+          "redeemable_false": 5084,
+          "current_value_lt_A": 0,
+          "current_value_eq_0": 0,
+          "current_size_lt_1": 145,
+          "current_size_lt_0_1": 0,
+          "keys_served_twice": 1,
+          "current_size_non_increasing": true,
+          "live_reference_keys": 5493,
+          "filtered_live_keys_size_ge_1": 4941,
+          "only_in_live_reference": 552,
+          "only_in_filtered": 0,
+          "lost_current_value_eq_0": 1,
+          "lost_current_value_between_0_and_A": 547,
+          "lost_unexplained": 4,
+          "filtered_redeemable_false_size_lt_1": 142
+        }
+      }
+    },
+    "G_differences_explained": {
+      "1e-06": {
+        "unexplained": 1,
+        "unexplained_present_in_filtered_as_redeemable": 0,
+        "unexplained_present_in_filtered_size_lt_1": 0,
+        "unexplained_absent_from_filtered": 1,
+        "unexplained_absent_ref_value_lt_10xA": 0,
+        "unexplained_absent_ref_value_lt_0_02": 0,
+        "lost_value_eq_0_ref_price_eq_0": 1,
+        "extra": 5,
+        "extra_absent_from_reference": 5,
+        "extra_redeemable_true_in_reference": 0,
+        "dup_keys": [
+          [
+            "OPEN",
+            "OPEN"
+          ]
+        ],
+        "redeemable_true_rows_value_gt_0": 3,
+        "redeemable_true_rows_price_eq_1": 3,
+        "filtered_keys_absent_from_reference_size_lt_1": 253,
+        "filtered_keys_absent_from_reference_size_ge_1": 5
+      },
+      "0.001": {
+        "unexplained": 2,
+        "unexplained_present_in_filtered_as_redeemable": 0,
+        "unexplained_present_in_filtered_size_lt_1": 0,
+        "unexplained_absent_from_filtered": 2,
+        "unexplained_absent_ref_value_lt_10xA": 0,
+        "unexplained_absent_ref_value_lt_0_02": 0,
+        "lost_value_eq_0_ref_price_eq_0": 1,
+        "extra": 5,
+        "extra_absent_from_reference": 5,
+        "extra_redeemable_true_in_reference": 0,
+        "dup_keys": [
+          [
+            "OPEN",
+            "OPEN"
+          ]
+        ],
+        "redeemable_true_rows_value_gt_0": 3,
+        "redeemable_true_rows_price_eq_1": 3,
+        "filtered_keys_absent_from_reference_size_lt_1": 204,
+        "filtered_keys_absent_from_reference_size_ge_1": 5
+      },
+      "0.01": {
+        "unexplained": 4,
+        "unexplained_present_in_filtered_as_redeemable": 0,
+        "unexplained_present_in_filtered_size_lt_1": 0,
+        "unexplained_absent_from_filtered": 4,
+        "unexplained_absent_ref_value_lt_10xA": 2,
+        "unexplained_absent_ref_value_lt_0_02": 2,
+        "lost_value_eq_0_ref_price_eq_0": 1,
+        "extra": 0,
+        "extra_absent_from_reference": 0,
+        "extra_redeemable_true_in_reference": 0,
+        "dup_keys": [
+          [
+            "OPEN",
+            "OPEN"
+          ]
+        ],
+        "redeemable_true_rows_value_gt_0": 3,
+        "redeemable_true_rows_price_eq_1": 3,
+        "filtered_keys_absent_from_reference_size_lt_1": 145,
+        "filtered_keys_absent_from_reference_size_ge_1": 0
+      }
+    }
+  },
+  "step4_other_candidates": {
+    "G": {
+      "plain": {
+        "http_status": 200,
+        "rows": 500,
+        "by_status": {
+          "REDEEMABLE": 469,
+          "OPEN": 31
+        },
+        "redeemable_true": 469,
+        "seconds": 0.584,
+        "has_next_cursor": true
+      },
+      "a_redeemable_false": {
+        "http_status": 200,
+        "rows": 500,
+        "by_status": {
+          "REDEEMABLE": 469,
+          "OPEN": 31
+        },
+        "redeemable_true": 469,
+        "seconds": 0.155,
+        "has_next_cursor": true,
+        "same_keys_same_order_as_plain": true,
+        "keys_only_in_plain": 0,
+        "keys_only_here": 0
+      },
+      "b_redeemable_false_status_open": {
+        "http_status": 200,
+        "rows": 500,
+        "by_status": {
+          "REDEEMABLE": 469,
+          "OPEN": 31
+        },
+        "redeemable_true": 469,
+        "seconds": 0.63,
+        "has_next_cursor": true,
+        "same_keys_same_order_as_plain": true,
+        "keys_only_in_plain": 0,
+        "keys_only_here": 0
+      },
+      "c_current_value_sort": {
+        "page1": {
+          "http_status": 200,
+          "rows": 500,
+          "by_status": {
+            "OPEN": 500
+          },
+          "redeemable_true": 0,
+          "seconds": 1.926,
+          "has_next_cursor": true
+        },
+        "page2": {
+          "http_status": 200,
+          "rows": 500,
+          "by_status": {
+            "OPEN": 500
+          },
+          "redeemable_true": 0,
+          "seconds": 1.958,
+          "has_next_cursor": true
+        },
+        "limit_1000": {
+          "http_status": 200,
+          "rows": 1000,
+          "by_status": {
+            "OPEN": 1000
+          },
+          "redeemable_true": 0,
+          "seconds": 1.907,
+          "has_next_cursor": true
+        },
+        "current_value_non_increasing_two_pages": true,
+        "current_value_non_increasing_limit_1000": true,
+        "keys_repeated_across_two_pages": 1,
+        "keys_in_limit_1000_missing_from_two_pages": 1,
+        "keys_in_two_pages_missing_from_limit_1000": 1,
+        "same_order": false,
+        "current_value_lt_0_001": 0
+      },
+      "e_cash_no_sort_by": {
+        "http_status": 200,
+        "rows": 500,
+        "by_status": {
+          "OPEN": 500
+        },
+        "redeemable_true": 0,
+        "seconds": 1.819,
+        "has_next_cursor": true,
+        "current_value_non_increasing": true,
+        "current_size_non_increasing": false,
+        "same_keys_same_order_as_c_page1": false
+      }
+    },
+    "S1": {
+      "plain": {
+        "http_status": 200,
+        "rows": 500,
+        "by_status": {
+          "REDEEMABLE": 476,
+          "OPEN": 24
+        },
+        "redeemable_true": 476,
+        "seconds": 0.285,
+        "has_next_cursor": true
+      },
+      "a_redeemable_false": {
+        "http_status": 200,
+        "rows": 500,
+        "by_status": {
+          "REDEEMABLE": 476,
+          "OPEN": 24
+        },
+        "redeemable_true": 476,
+        "seconds": 0.152,
+        "has_next_cursor": true,
+        "same_keys_same_order_as_plain": true,
+        "keys_only_in_plain": 0,
+        "keys_only_here": 0
+      },
+      "b_redeemable_false_status_open": {
+        "http_status": 200,
+        "rows": 500,
+        "by_status": {
+          "REDEEMABLE": 476,
+          "OPEN": 24
+        },
+        "redeemable_true": 476,
+        "seconds": 0.231,
+        "has_next_cursor": true,
+        "same_keys_same_order_as_plain": true,
+        "keys_only_in_plain": 0,
+        "keys_only_here": 0
+      },
+      "c_current_value_sort": {
+        "page1": {
+          "http_status": 200,
+          "rows": 52,
+          "by_status": {
+            "OPEN": 52
+          },
+          "redeemable_true": 0,
+          "seconds": 0.182,
+          "has_next_cursor": false
+        },
+        "page2": null,
+        "limit_1000": {
+          "http_status": 200,
+          "rows": 52,
+          "by_status": {
+            "OPEN": 52
+          },
+          "redeemable_true": 0,
+          "seconds": 0.522,
+          "has_next_cursor": false
+        },
+        "current_value_non_increasing_two_pages": true,
+        "current_value_non_increasing_limit_1000": true,
+        "keys_repeated_across_two_pages": 0,
+        "keys_in_limit_1000_missing_from_two_pages": 0,
+        "keys_in_two_pages_missing_from_limit_1000": 0,
+        "same_order": true,
+        "current_value_lt_0_001": 0
+      },
+      "e_cash_no_sort_by": {
+        "http_status": 200,
+        "rows": 52,
+        "by_status": {
+          "OPEN": 52
+        },
+        "redeemable_true": 0,
+        "seconds": 0.141,
+        "has_next_cursor": false,
+        "current_value_non_increasing": true,
+        "current_size_non_increasing": false,
+        "same_keys_same_order_as_c_page1": true
+      }
+    }
+  },
+  "step5_cursor_stability": {
+    "request": {
+      "limit": 500,
+      "filter_type": "CASH",
+      "filter_amount": 0.001,
+      "sort_by": "TOKENS",
+      "sort_direction": "DESC"
+    },
+    "pause_seconds": 30,
+    "walk1": {
+      "pages": 12,
+      "rows": 5685,
+      "walk_finished": true,
+      "http_statuses": {
+        "200": 12
+      },
+      "seconds_per_request": {
+        "min": 0.295,
+        "median": 0.474,
+        "max": 0.671
+      },
+      "keys_served_twice": 1,
+      "distinct_keys": 5684,
+      "by_status": {
+        "OPEN": 5682,
+        "REDEEMABLE": 3
+      }
+    },
+    "walk2": {
+      "pages": 12,
+      "rows": 5683,
+      "walk_finished": true,
+      "http_statuses": {
+        "200": 12
+      },
+      "seconds_per_request": {
+        "min": 0.365,
+        "median": 0.444,
+        "max": 0.832
+      },
+      "keys_served_twice": 1,
+      "distinct_keys": 5682,
+      "by_status": {
+        "OPEN": 5680,
+        "REDEEMABLE": 3
+      }
+    },
+    "keys_only_in_walk1": 2,
+    "keys_only_in_walk2": 0,
+    "same_key_order": false,
+    "walk1_current_size_non_increasing": true,
+    "walk2_current_size_non_increasing": true,
+    "walk1_redeemable_true": 3,
+    "walk2_redeemable_true": 3,
+    "common_keys_with_changed_current_size": 1
+  },
+  "follow_up": {
+    "lost_unexplained_A_0.001": {
+      "keys": 2,
+      "unfiltered_now": {
+        "http_status": 200,
+        "keys_found": 0,
+        "by_status": {},
+        "size_ge_1": 0,
+        "value_ge_0_001": 0,
+        "value_ge_0_01": 0,
+        "first_entry_after_reference_walk_start": 0,
+        "last_event_within_1h": 0
+      },
+      "tokens_floor_default_now": {
+        "http_status": 200,
+        "keys_found": 0,
+        "by_status": {},
+        "size_ge_1": 0,
+        "value_ge_0_001": 0,
+        "value_ge_0_01": 0,
+        "first_entry_after_reference_walk_start": 0,
+        "last_event_within_1h": 0
+      },
+      "cash_0_001_now": {
+        "http_status": 200,
+        "keys_found": 0,
+        "by_status": {},
+        "size_ge_1": 0,
+        "value_ge_0_001": 0,
+        "value_ge_0_01": 0,
+        "first_entry_after_reference_walk_start": 0,
+        "last_event_within_1h": 0
+      }
+    },
+    "only_in_filtered_A_0.001": {
+      "keys": 5,
+      "unfiltered_now": {
+        "http_status": 200,
+        "keys_found": 5,
+        "by_status": {
+          "OPEN": 5
+        },
+        "size_ge_1": 5,
+        "value_ge_0_001": 5,
+        "value_ge_0_01": 0,
+        "first_entry_after_reference_walk_start": 5,
+        "last_event_within_1h": 5
+      },
+      "tokens_floor_default_now": {
+        "http_status": 200,
+        "keys_found": 5,
+        "by_status": {
+          "OPEN": 5
+        },
+        "size_ge_1": 5,
+        "value_ge_0_001": 5,
+        "value_ge_0_01": 0,
+        "first_entry_after_reference_walk_start": 5,
+        "last_event_within_1h": 5
+      },
+      "cash_0_001_now": {
+        "http_status": 200,
+        "keys_found": 5,
+        "by_status": {
+          "OPEN": 5
+        },
+        "size_ge_1": 5,
+        "value_ge_0_001": 5,
+        "value_ge_0_01": 0,
+        "first_entry_after_reference_walk_start": 5,
+        "last_event_within_1h": 5
+      },
+      "size_lt_2_in_filtered_walk": 0,
+      "last_event_at_eq_0_in_filtered_walk": 0
+    },
+    "lost_unexplained_A_0.01": {
+      "keys": 4,
+      "unfiltered_now": {
+        "http_status": 200,
+        "keys_found": 2,
+        "by_status": {
+          "OPEN": 2
+        },
+        "size_ge_1": 2,
+        "value_ge_0_001": 2,
+        "value_ge_0_01": 0,
+        "first_entry_after_reference_walk_start": 0,
+        "last_event_within_1h": 0
+      },
+      "tokens_floor_default_now": {
+        "http_status": 200,
+        "keys_found": 2,
+        "by_status": {
+          "OPEN": 2
+        },
+        "size_ge_1": 2,
+        "value_ge_0_001": 2,
+        "value_ge_0_01": 0,
+        "first_entry_after_reference_walk_start": 0,
+        "last_event_within_1h": 0
+      },
+      "cash_0_001_now": {
+        "http_status": 200,
+        "keys_found": 2,
+        "by_status": {
+          "OPEN": 2
+        },
+        "size_ge_1": 2,
+        "value_ge_0_001": 2,
+        "value_ge_0_01": 0,
+        "first_entry_after_reference_walk_start": 0,
+        "last_event_within_1h": 0
+      }
+    },
+    "step5_only_in_walk1": {
+      "keys": 2,
+      "unfiltered_now": {
+        "http_status": 200,
+        "keys_found": 1,
+        "by_status": {
+          "OPEN": 1
+        },
+        "size_ge_1": 1,
+        "value_ge_0_001": 0,
+        "value_ge_0_01": 0,
+        "first_entry_after_reference_walk_start": 0,
+        "last_event_within_1h": 0
+      },
+      "tokens_floor_default_now": {
+        "http_status": 200,
+        "keys_found": 2,
+        "by_status": {
+          "OPEN": 2
+        },
+        "size_ge_1": 1,
+        "value_ge_0_001": 0,
+        "value_ge_0_01": 0,
+        "first_entry_after_reference_walk_start": 0,
+        "last_event_within_1h": 0
+      },
+      "cash_0_001_now": {
+        "http_status": 200,
+        "keys_found": 0,
+        "by_status": {},
+        "size_ge_1": 0,
+        "value_ge_0_001": 0,
+        "value_ge_0_01": 0,
+        "first_entry_after_reference_walk_start": 0,
+        "last_event_within_1h": 0
+      },
+      "in_reference_live": 1
+    },
+    "step4c_repeat_with_token_id": {
+      "rows_two_pages": 1000,
+      "rows_limit_1000": 1000,
+      "key_pairs_repeated_two_pages": 2,
+      "key_plus_token_repeated_two_pages": 1,
+      "key_pairs_repeated_limit_1000": 1,
+      "key_plus_token_repeated_limit_1000": 0,
+      "only_in_two_pages": 1,
+      "only_in_limit_1000": 2,
+      "same_order": false
+    },
+    "duplicate_key_nature": {
+      "reference_G": {
+        "keys_served_twice": 1,
+        "key_plus_token_id_served_twice": 0
+      },
+      "step5_walk1": {
+        "keys_served_twice": 1,
+        "key_plus_token_id_served_twice": 0
+      },
+      "step5_walk2": {
+        "keys_served_twice": 1,
+        "key_plus_token_id_served_twice": 0
+      },
+      "step3_G_1e-06": {
+        "keys_served_twice": 1,
+        "key_plus_token_id_served_twice": 0
+      },
+      "step3_G_0.001": {
+        "keys_served_twice": 1,
+        "key_plus_token_id_served_twice": 0
+      },
+      "step3_G_0.01": {
+        "keys_served_twice": 1,
+        "key_plus_token_id_served_twice": 0
+      }
+    }
+  }
+}

@@ -1,0 +1,671 @@
+{
+  "finished_at": "2026-11-17T08:14:45.432048+00:00",
+  "leaderboard": {
+    "keys": [
+      "pnl",
+      "profile_image",
+      "rank",
+      "user_id",
+      "user_name",
+      "verified",
+      "volume",
+      "x_username"
+    ],
+    "rows": 5,
+    "seconds": 0.7,
+    "seed_distinct_wallets": 119,
+    "seed_entries": 120,
+    "seed_names_present": 120
+  },
+  "pipeline": {
+    "runs": [
+      {
+        "activity_history_complete": 0,
+        "activity_outcome_index_999": 1937,
+        "activity_rows": 5823,
+        "activity_rows_sharing_a_store_key": 0,
+        "activity_types": {
+          "CONVERSION": 555,
+          "MAKER_REBATE": 5,
+          "MERGE": 1365,
+          "REDEEM": 445,
+          "REWARD": 4,
+          "TAKER_REBATE": 3,
+          "TRADE": 3441,
+          "YIELD": 5
+        },
+        "all_time_volume_positive": 6,
+        "closed_position_rows": 300,
+        "closed_positions_complete": 6,
+        "economic_all_time_complete": 6,
+        "economic_month_complete": 6,
+        "error_kinds": {
+          "positions: positions pagination exceeded safety bound": 1
+        },
+        "gaps_file_present": false,
+        "history_cursor_set": 6,
+        "hydration_wallets": 6,
+        "position_rows": 13284,
+        "positions_complete": 5,
+        "result": {
+          "active_wallets": 0,
+          "activity_budget_exhausted_wallets": 0,
+          "activity_records": 5823,
+          "archived_wallets": 0,
+          "backfill_complete_wallets": 0,
+          "blocked_wallets": 0,
+          "deep_slices_attempted": 0,
+          "deep_slices_succeeded": 0,
+          "discovered_this_run": 0,
+          "enrichment_performed": false,
+          "enrichment_wallets": 0,
+          "hydration_wallets": 6,
+          "kalshi_markets": 0,
+          "leaderboard_entries": 6,
+          "market_links": 0,
+          "markets_backfilled": 100,
+          "markets_written": 100,
+          "metadata_complete_wallets": 1,
+          "pinned_wallets": 0,
+          "positions": 13284,
+          "pruned_this_run": 0,
+          "rebuilding_wallets": 0,
+          "recent_traders_discovered": 0,
+          "seeds_over_cap": 0,
+          "tailable_wallets": 0,
+          "trusted_wallets": 0,
+          "wallet_values": 6,
+          "wallets_polled": 6,
+          "wallets_seeded": 6,
+          "wallets_with_errors": 1,
+          "warning": null,
+          "windows_attempted": [
+            "month"
+          ],
+          "windows_succeeded": [
+            "month"
+          ]
+        },
+        "seconds": 22.5,
+        "trades_without_condition": 0,
+        "warning": null
+      },
+      {
+        "activity_history_complete": 0,
+        "activity_outcome_index_999": 3105,
+        "activity_rows": 10620,
+        "activity_rows_sharing_a_store_key": 0,
+        "activity_types": {
+          "CONVERSION": 912,
+          "MAKER_REBATE": 8,
+          "MERGE": 2162,
+          "MIGRATION": 1,
+          "REDEEM": 1263,
+          "REWARD": 8,
+          "TAKER_REBATE": 6,
+          "TRADE": 6251,
+          "YIELD": 9
+        },
+        "all_time_volume_positive": 6,
+        "closed_position_rows": 300,
+        "closed_positions_complete": 6,
+        "economic_all_time_complete": 6,
+        "economic_month_complete": 6,
+        "error_kinds": {
+          "positions: positions pagination exceeded safety bound": 1
+        },
+        "gaps_file_present": false,
+        "history_cursor_set": 6,
+        "hydration_wallets": 6,
+        "position_rows": 26568,
+        "positions_complete": 5,
+        "result": {
+          "active_wallets": 0,
+          "activity_budget_exhausted_wallets": 0,
+          "activity_records": 4797,
+          "archived_wallets": 0,
+          "backfill_complete_wallets": 0,
+          "blocked_wallets": 0,
+          "deep_slices_attempted": 0,
+          "deep_slices_succeeded": 0,
+          "discovered_this_run": 0,
+          "enrichment_performed": false,
+          "enrichment_wallets": 0,
+          "hydration_wallets": 6,
+          "kalshi_markets": 0,
+          "leaderboard_entries": 6,
+          "market_links": 0,
+          "markets_backfilled": 100,
+          "markets_written": 100,
+          "metadata_complete_wallets": 1,
+          "pinned_wallets": 0,
+          "positions": 13284,
+          "pruned_this_run": 0,
+          "rebuilding_wallets": 0,
+          "recent_traders_discovered": 0,
+          "seeds_over_cap": 0,
+          "tailable_wallets": 0,
+          "trusted_wallets": 0,
+          "wallet_values": 5,
+          "wallets_polled": 5,
+          "wallets_seeded": 6,
+          "wallets_with_errors": 0,
+          "warning": null,
+          "windows_attempted": [
+            "month"
+          ],
+          "windows_succeeded": [
+            "month"
+          ]
+        },
+        "seconds": 17.9,
+        "trades_without_condition": 0,
+        "warning": null
+      }
+    ],
+    "seconds": 40.6
+  },
+  "resume": {
+    "distinct_store_keys": 1995,
+    "errors": [],
+    "reference_distinct_rows": 1999,
+    "reference_exhausted": false,
+    "reference_rows": 1999,
+    "resumed_distinct_rows": 1999,
+    "resumed_exhausted": false,
+    "resumed_rows_read": 2013,
+    "resumed_walks": 11,
+    "rows_missing_from_resumed": 0,
+    "rows_only_in_resumed": 0,
+    "rows_the_store_key_collapses": 4,
+    "rows_with_fewer_copies_in_resumed": 0,
+    "seconds": 12.4,
+    "stalled_walks": 0
+  },
+  "schema_version": 1,
+  "snapshot": {
+    "publishable": true,
+    "requests": [
+      {
+        "error": null,
+        "http_status": 200,
+        "path": "/v2/leaderboard",
+        "rows_rejected": 0,
+        "rows_returned": 6,
+        "status": "ok"
+      },
+      {
+        "error": null,
+        "http_status": 200,
+        "path": "/v2/activity",
+        "rows_rejected": 0,
+        "rows_returned": 100,
+        "status": "ok"
+      },
+      {
+        "error": null,
+        "http_status": 200,
+        "path": "/v2/positions",
+        "rows_rejected": 0,
+        "rows_returned": 200,
+        "status": "ok"
+      },
+      {
+        "error": null,
+        "http_status": 200,
+        "path": "/v2/activity",
+        "rows_rejected": 0,
+        "rows_returned": 100,
+        "status": "ok"
+      },
+      {
+        "error": null,
+        "http_status": 200,
+        "path": "/v2/positions",
+        "rows_rejected": 0,
+        "rows_returned": 200,
+        "status": "ok"
+      },
+      {
+        "error": null,
+        "http_status": 200,
+        "path": "/v2/activity",
+        "rows_rejected": 0,
+        "rows_returned": 100,
+        "status": "ok"
+      },
+      {
+        "error": null,
+        "http_status": 200,
+        "path": "/v2/positions",
+        "rows_rejected": 0,
+        "rows_returned": 200,
+        "status": "ok"
+      },
+      {
+        "error": null,
+        "http_status": 200,
+        "path": "/v2/activity",
+        "rows_rejected": 0,
+        "rows_returned": 100,
+        "status": "ok"
+      },
+      {
+        "error": null,
+        "http_status": 200,
+        "path": "/v2/positions",
+        "rows_rejected": 0,
+        "rows_returned": 13,
+        "status": "ok"
+      },
+      {
+        "error": null,
+        "http_status": 200,
+        "path": "/v2/activity",
+        "rows_rejected": 0,
+        "rows_returned": 100,
+        "status": "ok"
+      },
+      {
+        "error": null,
+        "http_status": 200,
+        "path": "/v2/positions",
+        "rows_rejected": 0,
+        "rows_returned": 200,
+        "status": "ok"
+      },
+      {
+        "error": null,
+        "http_status": 200,
+        "path": "/v2/activity",
+        "rows_rejected": 0,
+        "rows_returned": 100,
+        "status": "ok"
+      },
+      {
+        "error": null,
+        "http_status": 200,
+        "path": "/v2/positions",
+        "rows_rejected": 0,
+        "rows_returned": 200,
+        "status": "ok"
+      }
+    ],
+    "samples": [
+      {
+        "positions": {
+          "possibly_truncated": true,
+          "rows": 50,
+          "rows_excluded": 0,
+          "rows_rejected": 0,
+          "rows_returned": 200,
+          "status": "ok"
+        },
+        "trades": {
+          "possibly_truncated": true,
+          "rows": 100,
+          "rows_excluded": 0,
+          "rows_rejected": 0,
+          "rows_returned": 100,
+          "status": "ok"
+        }
+      },
+      {
+        "positions": {
+          "possibly_truncated": true,
+          "rows": 19,
+          "rows_excluded": 181,
+          "rows_rejected": 0,
+          "rows_returned": 200,
+          "status": "ok"
+        },
+        "trades": {
+          "possibly_truncated": true,
+          "rows": 100,
+          "rows_excluded": 0,
+          "rows_rejected": 0,
+          "rows_returned": 100,
+          "status": "ok"
+        }
+      },
+      {
+        "positions": {
+          "possibly_truncated": true,
+          "rows": 20,
+          "rows_excluded": 180,
+          "rows_rejected": 0,
+          "rows_returned": 200,
+          "status": "ok"
+        },
+        "trades": {
+          "possibly_truncated": true,
+          "rows": 100,
+          "rows_excluded": 0,
+          "rows_rejected": 0,
+          "rows_returned": 100,
+          "status": "ok"
+        }
+      },
+      {
+        "positions": {
+          "possibly_truncated": false,
+          "rows": 12,
+          "rows_excluded": 1,
+          "rows_rejected": 0,
+          "rows_returned": 13,
+          "status": "ok"
+        },
+        "trades": {
+          "possibly_truncated": true,
+          "rows": 100,
+          "rows_excluded": 0,
+          "rows_rejected": 0,
+          "rows_returned": 100,
+          "status": "ok"
+        }
+      },
+      {
+        "positions": {
+          "possibly_truncated": true,
+          "rows": 30,
+          "rows_excluded": 170,
+          "rows_rejected": 0,
+          "rows_returned": 200,
+          "status": "ok"
+        },
+        "trades": {
+          "possibly_truncated": true,
+          "rows": 100,
+          "rows_excluded": 0,
+          "rows_rejected": 0,
+          "rows_returned": 100,
+          "status": "ok"
+        }
+      },
+      {
+        "positions": {
+          "possibly_truncated": true,
+          "rows": 50,
+          "rows_excluded": 140,
+          "rows_rejected": 0,
+          "rows_returned": 200,
+          "status": "ok"
+        },
+        "trades": {
+          "possibly_truncated": true,
+          "rows": 100,
+          "rows_excluded": 0,
+          "rows_rejected": 0,
+          "rows_returned": 100,
+          "status": "ok"
+        }
+      }
+    ],
+    "seconds": 2.8,
+    "status": "complete",
+    "wallets": 6
+  },
+  "started_at": "2026-11-17T08:13:01.269090+00:00",
+  "v1_parity": {
+    "per_wallet": [
+      {
+        "finished": true,
+        "multi_fill_keys": 7,
+        "multi_fill_same_row_count": 7,
+        "multi_fill_same_total_size": 7,
+        "notional_equal": 84,
+        "outcome_equal": 84,
+        "price_equal": 84,
+        "same_fill_count": 99,
+        "single_fills_compared": 84,
+        "size_equal": 84,
+        "v1_only": 0,
+        "v1_rows": 99,
+        "v1_rows_sharing_a_fill_key": 8,
+        "v2_only": 0,
+        "v2_rows": 99,
+        "v2_rows_sharing_a_fill_key": 8
+      },
+      {
+        "finished": true,
+        "notional_equal": 98,
+        "outcome_equal": 98,
+        "price_equal": 98,
+        "same_fill_count": 98,
+        "single_fills_compared": 98,
+        "size_equal": 98,
+        "v1_only": 0,
+        "v1_rows": 98,
+        "v1_rows_sharing_a_fill_key": 0,
+        "v2_only": 0,
+        "v2_rows": 98,
+        "v2_rows_sharing_a_fill_key": 0
+      },
+      {
+        "finished": true,
+        "notional_equal": 99,
+        "outcome_equal": 99,
+        "price_equal": 99,
+        "same_fill_count": 99,
+        "single_fills_compared": 99,
+        "size_equal": 99,
+        "v1_only": 0,
+        "v1_rows": 99,
+        "v1_rows_sharing_a_fill_key": 0,
+        "v2_only": 0,
+        "v2_rows": 99,
+        "v2_rows_sharing_a_fill_key": 0
+      },
+      {
+        "finished": true,
+        "notional_equal": 99,
+        "outcome_equal": 99,
+        "price_equal": 99,
+        "same_fill_count": 99,
+        "single_fills_compared": 99,
+        "size_equal": 99,
+        "v1_only": 0,
+        "v1_rows": 99,
+        "v1_rows_sharing_a_fill_key": 0,
+        "v2_only": 0,
+        "v2_rows": 99,
+        "v2_rows_sharing_a_fill_key": 0
+      },
+      {
+        "finished": true,
+        "multi_fill_keys": 1,
+        "multi_fill_same_row_count": 1,
+        "multi_fill_same_total_size": 1,
+        "notional_equal": 97,
+        "outcome_equal": 97,
+        "price_equal": 97,
+        "same_fill_count": 99,
+        "single_fills_compared": 97,
+        "size_equal": 97,
+        "v1_only": 0,
+        "v1_rows": 99,
+        "v1_rows_sharing_a_fill_key": 1,
+        "v2_only": 0,
+        "v2_rows": 99,
+        "v2_rows_sharing_a_fill_key": 1
+      },
+      {
+        "finished": true,
+        "notional_equal": 99,
+        "outcome_equal": 99,
+        "price_equal": 99,
+        "same_fill_count": 99,
+        "single_fills_compared": 99,
+        "size_equal": 99,
+        "v1_only": 0,
+        "v1_rows": 99,
+        "v1_rows_sharing_a_fill_key": 0,
+        "v2_only": 0,
+        "v2_rows": 99,
+        "v2_rows_sharing_a_fill_key": 0
+      },
+      {
+        "finished": true,
+        "notional_equal": 99,
+        "outcome_equal": 99,
+        "price_equal": 99,
+        "same_fill_count": 99,
+        "single_fills_compared": 99,
+        "size_equal": 99,
+        "v1_only": 0,
+        "v1_rows": 99,
+        "v1_rows_sharing_a_fill_key": 0,
+        "v2_only": 0,
+        "v2_rows": 99,
+        "v2_rows_sharing_a_fill_key": 0
+      },
+      {
+        "finished": true,
+        "multi_fill_keys": 20,
+        "multi_fill_same_row_count": 20,
+        "multi_fill_same_total_size": 20,
+        "notional_equal": 58,
+        "outcome_equal": 58,
+        "price_equal": 58,
+        "same_fill_count": 98,
+        "single_fills_compared": 58,
+        "size_equal": 58,
+        "v1_only": 0,
+        "v1_rows": 98,
+        "v1_rows_sharing_a_fill_key": 20,
+        "v2_only": 0,
+        "v2_rows": 98,
+        "v2_rows_sharing_a_fill_key": 20
+      },
+      {
+        "finished": true,
+        "multi_fill_keys": 4,
+        "multi_fill_same_row_count": 4,
+        "multi_fill_same_total_size": 4,
+        "notional_equal": 91,
+        "outcome_equal": 91,
+        "price_equal": 91,
+        "same_fill_count": 99,
+        "single_fills_compared": 91,
+        "size_equal": 91,
+        "v1_only": 0,
+        "v1_rows": 99,
+        "v1_rows_sharing_a_fill_key": 4,
+        "v2_only": 0,
+        "v2_rows": 99,
+        "v2_rows_sharing_a_fill_key": 4
+      },
+      {
+        "finished": true,
+        "notional_equal": 99,
+        "outcome_equal": 99,
+        "price_equal": 99,
+        "same_fill_count": 99,
+        "single_fills_compared": 99,
+        "size_equal": 99,
+        "v1_only": 0,
+        "v1_rows": 99,
+        "v1_rows_sharing_a_fill_key": 0,
+        "v2_only": 0,
+        "v2_rows": 99,
+        "v2_rows_sharing_a_fill_key": 0
+      }
+    ],
+    "seconds": 4.3,
+    "totals": {
+      "multi_fill_keys": 32,
+      "multi_fill_same_row_count": 32,
+      "multi_fill_same_total_size": 32,
+      "notional_equal": 923,
+      "outcome_equal": 923,
+      "price_equal": 923,
+      "same_fill_count": 988,
+      "single_fills_compared": 923,
+      "size_equal": 923,
+      "v1_only": 0,
+      "v1_rows": 988,
+      "v1_rows_sharing_a_fill_key": 33,
+      "v2_only": 0,
+      "v2_rows": 988,
+      "v2_rows_sharing_a_fill_key": 33
+    },
+    "v1_snapshot_generated_at": "2026-11-02T15:47:45.196030+00:00",
+    "wallets_compared": 10
+  },
+  "wallet_endpoints": {
+    "closed_positions": {
+      "parsed": 50,
+      "realized_pnl_non_increasing": true,
+      "rows": 50,
+      "statuses": {
+        "CLOSED": 50
+      }
+    },
+    "positions": {
+      "below_one_share": 253,
+      "live_holdings_kept": 5488,
+      "live_statuses": {
+        "OPEN": 5488
+      },
+      "null_current_size": 0,
+      "pages": [
+        500,
+        500,
+        500,
+        500,
+        500,
+        500,
+        500,
+        500,
+        500,
+        500,
+        500,
+        241
+      ],
+      "parsed": 5488,
+      "redeemable_rows": 3,
+      "rows": 5741,
+      "rows_served_twice": 0,
+      "rows_with_every_number": 5488,
+      "sizes_non_increasing": true,
+      "statuses": {
+        "OPEN": 5738,
+        "REDEEMABLE": 3
+      },
+      "unrealized_is_value_minus_entry_cost": 5488,
+      "unrealized_is_value_minus_size_times_avg_price": 4993,
+      "walk_finished": true,
+      "worth_nothing": 0
+    },
+    "positions_through_runner": {
+      "first": 5488,
+      "only_in_first": 0,
+      "only_in_second": 0,
+      "second": 5488
+    },
+    "seconds": 43.2,
+    "standing_all": {
+      "pnl_is_number": true,
+      "present": true
+    },
+    "standing_month": {
+      "pnl_is_number": true,
+      "present": true
+    },
+    "value": {
+      "keys": [
+        "proxy_wallet",
+        "value"
+      ],
+      "value_is_number": true
+    },
+    "volume": {
+      "keys": [
+        "trade_count",
+        "volume",
+        "volume_usdc"
+      ],
+      "volume_usdc_is_number": true
+    }
+  }
+}

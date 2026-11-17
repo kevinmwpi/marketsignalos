@@ -224,34 +224,43 @@ def parse_leaderboard_row(
 def parse_ranked_leaderboard_row(
     row: dict[str, Any], *, metric: str, window: str
 ) -> PolymarketLeaderboardEntry:
-    """One row from data-api ``/v1/leaderboard``: proxyWallet, userName, vol, pnl."""
-    amount = _economic_value(row, "vol" if metric == "volume" else "pnl", "amount")
+    """One row from data-api ``/v2/leaderboard``: user_id, user_name, pnl, volume.
+
+    ``pnl`` is in USDC. ``volume`` is in shares (v1 reported USDC), so a volume
+    entry carries no amount rather than shares under a USDC name.
+    """
     return PolymarketLeaderboardEntry(
-        proxy_wallet=str(row.get("proxyWallet", "")).lower(),
-        name=str(row.get("userName") or row.get("name") or ""),
-        pseudonym=str(row.get("pseudonym", "")),
-        amount_usdc=amount,
+        proxy_wallet=str(row.get("user_id", "")).lower(),
+        name=str(row.get("user_name") or ""),
+        pseudonym="",
+        amount_usdc=_as_float(row.get("pnl")) if metric == "profit" else 0.0,
         metric=metric,
         window=window,
     )
 
 
 def parse_activity_row(row: dict[str, Any]) -> PolymarketActivity:
+    """One row from data-api ``/v2/activity``.
+
+    A row with no outcome (merge, conversion, reward, rebate) carries
+    ``outcome_index`` 999, and a reward or rebate an empty ``condition_id``.
+    Both are stored as served.
+    """
     return PolymarketActivity(
-        proxy_wallet=str(row.get("proxyWallet", "")).lower(),
+        proxy_wallet=str(row.get("proxy_wallet", "")).lower(),
         timestamp=int(row.get("timestamp", 0) or 0),
-        condition_id=str(row.get("conditionId", "")),
+        condition_id=str(row.get("condition_id", "")),
         type=str(row.get("type", "")),
         side=str(row.get("side", "") or ""),
         size=_as_float(row.get("size")),
-        usdc_size=_as_float(row.get("usdcSize")),
+        usdc_size=_as_float(row.get("usdc_size")),
         price=_as_float(row.get("price")),
-        outcome_index=int(row.get("outcomeIndex", 0) or 0),
+        outcome_index=int(row.get("outcome_index", 0) or 0),
         outcome=str(row.get("outcome", "") or ""),
         slug=str(row.get("slug", "")),
         title=str(row.get("title", "")),
-        event_slug=str(row.get("eventSlug", "")),
-        transaction_hash=str(row.get("transactionHash", "")),
+        event_slug=str(row.get("event_slug", "")),
+        transaction_hash=str(row.get("transaction_hash", "")),
         name=str(row.get("name", "")),
         pseudonym=str(row.get("pseudonym", "")),
     )
@@ -264,19 +273,27 @@ def parse_position_row(
     snapshot_id: str = "",
     snapshot_at: str | None = None,
 ) -> PolymarketPosition:
+    """One row from data-api ``/v2/positions``.
+
+    v2 serves null for a number it does not have, never zero. A holding without
+    a size is refused: stored as zero it would read as a closed position.
+    """
+    size = _as_float_or_none(row.get("current_size"))
+    if size is None:
+        raise ValueError("position row has no current_size")
     return PolymarketPosition(
         proxy_wallet=proxy_wallet.lower(),
-        condition_id=str(row.get("conditionId", "")),
-        outcome_index=int(row.get("outcomeIndex", 0) or 0),
+        condition_id=str(row.get("condition_id", "")),
+        outcome_index=int(row.get("outcome_index", 0) or 0),
         outcome=str(row.get("outcome", "") or ""),
-        size=_as_float(row.get("size")),
-        avg_price=_as_float(row.get("avgPrice") or row.get("averagePrice")),
-        current_value_usdc=_as_float(row.get("currentValue") or row.get("value")),
+        size=size,
+        avg_price=_as_float(row.get("avg_price")),
+        current_value_usdc=_as_float(row.get("current_value")),
         slug=str(row.get("slug", "")),
         title=str(row.get("title", "")),
-        event_slug=str(row.get("eventSlug", "")),
-        current_outcome_price=_as_float(row.get("curPrice") or row.get("currentPrice")),
-        cash_pnl_usdc=_as_float(row.get("cashPnl") or row.get("cashPnL")),
+        event_slug=str(row.get("event_slug", "")),
+        current_outcome_price=_as_float(row.get("current_price")),
+        cash_pnl_usdc=_as_float(row.get("unrealized_pnl")),
         snapshot_id=snapshot_id,
         snapshot_at=snapshot_at or _utcnow_iso(),
     )
@@ -285,18 +302,22 @@ def parse_position_row(
 def parse_closed_position_row(
     row: dict[str, Any], *, proxy_wallet: str
 ) -> PolymarketClosedPosition:
+    """One ``status=CLOSED`` row from data-api ``/v2/positions``.
+
+    ``size`` is what the wallet still holds: zero, or a residual below one share.
+    """
     return PolymarketClosedPosition(
         proxy_wallet=proxy_wallet.lower(),
-        condition_id=str(row.get("conditionId", "")),
-        outcome_index=int(row.get("outcomeIndex", 0) or 0),
+        condition_id=str(row.get("condition_id", "")),
+        outcome_index=int(row.get("outcome_index", 0) or 0),
         outcome=str(row.get("outcome", "") or ""),
-        size=_as_float(row.get("size")),
-        avg_price=_as_float(row.get("avgPrice") or row.get("averagePrice")),
-        realized_pnl_usdc=_as_float(row.get("realizedPnl") or row.get("cashPnl")),
-        current_outcome_price=_as_float(row.get("curPrice") or row.get("currentPrice")),
+        size=_as_float(row.get("current_size")),
+        avg_price=_as_float(row.get("avg_price")),
+        realized_pnl_usdc=_as_float(row.get("realized_pnl")),
+        current_outcome_price=_as_float(row.get("current_price")),
         slug=str(row.get("slug", "")),
         title=str(row.get("title", "")),
-        event_slug=str(row.get("eventSlug", "")),
+        event_slug=str(row.get("event_slug", "")),
     )
 
 
@@ -484,14 +505,19 @@ def run_leaderboard(
 @dataclass(slots=True)
 class _ActivityPaginationResult:
     events: list[PolymarketActivity]
+    # Every row of the window was read.
     exhausted: bool
+    # Oldest second seen. A walk that is not exhausted may have stopped inside it.
     oldest_timestamp: int | None
-    boundary_complete: bool = True
+    # More rows share the window's newest second than one walk may read.
+    stalled: bool = False
+    # Combo rows left out (see _is_combo_row).
+    combo_rows: int = 0
 
 
 @dataclass(slots=True)
 class _ActivityRequestBudget:
-    """Shared budget for activity API calls, including timestamp boundary pages.
+    """Shared budget for activity API calls: one per page, in every walk.
 
     HTTP retries inside the client are separate attempts. Other wallet endpoints
     and market metadata are outside this activity-only budget.
@@ -517,6 +543,18 @@ def _activity_key(event: PolymarketActivity) -> tuple[str, str, int, str]:
     )
 
 
+def _is_combo_row(row: dict[str, Any]) -> bool:
+    """A trade, split, merge or redemption of a combo (a basket of markets).
+
+    v2 mixes these into the wallet feed, marked ``is_combo``. v1 had a route of
+    its own for combos, which this pipeline never read; whether its main feed
+    carried them too is not documented. A combo's condition has no Gamma
+    market, so one stored combo trade would leave its wallet's market metadata
+    incomplete for good.
+    """
+    return row.get("is_combo") is True
+
+
 def _paginate_activity_window(
     client: PolymarketClient,
     address: str,
@@ -525,19 +563,29 @@ def _paginate_activity_window(
     max_pages: int,
     since_timestamp: int | None,
     end_timestamp: int | None = None,
-    max_boundary_offset: int = 3000,
+    max_stalled_pages: int = 6,
     on_page: Callable[[list[PolymarketActivity]], None] | None = None,
     request_budget: _ActivityRequestBudget | None = None,
 ) -> _ActivityPaginationResult:
-    """Walk /activity through descending timestamp windows.
+    """Walk /v2/activity newest first, from ``end_timestamp`` (inclusive, default
+    now) down to ``since_timestamp`` (exclusive, default the wallet's first row).
+
+    Pages are joined by the server's cursor, so no row is lost between them. A
+    walk that stops before the window is exhausted (page cap or request budget)
+    may have stopped inside its oldest second, so the walk that continues it
+    starts at that second again (``_resume_end``) and the dedupe store absorbs
+    the rows read twice.
+
+    That restart cannot get past a second holding more rows than one walk reads.
+    A walk that has seen nothing but its starting second therefore reads up to
+    ``max_stalled_pages`` more pages, and reports ``stalled`` if it is still
+    inside that second.
 
     With ``on_page`` the fetched events are streamed to the sink page by page
     and never accumulated here, so peak memory stays at a single page instead
     of a whole (whale-sized) history; the returned ``events`` list is then
     empty and callers must consume events through the sink. Without a sink the
     accumulate-and-return behaviour is preserved for the compat wrapper/tests.
-    Overlapping boundary re-fetches may hand the sink duplicate events — the
-    dedupe store makes the writes idempotent, so that is harmless.
     """
     collected: dict[tuple[str, str, int, str], PolymarketActivity] = {}
 
@@ -550,86 +598,66 @@ def _paginate_activity_window(
             for event in events:
                 collected[_activity_key(event)] = event
 
-    cursor = end_timestamp
+    def _inside_first_second() -> bool:
+        return end_timestamp is not None and oldest_seen == end_timestamp
+
+    cursor: str | None = None
     oldest_seen: int | None = None
     exhausted = False
-    boundary_complete = True
-    for _page in range(max_pages):
+    combo_rows = 0
+    pages = 0
+    while pages < max_pages or (
+        _inside_first_second() and pages < max_pages + max_stalled_pages
+    ):
         if request_budget is not None and not request_budget.take():
             break
-        raw = client.get_wallet_activity(address, limit=page_size, end=cursor)
-        if not raw:
-            exhausted = True
-            break
-        parsed = [parse_activity_row(r) for r in raw]
-        if not parsed:
-            exhausted = True
-            break
+        page = client.get_wallet_activity_page(
+            address, limit=page_size, cursor=cursor, end=end_timestamp,
+        )
+        pages += 1
+        rows = [row for row in page.rows if not _is_combo_row(row)]
+        combo_rows += len(page.rows) - len(rows)
+        parsed = [parse_activity_row(row) for row in rows]
         fresh = [
             event for event in parsed
             if since_timestamp is None or event.timestamp > since_timestamp
         ]
         _emit(fresh)
-        if since_timestamp is not None and len(fresh) < len(parsed):
+        if len(fresh) < len(parsed):
+            exhausted = True  # reached the rows an earlier walk stored
+            break
+        if parsed:
+            oldest = min(event.timestamp for event in parsed)
+            oldest_seen = oldest if oldest_seen is None else min(oldest_seen, oldest)
+        # Only a missing cursor ends a listing: a short or empty page does not.
+        cursor = page.next_cursor
+        if cursor is None:
             exhausted = True
             break
-
-        oldest = min(event.timestamp for event in parsed)
-        oldest_seen = oldest if oldest_seen is None else min(oldest_seen, oldest)
-        if len(raw) < page_size:
-            exhausted = True
-            break
-
-        offset = 0
-        while offset <= max_boundary_offset:
-            if request_budget is not None and not request_budget.take():
-                boundary_complete = False
-                break
-            boundary_raw = client.get_wallet_activity(
-                address,
-                limit=page_size,
-                offset=offset,
-                start=oldest,
-                end=oldest,
-            )
-            boundary_fresh = [
-                event
-                for event in (parse_activity_row(row) for row in boundary_raw)
-                if since_timestamp is None or event.timestamp > since_timestamp
-            ]
-            _emit(boundary_fresh)
-            if len(boundary_raw) < page_size:
-                break
-            offset += page_size
-        else:
-            boundary_complete = False
-            break
-        if not boundary_complete:
-            break
-        cursor = oldest - 1
 
     return _ActivityPaginationResult(
         events=list(collected.values()),
         exhausted=exhausted,
         oldest_timestamp=oldest_seen,
-        boundary_complete=boundary_complete,
+        stalled=(
+            not exhausted and _inside_first_second()
+            and pages >= max_pages + max_stalled_pages
+        ),
+        combo_rows=combo_rows,
     )
 
 
-def _gap_top(
-    oldest: int,
-    boundary_complete: bool,
-    budget: _ActivityRequestBudget | None,
-    errors: list[str],
-) -> int:
-    """Newest timestamp a stopped walk may not have stored, given its oldest page."""
-    if boundary_complete:
-        return oldest - 1
-    if budget is not None and budget.hit_limit:
-        return oldest  # the budget ran out inside that timestamp: revisit it
-    # More trades share that timestamp than the offset bound can page through.
-    errors.append("activity boundary exceeded offset safety bound")
-    return oldest - 1
+def _resume_end(result: _ActivityPaginationResult, errors: list[str]) -> int | None:
+    """Inclusive ``end`` for the walk that continues a stopped one; None when the
+    stopped walk read nothing."""
+    if result.oldest_timestamp is None:
+        return None
+    if not result.stalled:
+        return result.oldest_timestamp  # the walk may have stopped inside this second
+    # Starting at that second again would read the same rows and stop in the
+    # same place every run. Step below it and say so.
+    errors.append("activity second exceeded page safety bound")
+    return result.oldest_timestamp - 1
 
 
 def _paginate_activity(
@@ -650,28 +678,82 @@ def _paginate_activity(
     ).events
 
 
+# 10,500 holdings. A longer listing fails: the wallet's positions stay incomplete
+# and nothing is stored. Polymarket's migration notes say v1's offset stopped at
+# 10,000 rows, so v1 could not list more either, and a wallet that large ran into
+# this walk's bound then too (seen on 2026-10-22). A wallet with that many live
+# holdings is an automated one, which the cohort stage excludes once it is scored.
+_POSITION_PAGES_MAX = 21
+# v1's default hid holdings below one share. v2's default floor is 0.1.
+_MIN_POSITION_SHARES = 1
+# The smallest value that is not nothing: see _paginate_positions.
+_MIN_POSITION_VALUE_USDC = 0.000001
+_CLOSED_POSITIONS_LIMIT = 50
+
+
+def _is_live_holding(row: dict[str, Any]) -> bool:
+    """At least one share in a market that has not resolved, which is what v1's
+    default listing held. A row without a size is kept so that the parser can
+    refuse it."""
+    if row.get("redeemable") is True or row.get("status") == "REDEEMABLE":
+        return False
+    size = _as_float_or_none(row.get("current_size"))
+    return size is None or size >= _MIN_POSITION_SHARES
+
+
 def _paginate_positions(
     client: PolymarketClient, address: str, *, page_size: int = 500
 ) -> list[dict[str, Any]]:
+    """A wallet's holdings of at least one share in live markets, largest first.
+
+    v1's default listing was these. v2's also carries every holding in a
+    resolved market that the wallet never redeemed, tens of thousands of
+    worthless ones for a large wallet, and has no parameter that leaves
+    resolved markets out (v1's ``redeemable=false`` is accepted and ignored).
+    Asking for holdings worth more than nothing drops the worthless ones at
+    the server; the resolved winners not yet redeemed and the holdings below
+    one share are dropped here. A live holding the server values at exactly
+    zero is lost with them: one of 5,493 for the largest wallet probed
+    (docs/benchmarks/2026-11-17-data-api-v2-positions.md).
+
+    Ordered by size rather than by value (the v2 default): a cursor over a
+    value ordering repeats and skips positions as prices move between two page
+    requests, and a position missing from a snapshot reads as an exit.
+    """
     rows: list[dict[str, Any]] = []
-    for offset in range(0, 100_000, page_size):
-        page = client.get_wallet_positions(address, limit=page_size, offset=offset)
-        rows.extend(page)
-        if len(page) < page_size:
+    seen: set[tuple[str, str, str]] = set()
+    cursor: str | None = None
+    for _page in range(_POSITION_PAGES_MAX):
+        page = client.get_wallet_positions_page(
+            address, limit=page_size, cursor=cursor,
+            min_value_usdc=_MIN_POSITION_VALUE_USDC, sort_by="TOKENS",
+        )
+        for row in page.rows:
+            # A holding that changed between two page requests can be served twice.
+            # The token is part of the key: a wallet can hold two tokens of one
+            # market outcome, and those are two holdings.
+            key = (str(row.get("token_id", "")), str(row.get("condition_id", "")),
+                   str(row.get("outcome_index", "")))
+            if key not in seen and _is_live_holding(row):
+                seen.add(key)
+                rows.append(row)
+        cursor = page.next_cursor
+        if cursor is None:
             return rows
     raise RuntimeError("positions pagination exceeded safety bound")
 
 
-def _paginate_closed_positions(
-    client: PolymarketClient, address: str, *, page_size: int = 500
-) -> list[dict[str, Any]]:
-    rows: list[dict[str, Any]] = []
-    for offset in range(0, 100_000, page_size):
-        page = client.get_wallet_closed_positions(address, limit=page_size, offset=offset)
-        rows.extend(page)
-        if len(page) < page_size:
-            return rows
-    raise RuntimeError("closed positions pagination exceeded safety bound")
+def _fetch_closed_positions(client: PolymarketClient, address: str) -> list[dict[str, Any]]:
+    """A wallet's closed positions with the largest realized PnL: one page.
+
+    Nothing reads these rows beyond the audit store, and an active wallet has
+    thousands of them. Reading them all for every wallet on every run does not
+    fit the worker's runtime budget, so ``closed_positions_complete`` records
+    that this request succeeded, not that the listing was read to its end.
+    """
+    return client.get_wallet_positions_page(
+        address, status="CLOSED", limit=_CLOSED_POSITIONS_LIMIT,
+    ).rows
 
 
 def _economic_value(row: dict[str, Any], *keys: str) -> float:
@@ -753,25 +835,39 @@ def _economics_period_entry(
     return cache.setdefault(wallet.lower(), {}).setdefault(period, _EconomicsPeriodEntry())
 
 
-def _economics_from_leaderboard_row(
-    row: dict[str, Any], *, order_by: str
-) -> tuple[float | None, float | None]:
-    pnl = _economic_value(row, "pnl", "profit")
-    vol = _economic_value(row, "vol", "volume")
-    amount = _economic_value(row, "amount")
-    if order_by == "PNL":
-        if pnl == 0.0 and amount != 0.0:
-            pnl = amount
-        if pnl != 0.0 or amount != 0.0:
-            return pnl, None
-        return None, None
-    if order_by == "VOL":
-        if vol == 0.0 and amount != 0.0:
-            vol = amount
-        if vol != 0.0 or amount != 0.0:
-            return None, vol
-        return None, None
-    return None, None
+def _leaderboard_pages(
+    client: PolymarketClient,
+    *,
+    category: str,
+    time_period: str,
+    order_by: str,
+    depth: int,
+    page_size: int,
+) -> Iterator[list[dict[str, Any]]]:
+    """Pages of one leaderboard slice, best rank first, until ``depth`` rows or
+    the end of the board. Each ``next()`` makes one request, so a caller can
+    count and catch them one at a time.
+
+    A cursor keeps the page size of the request that issued it, so the last
+    page is cut here rather than asked for at a smaller size. A short or empty
+    page does not end a board; only a missing cursor does.
+    """
+    if depth <= 0:
+        return
+    limit = min(page_size, depth)
+    fetched = 0
+    cursor: str | None = None
+    for _request in range(2 * (-(-depth // limit)) + 1):
+        page = client.get_trader_leaderboard_page(
+            category=category, time_period=time_period, order_by=order_by,
+            limit=limit, cursor=cursor,
+        )
+        rows = page.rows[: depth - fetched]
+        fetched += len(rows)
+        yield rows
+        cursor = page.next_cursor
+        if cursor is None or fetched >= depth:
+            return
 
 
 def _merge_leaderboard_rows_into_economics_cache(
@@ -781,17 +877,17 @@ def _merge_leaderboard_rows_into_economics_cache(
     time_period: str,
     order_by: str,
 ) -> None:
+    """Record each row's PnL for its period. Only rows from the PnL ordering
+    are used, as before; a row's ``volume`` is in shares and is never stored
+    as USDC volume (``_fetch_wallet_economics`` reads that per wallet)."""
+    if order_by != "PNL":
+        return
     period_key = time_period.upper()
     for row in rows:
-        wallet = str(row.get("proxyWallet", "")).lower()
-        if not wallet:
-            continue
-        entry = _economics_period_entry(cache, wallet, period_key)
-        pnl, vol = _economics_from_leaderboard_row(row, order_by=order_by)
-        if pnl is not None:
-            entry.pnl_usdc = pnl
-        if vol is not None:
-            entry.volume_usdc = vol
+        wallet = str(row.get("user_id", "")).lower()
+        pnl = _as_float_or_none(row.get("pnl"))
+        if wallet and pnl is not None:
+            _economics_period_entry(cache, wallet, period_key).pnl_usdc = pnl
 
 
 def _supplement_economics_cache_pnl_slices(
@@ -803,25 +899,16 @@ def _supplement_economics_cache_pnl_slices(
 ) -> None:
     """Fill ALL/MONTH PnL for top leaderboard wallets in two matrix passes."""
     for time_period in ("ALL", "MONTH"):
-        for offset in range(0, depth, page_size):
-            limit = min(page_size, depth - offset)
-            try:
-                raw = client.get_trader_leaderboard_rankings(
-                    category="OVERALL",
-                    time_period=time_period,
-                    order_by="PNL",
-                    limit=limit,
-                    offset=offset,
+        try:
+            for rows in _leaderboard_pages(
+                client, category="OVERALL", time_period=time_period,
+                order_by="PNL", depth=depth, page_size=page_size,
+            ):
+                _merge_leaderboard_rows_into_economics_cache(
+                    cache, rows, time_period=time_period, order_by="PNL",
                 )
-            except (httpx.HTTPStatusError, httpx.TransportError):
-                break
-            if not raw:
-                break
-            _merge_leaderboard_rows_into_economics_cache(
-                cache, raw, time_period=time_period, order_by="PNL",
-            )
-            if len(raw) < limit:
-                break
+        except (httpx.HTTPStatusError, httpx.TransportError):
+            continue
 
 
 def _apply_cached_economics(
@@ -1008,22 +1095,34 @@ def _fetch_wallet_economics(
     *,
     rate_limiter: HostRateLimiter | None,
 ) -> None:
+    """Official all-time PnL and volume and 30-day PnL, each fetched until known.
+
+    PnL comes from the wallet's leaderboard standing. The standing's volume is
+    in shares, so USDC volume is read from ``/v2/user-volume``. v2 serves null
+    for a number it does not have and no standing at all for a wallet with
+    none in the period: either leaves the period incomplete, never zero.
+    """
     _apply_cached_economics(state, economics_cache, addr)
     if not state.economic_all_time_complete:
         if rate_limiter is not None:
             rate_limiter.wait()
-        pnl_row, vol_row = client.get_wallet_economics_for_period(addr, time_period="ALL")
-        if pnl_row:
-            state.all_time_pnl_usdc = _economic_value(pnl_row, "pnl", "profit", "amount")
-        if vol_row:
-            state.all_time_volume_usdc = _economic_value(vol_row, "vol", "volume", "amount")
-        state.economic_all_time_complete = bool(pnl_row or vol_row)
+        pnl = _as_float_or_none(
+            client.get_wallet_leaderboard_standing(addr, time_period="ALL").get("pnl")
+        )
+        if pnl is not None:
+            state.all_time_pnl_usdc = pnl
+            volume = _as_float_or_none(client.get_wallet_volume(addr).get("volume_usdc"))
+            if volume is not None:
+                state.all_time_volume_usdc = volume
+                state.economic_all_time_complete = True
     if not state.economic_month_complete:
         if rate_limiter is not None:
             rate_limiter.wait()
-        pnl_row, _vol_row = client.get_wallet_economics_for_period(addr, time_period="MONTH")
-        if pnl_row:
-            state.pnl_30d_usdc = _economic_value(pnl_row, "pnl", "profit", "amount")
+        pnl = _as_float_or_none(
+            client.get_wallet_leaderboard_standing(addr, time_period="MONTH").get("pnl")
+        )
+        if pnl is not None:
+            state.pnl_30d_usdc = pnl
             state.economic_month_complete = True
 
 
@@ -1056,8 +1155,9 @@ def _hydrate_single_wallet(
     since = None if full_backfill else stores.checkpoints.get_last_timestamp(addr)
     # Stream activity to disk page-by-page rather than accumulating a whole
     # (whale-sized) history in RAM before a single write. The dedupe store
-    # keeps per-page writes idempotent, so overlapping boundary re-fetches
-    # never double-write; peak memory per wallet stays at one page.
+    # keeps per-page writes idempotent, so a walk that starts at the second
+    # the last one stopped in never double-writes; peak memory per wallet
+    # stays at one page.
     activity_written = 0
     newest_ts: int | None = None
     activity_budget = (
@@ -1065,6 +1165,7 @@ def _hydrate_single_wallet(
         if max_activity_requests is not None else None
     )
     recent_complete = since is None
+    combo_rows = 0
     # Trades an earlier capped refresh skipped (JsonActivityGapStore). A full
     # backfill walks everything again, so it drops the record.
     gap = None if full_backfill else stores.activity_gaps.get_gap(addr)
@@ -1104,20 +1205,17 @@ def _hydrate_single_wallet(
                 on_page=_sink,
                 request_budget=activity_budget,
             )
-            recent_complete = recent.exhausted and recent.boundary_complete
-            if (
-                not recent_complete and activity_budget is not None
-                and gap is None and recent.oldest_timestamp is not None
-            ):
+            recent_complete = recent.exhausted
+            combo_rows += recent.combo_rows
+            if not recent_complete and activity_budget is not None and gap is None:
                 # The newest pages are stored but the walk stopped above the
                 # checkpoint. Retaining the checkpoint restarted every later run below
                 # a backlog that only grew, so from 2026-10-14 one wallet failed every
                 # run. Record the skipped range instead and let the checkpoint pass.
-                gap = (since, _gap_top(
-                    recent.oldest_timestamp, recent.boundary_complete,
-                    activity_budget, state.errors,
-                ))
-                gap_opened = True
+                gap_top = _resume_end(recent, state.errors)
+                if gap_top is not None:
+                    gap = (since, gap_top)
+                    gap_opened = True
 
         if gap is not None:
             # One gap at a time: a wallet that overflows again while it is open keeps
@@ -1134,13 +1232,13 @@ def _hydrate_single_wallet(
                 on_page=_sink,
                 request_budget=activity_budget,
             )
-            if fill.exhausted and fill.boundary_complete:
+            combo_rows += fill.combo_rows
+            if fill.exhausted:
                 gap = None
-            elif fill.oldest_timestamp is not None:
-                gap = (gap[0], _gap_top(
-                    fill.oldest_timestamp, fill.boundary_complete,
-                    activity_budget, state.errors,
-                ))
+            else:
+                gap_top = _resume_end(fill, state.errors)
+                if gap_top is not None:
+                    gap = (gap[0], gap_top)
 
         if full_backfill:
             state.activity_history_complete = False
@@ -1158,17 +1256,17 @@ def _hydrate_single_wallet(
                 on_page=_sink,
                 request_budget=activity_budget,
             )
-            if history.oldest_timestamp is not None:
-                # A budget can stop inside a timestamp shared by many events.
-                # Revisit that timestamp next run instead of dropping its tail.
-                state.oldest_activity_cursor_timestamp = history.oldest_timestamp - (
-                    0 if activity_budget is not None and not history.boundary_complete else 1
-                )
-            state.activity_history_complete = history.exhausted and history.boundary_complete
-            if not history.boundary_complete and not (
-                activity_budget is not None and activity_budget.hit_limit
-            ):
-                state.errors.append("activity boundary exceeded offset safety bound")
+            combo_rows += history.combo_rows
+            if history.exhausted:
+                if history.oldest_timestamp is not None:
+                    state.oldest_activity_cursor_timestamp = history.oldest_timestamp - 1
+            else:
+                # The walk can stop inside a second shared by many events: the
+                # next run starts at that second again instead of dropping its tail.
+                resume = _resume_end(history, state.errors)
+                if resume is not None:
+                    state.oldest_activity_cursor_timestamp = resume
+            state.activity_history_complete = history.exhausted
 
         if gap is not None:
             state.activity_history_complete = False  # trades missing until it is filled
@@ -1244,7 +1342,7 @@ def _hydrate_single_wallet(
     try:
         if rate_limiter is not None:
             rate_limiter.wait()
-        raw_closed = _paginate_closed_positions(client, addr)
+        raw_closed = _fetch_closed_positions(client, addr)
         closed_rows = [
             parse_closed_position_row(row, proxy_wallet=addr) for row in raw_closed
         ]
@@ -1292,10 +1390,12 @@ def _hydrate_single_wallet(
         _write()
 
     log.info(
-        "wallet wallet=%s since=%s activity_new=%d positions=%d value_usdc=%.2f errors=%d",
+        "wallet wallet=%s since=%s activity_new=%d combo_rows_skipped=%d positions=%d "
+        "value_usdc=%.2f errors=%d",
         addr,
         since,
         activity_written,
+        combo_rows,
         len(parsed_positions),
         value.value_usdc,
         len(state.errors),
@@ -1322,11 +1422,11 @@ def run_wallets(
 ) -> tuple[int, int, int]:
     """Hydrate wallets while persisting fail-closed trust inputs.
 
-    An explicit activity request budget covers recent/gap/history/boundary
-    calls. After a partial recent refresh the checkpoint passes the stored
-    newest pages and the skipped range is filled by later runs, one range per
-    wallet at a time (JsonActivityGapStore). It does not cap other endpoints,
-    retries, wall time, or RAM.
+    An explicit activity request budget covers every recent, gap and history
+    page. After a partial recent refresh the checkpoint passes the stored newest
+    pages and the skipped range is filled by later runs, one range per wallet at
+    a time (JsonActivityGapStore). It does not cap other endpoints, retries,
+    wall time, or RAM.
     """
     if max_activity_requests_per_wallet is not None and max_activity_requests_per_wallet < 1:
         raise ValueError("max_activity_requests_per_wallet must be positive")
@@ -2530,7 +2630,7 @@ _DEFAULT_WINDOWS: tuple[str, ...] = ("day", "week", "month", "all")
 # wallets at all.
 _SEED_PERIODS = {"day": "DAY", "week": "WEEK", "month": "MONTH", "all": "ALL"}
 _SEED_ORDERS = {"volume": "VOL", "profit": "PNL"}
-_SEED_PAGE_SIZE = 50  # /v1/leaderboard maximum
+_SEED_PAGE_SIZE = 50
 
 
 _HTTP_STATUS = re.compile(r"'([1-5]\d\d) ")  # httpx: "Client error '400 Bad Request' ..."
@@ -2565,16 +2665,14 @@ def _fetch_seed_leaderboard(
     period = _SEED_PERIODS.get(window)
     if period is None:
         raise ValueError(f"unsupported leaderboard window {window!r}")
-    rows: list[dict[str, Any]] = []
-    for offset in range(0, limit, _SEED_PAGE_SIZE):
-        page = client.get_trader_leaderboard_rankings(
-            category="OVERALL", time_period=period, order_by=_SEED_ORDERS[metric],
-            limit=min(_SEED_PAGE_SIZE, limit - offset), offset=offset,
+    return [
+        parse_ranked_leaderboard_row(row, metric=metric, window=window)
+        for page in _leaderboard_pages(
+            client, category="OVERALL", time_period=period,
+            order_by=_SEED_ORDERS[metric], depth=limit, page_size=_SEED_PAGE_SIZE,
         )
-        rows.extend(page)
-        if len(page) < min(_SEED_PAGE_SIZE, limit - offset):
-            break
-    return [parse_ranked_leaderboard_row(row, metric=metric, window=window) for row in rows]
+        for row in page
+    ]
 
 
 
@@ -2605,7 +2703,7 @@ def run_pipeline(
     """End-to-end Polymarket pipeline:
 
         1. Seed the wallet watchlist by hitting the **volume** leaderboard
-           (data API ``/v1/leaderboard``) across each configured time window. The profit/PnL leaderboard is
+           (data API ``/v2/leaderboard``) across each configured time window. The profit/PnL leaderboard is
            intentionally excluded — it over-represents wallets that ranked via
            a single lucky win rather than a repeatable edge, biasing the review
            pool. Pass include_profit_leaderboard=True to opt back in, or
@@ -2926,7 +3024,7 @@ def run_deep_leaderboard(
     """Sweep the leaderboard matrix and return the union of wallets.
 
     Iterates 10 categories × 4 time periods × len(orders) orders ×
-    ceil(depth/50) offsets. `orders` defaults to ("VOL",): the PnL/profit
+    ceil(depth/50) pages. `orders` defaults to ("VOL",): the PnL/profit
     ranking is excluded because it over-represents lucky single-win wallets,
     biasing the review pool (pass orders=("PNL", "VOL") to include it).
 
@@ -2978,18 +3076,16 @@ def run_deep_leaderboard(
             })
         slice_ok = False
         slice_degraded = False
-        for offset in range(0, depth, _DEEP_LIMIT_PER_REQUEST):
-            slices_attempted += 1
-            page_size = min(_DEEP_LIMIT_PER_REQUEST, depth - offset)
+        pages = _leaderboard_pages(
+            client, category=category, time_period=time_period, order_by=order_by,
+            depth=depth, page_size=_DEEP_LIMIT_PER_REQUEST,
+        )
+        offset = 0  # rows of this slice read so far
+        while True:
             try:
-                raw = client.get_trader_leaderboard_rankings(
-                    category=category,
-                    time_period=time_period,
-                    order_by=order_by,
-                    limit=page_size,
-                    offset=offset,
-                )
+                raw = next(pages, None)
             except httpx.HTTPStatusError as exc:
+                slices_attempted += 1
                 status = exc.response.status_code
                 log.warning(
                     "deep_leaderboard skip category=%s time_period=%s order_by=%s "
@@ -3001,12 +3097,13 @@ def run_deep_leaderboard(
                 # penalty (matches the existing "skip 4xx" contract).
                 if status >= 500 or status == 429:
                     slice_degraded = True
-                break  # bail out of offsets for this slice
+                break  # bail out of this slice
             except httpx.TransportError as exc:
                 # Connection refused / timeout / protocol error: upstream is
                 # unreachable, not merely rejecting one slice. Always
                 # counts as degraded. Previously these propagated uncaught
                 # and killed the whole sweep on the first blip.
+                slices_attempted += 1
                 log.warning(
                     "deep_leaderboard transport_error category=%s time_period=%s "
                     "order_by=%s offset=%d error=%s",
@@ -3014,21 +3111,24 @@ def run_deep_leaderboard(
                 )
                 slice_degraded = True
                 break
+            if raw is None:
+                break  # the board ended, or ``depth`` rows were read
+            slices_attempted += 1
             if not raw:
-                # First-page empty — slice is valid but exhausted.
-                if offset == 0:
-                    slice_ok = True
-                break
+                # An empty page: the slice is valid (an empty first page means
+                # an empty board), and only a missing cursor ends it.
+                slice_ok = True
+                continue
             slices_succeeded += 1
             slice_ok = True
 
-            # Map the new endpoint's (order_by, time_period) onto the
+            # Map the endpoint's (order_by, time_period) onto the
             # legacy (metric, window) JSONL schema so downstream
             # enrichment can keep reading the same file.
             metric = "profit" if order_by == "PNL" else "volume"
             window = time_period.lower()
             entries = [
-                parse_leaderboard_row(r, metric=metric, window=window)
+                parse_ranked_leaderboard_row(r, metric=metric, window=window)
                 for r in raw
             ]
             stores.leaderboard.write_leaderboard(entries)
@@ -3054,9 +3154,7 @@ def run_deep_leaderboard(
                 meta.sources.add("leaderboard")
                 if meta.best_rank is None or rank < meta.best_rank:
                     meta.best_rank = rank
-
-            if len(raw) < page_size:
-                break  # exhausted this slice
+            offset += len(raw)
 
         if slice_degraded:
             consecutive_degraded += 1

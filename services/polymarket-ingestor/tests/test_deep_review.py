@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import httpx
 import pytest
@@ -34,6 +34,8 @@ from marketsignalos_polymarket.runner import (
     run_prune_wallets,
 )
 
+from ._data_api import HOST, FakeDataApi, leaderboard_row
+
 
 def _client_with_handler(handler: Any) -> PolymarketClient:
     transport = httpx.MockTransport(handler)
@@ -44,8 +46,25 @@ def _client_with_handler(handler: Any) -> PolymarketClient:
     )
 
 
-def _lb_row(wallet: str, amount: float = 1.0) -> dict[str, Any]:
-    return {"proxyWallet": wallet, "amount": amount, "pseudonym": "p", "name": "n"}
+def _board(*wallets: str) -> FakeDataApi:
+    """A Data API where every leaderboard slice lists ``wallets``."""
+    fake = FakeDataApi()
+    fake.default_board = [leaderboard_row(wallet) for wallet in wallets]
+    return fake
+
+
+def _slice(request: httpx.Request) -> tuple[str, str, str]:
+    params = request.url.params
+    return params["category"], params["time_period"], params["sort_by"]
+
+
+def _deep_handler(fake: FakeDataApi) -> Any:
+    """The fake Data API, and an empty list from other hosts."""
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.host == HOST:
+            return fake(request)
+        return httpx.Response(200, json=[])
+    return handler
 
 
 # ── Review-state I/O ─────────────────────────────────────────────────────────
@@ -100,29 +119,23 @@ def test_run_deep_leaderboard_iterates_full_matrix_with_dedupe(
     once. A wallet that appears in multiple slices is counted as appearances
     but only added once to `discovered`."""
     monkeypatch.setenv("POLYMARKET_DATA_DIR", str(tmp_path))
-    seen_params: list[dict[str, str]] = []
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        if request.url.host != "data-api.polymarket.com":
-            return httpx.Response(404)
-        if request.url.path != "/v1/leaderboard":
-            return httpx.Response(404)
-        params = dict(request.url.params)
-        seen_params.append(params)
-        # Single wallet across all slices — exercises the per-wallet appearance accumulator.
-        return httpx.Response(200, json=[_lb_row("0xabc", amount=1.0)])
-
-    client = _client_with_handler(handler)
+    # Single wallet across all slices — exercises the per-wallet appearance accumulator.
+    fake = _board("0xabc")
+    client = _client_with_handler(fake)
     stores = _build_stores(tmp_path)
-    # depth=50 = single offset per slice; both orders → 10 * 4 * 2 = 80 calls.
+    # depth=50 = single page per slice; both orders → 10 * 4 * 2 = 80 calls.
     sweep = run_deep_leaderboard(client, stores, depth=50, orders=("PNL", "VOL"))
 
+    seen_params = fake.calls("/v2/leaderboard")
     assert len(seen_params) == 80, (
         f"expected 80 matrix calls (10 cats * 4 periods * 2 orders), got {len(seen_params)}"
     )
-    # Every requested combination appears exactly once.
-    combos = {(p["category"], p["timePeriod"], p["orderBy"]) for p in seen_params}
+    # Every requested combination appears exactly once, in v2's spelling.
+    combos = {(p["category"], p["time_period"], p["sort_by"]) for p in seen_params}
     assert len(combos) == 80
+    assert {p["time_period"] for p in seen_params} == {"day", "week", "month", "all"}
+    assert {p["sort_by"] for p in seen_params} == {"PNL", "VOLUME"}
+    assert sweep.slices_attempted == 80
     assert sweep.discovered == {"0xabc"}
     assert sweep.slices_succeeded == 80
     assert sweep.per_wallet["0xabc"].appearances == 80
@@ -139,12 +152,13 @@ def test_run_deep_leaderboard_skips_slice_4xx(
 ) -> None:
     monkeypatch.setenv("POLYMARKET_DATA_DIR", str(tmp_path))
 
+    fake = _board("0xabc")
+
     def handler(request: httpx.Request) -> httpx.Response:
-        params = dict(request.url.params)
         # Reject one specific slice — sweep must continue.
-        if params.get("category") == "WEATHER" and params.get("orderBy") == "VOL":
+        if _slice(request)[0] == "WEATHER" and _slice(request)[2] == "VOLUME":
             return httpx.Response(400, json={"error": "bad slice"})
-        return httpx.Response(200, json=[_lb_row("0xabc")])
+        return fake(request)
 
     client = _client_with_handler(handler)
     stores = _build_stores(tmp_path)
@@ -156,35 +170,49 @@ def test_run_deep_leaderboard_skips_slice_4xx(
     client.close()
 
 
-def test_run_deep_leaderboard_walks_offsets_until_short_page(
+def test_run_deep_leaderboard_follows_the_cursor_until_the_board_ends(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A short page should end the offset loop for that slice."""
+    """A board shorter than ``depth`` ends where its cursor does."""
     monkeypatch.setenv("POLYMARKET_DATA_DIR", str(tmp_path))
-    call_count = {"n": 0}
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        if request.url.path != "/v1/leaderboard":
-            return httpx.Response(404)
-        # Only count for a single slice — return a full first page and short second.
-        params = dict(request.url.params)
-        if params.get("category") == "OVERALL" and params.get("orderBy") == "PNL" \
-                and params.get("timePeriod") == "ALL":
-            call_count["n"] += 1
-            offset = int(params.get("offset", 0) or 0)
-            if offset == 0:
-                return httpx.Response(200, json=[_lb_row(f"0x{i:02x}") for i in range(50)])
-            # Short page — only 5 rows, paginator should stop after this.
-            return httpx.Response(200, json=[_lb_row(f"0x1{i:02x}") for i in range(5)])
-        return httpx.Response(200, json=[])
-
-    client = _client_with_handler(handler)
+    fake = FakeDataApi()
+    fake.leaderboards[("OVERALL", "all", "PNL")] = [
+        leaderboard_row(f"0x{i:02x}") for i in range(55)]
+    client = _client_with_handler(fake)
     stores = _build_stores(tmp_path)
-    run_deep_leaderboard(client, stores, depth=250, orders=("PNL", "VOL"))
-
-    # 5 offsets requested, but short page at offset=50 stops further pagination.
-    assert call_count["n"] == 2
+    sweep = run_deep_leaderboard(client, stores, depth=250, orders=("PNL", "VOL"))
     client.close()
+
+    calls = [call for call in fake.calls("/v2/leaderboard")
+             if (call["category"], call["time_period"], call["sort_by"])
+             == ("OVERALL", "all", "PNL")]
+    # 5 pages would reach the depth, but the board ends on its second page.
+    assert [(call["limit"], call.get("cursor")) for call in calls] == [
+        ("50", None), ("50", "50:50")]
+    assert len(sweep.discovered) == 55
+    # Rank is the position in the slice, carried across pages.
+    assert sweep.per_wallet["0x36"].best_rank == 55
+    assert sweep.slices_succeeded == 2 and sweep.slices_attempted == 81
+
+
+def test_run_deep_leaderboard_cuts_a_longer_board_at_the_depth(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("POLYMARKET_DATA_DIR", str(tmp_path))
+    fake = FakeDataApi()
+    fake.leaderboards[("OVERALL", "all", "PNL")] = [
+        leaderboard_row(f"0x{i:03x}", pnl=float(i + 1)) for i in range(200)]
+    client = _client_with_handler(fake)
+    stores = _build_stores(tmp_path)
+    sweep = run_deep_leaderboard(client, stores, depth=70, orders=("PNL",))
+    client.close()
+    assert len(sweep.discovered) == 70 and sweep.leaderboard_entries == 70
+    rows = [json.loads(line) for line in
+            (tmp_path / "polymarket_leaderboard.jsonl").read_text().splitlines()]
+    # PnL slices carry their USDC amount and the wallet's name.
+    assert (rows[0]["proxy_wallet"], rows[0]["name"], rows[0]["amount_usdc"]) == (
+        "0x000", "n", 1.0)
+    assert (rows[0]["metric"], rows[0]["window"]) == ("profit", "all")
 
 
 def test_run_deep_leaderboard_defaults_to_vol_only(
@@ -193,21 +221,17 @@ def test_run_deep_leaderboard_defaults_to_vol_only(
     """The PnL/profit ranking is the luck-bias vector — the default sweep must
     request only VOL slices (10 cats × 4 periods × 1 order = 40)."""
     monkeypatch.setenv("POLYMARKET_DATA_DIR", str(tmp_path))
-    orders_seen: list[str] = []
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        if request.url.path != "/v1/leaderboard":
-            return httpx.Response(404)
-        orders_seen.append(dict(request.url.params)["orderBy"])
-        return httpx.Response(200, json=[_lb_row("0xabc")])
-
-    client = _client_with_handler(handler)
+    fake = _board("0xabc")
+    client = _client_with_handler(fake)
     stores = _build_stores(tmp_path)
     sweep = run_deep_leaderboard(client, stores, depth=50)
     client.close()
 
-    assert set(orders_seen) == {"VOL"}, "PnL must not be swept by default"
+    orders_seen = [call["sort_by"] for call in fake.calls("/v2/leaderboard")]
+    assert set(orders_seen) == {"VOLUME"}, "PnL must not be swept by default"
     assert len(orders_seen) == 40
+    # v2 volume is shares: the sweep stores no USDC volume for these wallets.
+    assert not (tmp_path / "polymarket_wallet_economics_cache.json").read_text().count("0xabc")
     assert sweep.per_wallet["0xabc"].sources == {"leaderboard"}
 
 
@@ -295,15 +319,13 @@ def test_run_deep_leaderboard_breaker_resets_on_intervening_success(
     monkeypatch.setenv("POLYMARKET_DATA_DIR", str(tmp_path))
     seen_slices: set[tuple[str, str, str]] = set()
 
+    fake = _board("0xs")
+
     def handler(request: httpx.Request) -> httpx.Response:
-        params = dict(request.url.params)
-        key = (params["category"], params["timePeriod"], params["orderBy"])
-        seen_slices.add(key)
+        seen_slices.add(_slice(request))
         # Every 4th unique slice succeeds → max consecutive failures = 3.
         if len(seen_slices) % 4 == 0:
-            return httpx.Response(
-                200, json=[_lb_row(f"0xS{len(seen_slices):02x}")],
-            )
+            return fake(request)
         return httpx.Response(502, json={"error": "blip"})
 
     client = _client_with_handler(handler)
@@ -723,22 +745,7 @@ def test_run_deep_pipeline_smoke(
     monkeypatch.setenv("POLYMARKET_DATA_DIR", str(tmp_path))
     monkeypatch.setenv("POLYMARKET_WATCHLIST_PATH", str(tmp_path / "wl.txt"))
 
-    def handler(request: httpx.Request) -> httpx.Response:
-        host = request.url.host
-        path = request.url.path
-        if host == "data-api.polymarket.com" and path == "/v1/leaderboard":
-            return httpx.Response(200, json=[_lb_row("0xdeep")])
-        if host == "data-api.polymarket.com" and path == "/activity":
-            return httpx.Response(200, json=[])
-        if host == "data-api.polymarket.com" and path == "/positions":
-            return httpx.Response(200, json=[])
-        if host == "data-api.polymarket.com" and path == "/value":
-            return httpx.Response(200, json=[{"user": "0xdeep", "value": 0.0}])
-        if host == "gamma-api.polymarket.com":
-            return httpx.Response(200, json=[])
-        return httpx.Response(200, json=[])
-
-    client = _client_with_handler(handler)
+    client = _client_with_handler(_deep_handler(_board("0xdeep")))
     result = run_deep_pipeline(
         leaderboard_depth=50, wallet_batch_size=10,
         activity_pages=1, skip_kalshi=True, client=client,
@@ -754,6 +761,9 @@ def test_run_deep_pipeline_smoke(
     assert "0xdeep" in review
     # last_polled_at was stamped during hydration.
     assert review["0xdeep"].last_polled_at is not None
+    state = _build_stores(tmp_path).hydration.load_hydration()["0xdeep"]
+    assert state.errors == []  # every wallet endpoint answered in v2's shape
+    assert (state.positions_complete, state.closed_positions_complete) == (True, True)
 
 
 def test_run_deep_pipeline_reports_missing_subgraph_discovery(
@@ -766,14 +776,11 @@ def test_run_deep_pipeline_reports_missing_subgraph_discovery(
     monkeypatch.setenv("POLYMARKET_DATA_DIR", str(tmp_path))
     monkeypatch.setenv("POLYMARKET_WATCHLIST_PATH", str(tmp_path / "wl.txt"))
     hosts: set[str] = set()
+    route = _deep_handler(_board("0xlb"))
 
     def handler(request: httpx.Request) -> httpx.Response:
         hosts.add(request.url.host)
-        if request.url.path == "/v1/leaderboard":
-            return httpx.Response(200, json=[_lb_row("0xlb")])
-        if request.url.path == "/value":
-            return httpx.Response(200, json=[{"user": "0xlb", "value": 0.0}])
-        return httpx.Response(200, json=[])
+        return cast(httpx.Response, route(request))
 
     client = _client_with_handler(handler)
     result = run_deep_pipeline(
@@ -810,15 +817,12 @@ def test_run_deep_pipeline_partial_success_on_degraded_api(
     (tmp_path / "polymarket_wallet_enrichment.jsonl").write_text("", encoding="utf-8")
     (tmp_path / "polymarket_positions.jsonl").write_text("", encoding="utf-8")
 
-    def handler(request: httpx.Request) -> httpx.Response:
-        # Leaderboard slices → 502 (will trip the breaker after threshold).
-        if request.url.path == "/v1/leaderboard":
-            return httpx.Response(502, json={"error": "down"})
-        # Everything else returns empty so the rest of the pipeline can
-        # complete cleanly on the partial sweep.
-        return httpx.Response(200, json=[])
-
-    client = _client_with_handler(handler)
+    # Leaderboard slices → 502 (will trip the breaker after threshold). Everything
+    # else returns empty so the rest of the pipeline can complete cleanly on the
+    # partial sweep.
+    fake = FakeDataApi()
+    fake.failures["/v2/leaderboard"] = 502
+    client = _client_with_handler(_deep_handler(fake))
     result = run_deep_pipeline(
         leaderboard_depth=50, wallet_batch_size=10,
         activity_pages=1, skip_kalshi=True,

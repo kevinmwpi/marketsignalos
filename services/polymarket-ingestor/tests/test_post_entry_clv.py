@@ -73,10 +73,10 @@ def test_the_fill_filter_is_the_one_the_horizon_rule_measured() -> None:
 # ── The scorer, end to end through the real stores ────────────────────────────
 
 def _buy(cid: str, outcome: int, ts: int, price: float, usdc: float) -> dict[str, Any]:
-    return {"proxyWallet": WALLET, "timestamp": ts, "conditionId": cid, "type": "TRADE",
-            "side": "BUY", "size": usdc / price, "usdcSize": usdc, "price": price,
-            "outcomeIndex": outcome, "eventSlug": f"event-{cid}",
-            "transactionHash": f"0xt{cid}{outcome}{ts}"}
+    return {"proxy_wallet": WALLET, "timestamp": ts, "condition_id": cid, "type": "TRADE",
+            "side": "BUY", "size": usdc / price, "usdc_size": usdc, "price": price,
+            "outcome_index": outcome, "event_slug": f"event-{cid}",
+            "transaction_hash": f"0xt{cid}{outcome}{ts}"}
 
 
 def _market(cid: str, closed: bool, prices: list[str], end: int) -> dict[str, Any]:

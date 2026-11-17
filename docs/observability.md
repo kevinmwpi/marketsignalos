@@ -83,8 +83,10 @@ original investigation through three wrong theories (machine sleep, thread
 deadlock, dead sockets) before a `py-spy` dump found the real answer. Timed
 apart, the same failure is a one-glance read on which half regressed.
 
-`endpoint` labels are normalized (`/activity`, `/positions`, `:id` for wallet
-addresses and market ids) so per-wallet cardinality cannot reach the registry.
+`endpoint` labels are normalized (`/v2/activity`, `/v2/positions`, `:id` for wallet
+addresses and market ids) so per-wallet cardinality cannot reach the registry. The
+Data API labels gained the `/v2` prefix on 2026-11-17, when the collector left the
+retired v1 routes; no alert rule or dashboard panel matches on a Data API path.
 
 ### Model health
 

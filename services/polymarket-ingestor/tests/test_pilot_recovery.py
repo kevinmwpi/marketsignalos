@@ -39,9 +39,9 @@ class Clock:
 
 def _trade(n: int) -> Any:
     return parse_activity_row({
-        "proxyWallet": WALLET, "timestamp": T0 + n, "conditionId": f"0xc{n}",
-        "type": "TRADE", "side": "BUY", "size": 10, "usdcSize": 4, "price": 0.4,
-        "outcomeIndex": 0, "eventSlug": f"e{n}", "transactionHash": f"0xt{n}"})
+        "proxy_wallet": WALLET, "timestamp": T0 + n, "condition_id": f"0xc{n}",
+        "type": "TRADE", "side": "BUY", "size": 10, "usdc_size": 4, "price": 0.4,
+        "outcome_index": 0, "event_slug": f"e{n}", "transaction_hash": f"0xt{n}"})
 
 
 def _state(data: Path) -> dict[str, Any]:
