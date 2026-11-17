@@ -283,12 +283,13 @@ live check of the position filter
   migration took that listing to be live holdings only, because the pilot's whole
   store (5,789 rows) was far smaller than one large wallet's v2 listing. That
   compared different wallets and showed only that v2's listing was too long to
-  store. The first run on v2 polled 28 of the same 64 wallets and stored 80
-  position rows (2026-11-17 09:07 UTC), against 1,488 to 1,660 for each batch of
-  28 on 10-31 and 11-01. Either those wallets hold far less than they did before the
-  2026-11-03 elections, or v1 listed their resolved, unredeemed holdings and the
-  v2 walk leaves them out. Polymarket's documents do not say which, and v1 can no
-  longer be asked (`docs/benchmarks/2026-11-17-data-api-v1-positions-default.md`).
+  store. The first two runs on v2 each polled 28 of the same 64 wallets and stored
+  80 and 96 position rows (2026-11-17 09:07 and 10:07 UTC), against 1,488 to 1,660
+  for each batch of 28 on 10-31 and 11-01. Either those wallets hold far less than
+  they did before the 2026-11-03 elections, or v1 listed their resolved, unredeemed
+  holdings and the v2 walk leaves them out. Polymarket's documents do not say
+  which, and v1 can no longer be asked
+  (`docs/benchmarks/2026-11-17-data-api-v1-positions-default.md`).
   A count of live and resolved holdings for the 100 wallets of today's month board
   fits either reading, depending on which of them resemble the pilot's wallets; the
   last v1 research capture shows only that an explicit `redeemable=false` filtered.

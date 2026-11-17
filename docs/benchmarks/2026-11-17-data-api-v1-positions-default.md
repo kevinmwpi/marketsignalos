@@ -380,23 +380,26 @@ of 1, which the collector's one-share floor is meant to match.
   11-01), and 5,789 rows in the store for the two newest snapshots of 64 wallets.
   That is about 45 to 55 rows per wallet and snapshot. No run was far from the
   others, so no wallet in the rotation listed more than a few hundred rows.
-- First run on v2 (2026-11-17 09:07 UTC), live holdings of at least one share: 80
-  rows for 28 wallets. Retention keeps two snapshots per wallet, so it then dropped
-  the oldest snapshot of each wallet that had just written a third: 1,063 rows. A
-  wallet whose listing was empty wrote nothing and dropped nothing. The wallets that
-  still hold something therefore listed 1,063 rows on or before 2026-11-02 and at
-  most 80 today.
+- First two runs on v2 (2026-11-17 09:07 and 10:07 UTC), live holdings of at least
+  one share: 80 and 96 rows, each for a different batch of 28 wallets. Retention
+  keeps two snapshots per wallet, so after each run it dropped the oldest snapshot
+  of every wallet that had just written a third: 1,063 rows, then 369. A wallet whose
+  listing was empty wrote nothing and dropped nothing. The wallets that still hold
+  something therefore listed 1,063 rows on or before 2026-11-02 and at most 80
+  today in the first batch, and 369 against at most 96 in the second.
 - The cohort stage has excluded 101 wallets as automated and 64 remain. The pilot's
   rotation is the non-automated minority of what the leaderboard seeded. That is the
   caveat Part 2 raises about its 74-wallet group: the closer comparison is its 52
   wallets without a large dead book (LIVE mean 18.8; LIVE+RESOLVED mean 49.8,
   median 18).
 
-**Where that leaves it.** Unsettled, and closer to even than the 60–65% above. A
-thirteen-fold fall across the same wallets is what "included" predicts: about 3 live
-and 40 dead rows each. "Left out" needs the live books of those wallets to have
-shrunk that much across the 2026-11-03 elections, which wallets seeded from October's
-profit board may have done.
+**Where that leaves it.** Unsettled. The same wallets list far fewer rows than they
+did, thirteen times fewer in one batch and about four times fewer in the other.
+"Included" explains that as dead rows no longer listed; "left out" explains it as
+live books that shrank across the 2026-11-03 elections, which wallets seeded from
+October's profit board may have done. Neither reading predicts the difference
+between the two batches, and these counts do not move the 60–65% above either way.
+(This paragraph first said "closer to even", on the first batch alone.)
 
 The check under "What would settle it" is the one to run, and its input is leaving
 the store. A wallet's v1 snapshots are dropped after its second non-empty listing on
