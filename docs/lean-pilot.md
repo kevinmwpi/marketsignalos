@@ -33,11 +33,11 @@ The default configuration is committed in `deploy/lean-pilot.json`:
 | Cohort v1 signal prices (Stage 3 step 3) | With the entry-price stage (every 6 h) | `cohort_prices.py` runs first in that stage, capped at 60 s. For each signal with a token, it fetches the bought token's `/prices-history` from 1 h before detection to 6 h after, at 5-minute fidelity. A window is fetched once it has ended and an hour has passed. Rows go to `cohort-v1/price_observations.jsonl` and receipts to `cohort-v1/price_receipts.jsonl`. A final window is never fetched again, and a failed one is retried after an hour. The result (`cohort_v1_prices`) carries counts and the median point spacing. A failure is reported, never raised, and the backfill still runs |
 | Activity archive | Compacted at 32 MiB in code (`ACTIVITY_COMPACT_MIN_BYTES`) | Since Stage 3 step 0, a collection that leaves `polymarket_activity.jsonl` at 32 MiB or more moves its rows into a gzip segment under `polymarket_activity.jsonl.archive/` (`jsonl_archive.py`). Every reader goes through `iter_lines`, so rows, order and scores are unchanged; a test rescoring forecast-v5 before and after confirms it. A duplicated activity row is a fill counted twice, so compaction is exactly-once under a crash at any step (rename to a pending file, then a segment whose rename is the commit). The cohort purge also drops excluded wallets' rows from segments. Estimated 4× smaller from a pessimistic sample; the collection result's `activity_compaction` and `storage_mb` give the real figure |
 | Watchlist cap | 64 wallets | The Railway Hobby volume is capped at 5 GB and every wallet keeps its activity history, so seeding stops adding wallets at the cap (`seeds_over_cap` counts the ones skipped). Nobody is removed. Raise it only with `storage_mb` evidence |
-| Leaderboard seed | 100, month/profit in `deploy/lean-pilot.json` (`leaderboard_window`, `leaderboard_metric`; day/volume in code) | Bounded discovery input from the data API's `/v1/leaderboard`. Profit since 2026-10-03, after 63% of monthly-volume seeds were automated; a profit-seeded cohort is selected on recent winning, so only prospective results count (blueprint decision 6). Read 100 deep since 2026-10-04: at 25, every listed wallet was soon watched or excluded and freed slots stopped refilling (the watchlist fell from 64 to about 35). A rejected request appears in the collection result's `warning`. Excluded wallets are never re-seeded |
+| Leaderboard seed | 100, month/profit in `deploy/lean-pilot.json` (`leaderboard_window`, `leaderboard_metric`; day/volume in code) | Bounded discovery input from the data API's `/v2/leaderboard` (`/v1/leaderboard` until it was retired on 2026-11-02). Profit since 2026-10-03, after 63% of monthly-volume seeds were automated; a profit-seeded cohort is selected on recent winning, so only prospective results count (blueprint decision 6). Read 100 deep since 2026-10-04: at 25, every listed wallet was soon watched or excluded and freed slots stopped refilling (the watchlist fell from 64 to about 35). A rejected request appears in the collection result's `warning`. Excluded wallets are never re-seeded |
 | Gate-13 power diagnostic | Daily in `deploy/lean-pilot.json`; off in code | Plan step 3 (`gate13_power.py`): scores forecast-v4 and forecast-v5 into a scratch directory (deleted afterwards), and writes `diagnostics/gate13/<date>.json` with per-wallet v5 CLV power and every excluded fill by reason (an unpriced hour split into `not_ended`, `fetch_failed` and `not_fetched`). The log line carries gate-13 and tailable counts under both versions, including the wallets the sample minimum alone blocks. Changes no score or threshold |
 | Score version | `forecast-v5` in `deploy/lean-pilot.json` since 2026-10-05; `forecast-v4` in code | `forecast-v5` measures gate 13's CLV 1 h after each buy from the entry-price store (`post_entry_clv.py`, `docs/gate13-clv-v5-plan.md`). The switch changed no counts: 2 gate-13 passes, 0 tailable (`docs/benchmarks/2026-10-05-gate13-power.md`) |
 | Cohort | Daily in `deploy/lean-pilot.json`, and in every cycle that scores or follows a score it has not acted on; off in code | Wallets the scorer labels `systematic` go to `excluded_wallets.txt` for good and their rows are deleted from every per-wallet store (activity dedupe index rebuilt); freed watchlist slots refill from the leaderboard |
-| Activity budget | 10 calls/wallet | Shared across recent, gap, historical and boundary pagination, at most two pages per walk. When a wallet's newest two pages do not reach its checkpoint, the checkpoint passes them and the skipped range goes to `polymarket_activity_gaps.json`, which later collections fill top-down, one range per wallet at a time (since 2026-10-15; see below). The collection result counts open ranges (`activity_gaps_open`) |
+| Activity budget | 10 calls/wallet | Shared across recent, gap and historical pagination, one call per page, at most two pages per walk. (Under v1 each page also cost a call for its timestamp boundary; v2's cursor needs none, so six calls a wallet is now the most a run makes.) When a wallet's newest two pages do not reach its checkpoint, the checkpoint passes them and the skipped range goes to `polymarket_activity_gaps.json`, which later collections fill top-down, one range per wallet at a time (since 2026-10-15; see below). The collection result counts open ranges (`activity_gaps_open`) |
 | Cycle deadline | 20 minutes | Collection plus scoring together, including subprocess startup |
 | Daily runtime allowance | 120 minutes in `deploy/lean-pilot.json` since 2026-10-08 (90 from 2026-10-06); 60 in code | Local UTC-day accounting, with a full cycle reserved before work. At 60 minutes the last 4–6 hourly runs of every day from 2026-10-03 to 2026-10-05 (18:00–23:59 UTC) exited as `budget_exhausted`: a day's work used about 2,600 s by 18:00, leaving less than the 1,200 s reservation. At the measured 0.34 GB peak, the extra 30 minutes costs an estimated under $0.50/month at the rates below. At 90 minutes, on 2026-10-07 a run stopped by a deploy kept its 1,200 s reservation, and the last two runs (22:07, 23:07) were skipped. Skips always fall at the end of the UTC day, which is US evening, so they would under-sample evening signals. The owner raised it to 120 minutes on 2026-10-08, enough for a full day plus one interrupted run |
 | Disk guard | 512 MiB free | No cycle starts below this; the run exits nonzero as `disk_low` so Railway marks it failed. Every plan reports `disk_free_mb`, and each collection reports `storage_mb` per store |
@@ -50,9 +50,10 @@ conditions/eight actual HTTP attempts, durable cooldowns, and partial-work recei
 Positions, economics, generic catalog pagination, and other endpoints are bounded
 by the whole-cycle deadline. Two concurrent wallets and the existing 2-RPS
 pacing setting reduce pressure; that setting is not a hard per-request RPS cap.
-Historical coverage remains incomplete when a cap is reached. The history cursor,
-the gap ranges and timestamp-boundary handling keep unfinished work for later
-collections.
+Historical coverage remains incomplete when a cap is reached. The history cursor
+and the gap ranges keep unfinished work for later collections: a walk that stops
+early starts again at the second it stopped in, and the dedupe index absorbs the
+rows read twice.
 
 The worker owns an OS file lock for its entire cycle, preventing another pilot
 worker from overlapping even if the supervisor exits. A child-side deadline
@@ -229,6 +230,77 @@ run, so they were most likely cohort members. The logs give counts, not addresse
   readable, but trades in any open range are never collected.
 - **Watch.** `activity_gaps_open` in the collection result should fall to 0 within a
   few runs.
+
+### Data API v1 retired, 2026-11-02 (fixed 2026-11-17)
+
+Polymarket retired Data API v1 on 2026-11-02. `/v1/leaderboard` answered HTTP 410
+from 21:10 UTC and every wallet route (`/activity`, `/positions`,
+`/closed-positions`, `/value`) from 23:08 UTC. The worker kept running and reported
+`partial` every hour: no activity, 28 of 28 polled wallets with errors. The
+provisional cohort lost its members, so capture was skipped, and the research
+snapshot stopped publishing on 2026-11-03. The post-mortem is in
+`docs/fix-lessons-learned.md`.
+
+Since 2026-11-17 the collector reads v2. What it stores is unchanged, with these
+differences in how it is read. The evidence is one live probe and one live smoke test
+(`docs/benchmarks/2026-11-17-data-api-v2-probe.md`, `-smoke.md`, `-positions.md`).
+
+- **Activity.** `/v2/activity`, newest first, joined by the server's cursor instead
+  of timestamp windows and offsets. Every request asks for the whole history
+  (`start=1`; v2's default is three years) without deposits and withdrawals. A walk
+  that stops early may have stopped inside a second, so the next one starts at that
+  second again. Rows and the dedupe key are the same: v2 returned the 988 trades of
+  the last v1 research capture fill for fill.
+- **Combo trades are skipped.** v2 mixes trades of combos (baskets of markets) into
+  the feed, marked `is_combo`; v1 had a route of its own for them, which the pilot
+  never read. A combo's condition has no Gamma market, so storing one would leave its
+  wallet's market metadata incomplete for good. The wallet log line counts them
+  (`combo_rows_skipped`).
+- **Positions are holdings in live markets.** v2's listing also returns every holding
+  in a resolved market that the wallet never redeemed: 53,667 rows for one
+  leaderboard wallet, 5,494 of them live, against 5,789 rows in the pilot's whole
+  position store. It has no parameter that leaves resolved markets out, and v1's
+  `redeemable=false` is accepted and ignored. The walk therefore asks for holdings
+  worth at least 0.000001 USDC (`filter_type=CASH`), which drops the worthless ones
+  at the server: 12 requests for that wallet instead of 108. It then drops the
+  resolved winners not yet redeemed and the holdings below one share. It orders by
+  size, because a cursor over the default value ordering repeated and skipped rows
+  as prices moved. A live holding the server values at exactly zero is lost: one of
+  5,493 for that wallet, none for the three others probed. A listing longer than
+  10,500 rows fails, as it did when v1's offset stopped at 10,000: the wallet's
+  positions stay incomplete and nothing is stored for that run.
+- **Closed positions are one page.** The 50 with the largest realized PnL
+  (`status=CLOSED`). Nothing reads these rows beyond the audit store, and a wallet can
+  have thousands. `closed_positions_complete` therefore means that the request
+  succeeded, not that every closed position was read.
+- **Economics.** PnL comes from the wallet's leaderboard standing. v2's leaderboard
+  volume is in shares, so all-time USDC volume comes from `/v2/user-volume`. A wallet
+  with no standing in a period, or a null PnL, stays incomplete for that period
+  rather than being stored as zero. As before, each period is fetched until it is
+  known and never refreshed, so wallets hydrated before 2026-11-02 keep their v1
+  figures.
+- **Leaderboard.** `/v2/leaderboard`, paged by cursor. Volume-ranked entries carry no
+  USDC amount (v2 reports shares). The pilot seeds by month profit, which is in USDC
+  in both versions.
+
+Known gaps, none of them new with v2:
+
+- **The dedupe key drops fills.** The store keeps one row per (transaction,
+  condition, outcome index, type). A wallet whose order is filled against two resting
+  orders in one transaction gets two rows from the API that share that key, and the
+  second is dropped. In the last v1 capture 33 of 988 trades shared a key with
+  another, and v2 serves the same 33. The key also has no wallet in it, so two
+  watched wallets on opposite sides of one fill collide. Fixing either changes stored
+  rows and scores and is an owner decision.
+- **Two holdings can share a market outcome.** One probed wallet holds two tokens
+  of the same condition and outcome index. Both rows are stored, as served; a reader
+  that keys holdings on (condition, outcome index) alone sees one of them.
+- **Three-year default window.** No probed wallet has activity older than three
+  years, so the default was not observed. The collector sends `start=1` regardless.
+- **`user-pnl-api.polymarket.com`** (maximum drawdown only) could not be reached from
+  the test environment. A failure there is logged and changes no gate.
+
+The change restarts the 14-day count (S7 in `docs/stage3-cohort-v1-plan.md`).
 
 ## Budget envelope, not a cost guarantee
 

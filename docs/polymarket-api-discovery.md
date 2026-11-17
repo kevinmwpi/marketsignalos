@@ -1,5 +1,12 @@
 # Polymarket API discovery report
 
+> **The `data-api.polymarket.com` routes in this report are Data API v1, retired on
+> 2026-11-02.** They now answer HTTP 410. The collector reads v2 (`/v2/activity`,
+> `/v2/positions`, `/v2/value`, `/v2/leaderboard`, `/v2/user-volume`): wrapped
+> payloads, snake_case fields and cursor paging. The v2 shapes, as probed live, are in
+> [`benchmarks/2026-11-17-data-api-v2-probe.md`](benchmarks/2026-11-17-data-api-v2-probe.md).
+> The Gamma, CLOB and `lb-api` sections below are unaffected.
+
 Wallet probed: `0x56687bf447db6ffa42ffe2204a05edaa20f55839` (Theo4 — top all-time profit at ~$22M)
 
 Probes: 16
