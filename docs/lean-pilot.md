@@ -338,11 +338,18 @@ Known gaps. The first is new with v2; the others are not:
   look like the frozen wallets below. The recent and gap walks hit the same
   condition but show it (`recent activity refresh incomplete`, a gap that never
   closes).
-- **About a fifth of the watchlist appears not to be polled.** A bounded run takes
-  a wallet again only while its latest position snapshot holds something, so a seed
-  whose first listing was empty or failed is polled once (see "Which wallets are
-  polled" above). The result line does not name the wallets a run polled, but three
-  counts agree on 12 to 14 of the 64:
+- **About a fifth of the watchlist is not polled.** A bounded run takes a wallet
+  again only while its latest position snapshot holds something, so a seed whose
+  first listing was empty or failed is polled once (see "Which wallets are polled"
+  above). The result line does not name the wallets a run polled, but four counts
+  agree on 12 to 14 of the 64:
+  - The first tier diagnostic (build of 2026-11-18 01:11 UTC, on the scores of
+    2026-11-17 17:14 UTC) counts 12 wallets with `incomplete activity history` and
+    10 with `incomplete current positions`. Every wallet polled since the move to v2
+    succeeded, and a successful poll clears both, so these wallets were not polled.
+    Ten of them failed their first position listing. The daily check had read "one
+    wallet failed and the next run cleared it" as harmless; for a new seed it is
+    this.
   - `backfill_complete_wallets` was 52 in every run from 2026-10-22 18:10 UTC to the
     outage (267 runs) and is 52 again since the second run on v2. Twelve histories
     stay incomplete, which blocks trust, while the runs write far too few rows for
@@ -363,6 +370,13 @@ Known gaps. The first is new with v2; the others are not:
   These wallets keep their place under the cap of 64 while 70 leaderboard wallets
   wait for one. Rotating a bounded run over the whole watchlist would poll them
   again; it changes what the pilot collects and is an owner decision.
+- **Market metadata keeps about half the watchlist untrusted.** A wallet is trusted
+  only when every market it traded has metadata. Between 27 and 35 of the 64 wallets
+  have met that in every run since 2026-10-22, before, through and after the outage,
+  so this is a standing condition and not a backlog. In the first tier diagnostic
+  (2026-11-18) `incomplete market metadata` applies to 30 wallets and is the only
+  reason keeping 9 of them out of T2, which held 9. Which markets are missing, and
+  whether they can be fetched at all, has not been counted.
 - **The dedupe key drops fills.** The store keeps one row per (transaction,
   condition, outcome index, type). A wallet whose order is filled against two resting
   orders in one transaction gets two rows from the API that share that key, and the

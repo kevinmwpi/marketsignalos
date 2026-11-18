@@ -394,24 +394,27 @@ of 1, which the collector's one-share floor is meant to match.
   wallets without a large dead book (LIVE mean 18.8; LIVE+RESOLVED mean 49.8,
   median 18).
 - Seeds whose first listing was empty. A seed is polled again only if its first
-  position listing stored something, and 12 to 14 of the 64 wallets appear never to
-  have been polled a second time (`docs/lean-pilot.md`, known gaps). All of them
-  were seeded on v1. If v1 listed resolved holdings, an empty listing meant holding
-  nothing at all, which is 7 of today's 100 month-board wallets; if it left them
-  out, it meant holding nothing live, which is 27 of 100. About a fifth of the
-  pilot's seeds is nearer the second. This leans towards "left out", and rests on
-  two things not established: that these wallets left the rotation because their
-  listing was empty rather than because it failed (one did fail, on 2026-10-22), and
-  that seeds in October resembled today's board.
+  position listing stored something, and 12 to 14 of the 64 wallets were never
+  polled a second time (`docs/lean-pilot.md`, known gaps). All of them were seeded
+  on v1. If v1 listed resolved holdings, an empty listing meant holding nothing at
+  all, which is 7 of today's 100 month-board wallets; if it left them out, it meant
+  holding nothing live, which is 27 of 100. On 2026-11-17 this note took about a
+  fifth of the seeds to have had an empty listing and read that as leaning towards
+  "left out". The tier diagnostic of 2026-11-18 shows otherwise: 10 of those wallets
+  carry `incomplete current positions`, so their listing failed and was not empty.
+  That leaves 2 to 4 seeds of 64 with an empty first listing, which is near 7 in
+  100 and far from 27, on numbers too small to carry weight. It no longer leans
+  towards "left out".
 
 **Where that leaves it.** Unsettled. The same wallets list far fewer rows than they
 did, thirteen times fewer in one batch and about four times fewer in the other.
 "Included" explains that as dead rows no longer listed; "left out" explains it as
 live books that shrank across the 2026-11-03 elections, which wallets seeded from
 October's profit board may have done. Neither reading predicts the difference
-between the two batches. The share of seeds with an empty first listing leans
-towards "left out", in the same direction as the 60–65% above.
-(This paragraph first said "closer to even", on the first batch alone.)
+between the two batches, and the share of seeds with an empty first listing is
+too small a count to lean on. Two readings of the pilot's own counts have been
+written here and withdrawn: "closer to even" on the first batch alone, then "leans
+towards left out" on the seeds. None of these counts settles it.
 
 The check under "What would settle it" is the one to run, and its input is leaving
 the store. A wallet's v1 snapshots are dropped after its second non-empty listing on
