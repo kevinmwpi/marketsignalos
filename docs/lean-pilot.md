@@ -375,8 +375,11 @@ Known gaps. The first is new with v2; the others are not:
   have met that in every run since 2026-10-22, before, through and after the outage,
   so this is a standing condition and not a backlog. In the first tier diagnostic
   (2026-11-18) `incomplete market metadata` applies to 30 wallets and is the only
-  reason keeping 9 of them out of T2, which held 9. Which markets are missing, and
-  whether they can be fetched at all, has not been counted.
+  reason keeping 9 of them out of T2, which held 9. A day later it applied to 32,
+  the only blocking count that changed, and the only tier moves were two wallets
+  leaving T3. The likely mechanism is that a wallet which buys into a market the
+  store does not hold yet is untrusted until that market is fetched. Which markets
+  are missing, and whether they can be fetched at all, has not been counted.
 - **The dedupe key drops fills.** The store keeps one row per (transaction,
   condition, outcome index, type). A wallet whose order is filled against two resting
   orders in one transaction gets two rows from the API that share that key, and the
