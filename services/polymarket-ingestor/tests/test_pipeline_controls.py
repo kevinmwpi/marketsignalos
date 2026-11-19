@@ -13,7 +13,7 @@ from marketsignalos_polymarket import runner, storage
 from marketsignalos_polymarket.models import PolymarketWalletHydration
 from marketsignalos_polymarket.polymarket_client import PolymarketClient, PolymarketClientConfig
 
-from ._data_api import HOST, FakeDataApi
+from ._data_api import HOST, FakeDataApi, position_row
 
 
 @pytest.fixture
@@ -151,6 +151,58 @@ def test_bounded_pipeline_also_polls_seeds_that_were_never_hydrated(
     assert calls == [["0xb", "0xc"], ["0xa"]]
     run()
     assert calls[-1] == ["0xa"]  # the API's unbounded path still polls only hot wallets
+
+
+def test_an_empty_position_listing_keeps_the_last_snapshot_and_the_wallet_in_rotation(
+    pilot_data: Path,
+) -> None:
+    """An empty listing writes no snapshot, so the wallet's last one stands and keeps
+    it hot: a wallet that holds nothing now still looks invested, and a bounded run
+    still polls it. Recording empty snapshots without widening the selection would
+    drop every wallet with no holding from the pilot for good."""
+    (pilot_data / "watchlist.txt").write_text("0xa\n0xb\n", encoding="utf-8")
+    manifests = pilot_data / "polymarket_position_snapshots.jsonl"
+    positions = pilot_data / "polymarket_positions.jsonl"
+    taken = "2026-10-01T00:00:00+00:00"
+    manifests.write_text("".join(json.dumps(
+        {"proxy_wallet": wallet, "snapshot_id": f"old-{wallet}", "position_count": 1,
+         "complete": True, "snapshot_at": taken}) + "\n"
+        for wallet in ("0xa", "0xb")), encoding="utf-8")
+    positions.write_text("".join(json.dumps(
+        {"proxy_wallet": wallet, "condition_id": "0xm", "outcome_index": 0, "size": 5.0,
+         "snapshot_id": f"old-{wallet}", "snapshot_at": taken}) + "\n"
+        for wallet in ("0xa", "0xb")), encoding="utf-8")
+    runner._build_stores(pilot_data).hydration.upsert_hydration([
+        PolymarketWalletHydration(proxy_wallet=wallet, last_refreshed_at="2026-10-01T00:00:00Z")
+        for wallet in ("0xa", "0xb")
+    ])
+    fake = FakeDataApi()
+    fake.positions["0xb"] = [position_row("0xlive")]  # 0xa holds nothing now
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return fake(request) if request.url.host == HOST else httpx.Response(200, json=[])
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as http:
+        client = PolymarketClient(
+            PolymarketClientConfig(max_retries=1, retry_backoff_seconds=0), client=http,
+        )
+        for _ in range(2):
+            result = runner.run_pipeline(
+                client=client, windows=["all"], skip_enrichment=True,
+                refresh_reference=False, wallet_batch_size=2,
+            )
+            assert result.wallets_polled == 2
+
+    polled = [call["user"] for call in fake.calls("/v2/value")]
+    assert sorted(polled[:2]) == sorted(polled[2:]) == ["0xa", "0xb"]
+    stored = [json.loads(line) for line in positions.read_text(encoding="utf-8").splitlines()]
+    assert {row["snapshot_id"] for row in stored if row["proxy_wallet"] == "0xa"} == {"old-0xa"}
+    latest = {
+        row["proxy_wallet"]: row["snapshot_id"]
+        for row in map(json.loads, manifests.read_text(encoding="utf-8").splitlines())
+    }
+    assert latest["0xa"] == "old-0xa"
+    assert latest["0xb"] != "old-0xb"
 
 
 @pytest.mark.parametrize("kwargs", [

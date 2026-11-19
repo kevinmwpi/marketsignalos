@@ -1,0 +1,974 @@
+{
+ "captured_utc": "2026-11-17T09:46:07Z/09:48:24Z",
+ "requests": 238,
+ "statuses": {
+  "200": 237,
+  "503": 1
+ },
+ "retry_after_seen": 1,
+ "failed_wallets": 0,
+ "all_100": {
+  "wallets": 100,
+  "live": {
+   "n": 100,
+   "min": 0,
+   "q1": 0.0,
+   "median": 16.0,
+   "q3": 221.5,
+   "mean": 186.4,
+   "max": 1000
+  },
+  "resolved": {
+   "n": 100,
+   "min": 0,
+   "q1": 1.0,
+   "median": 53.5,
+   "q3": 794.0,
+   "mean": 516.6,
+   "max": 2000
+  },
+  "live_plus_resolved": {
+   "n": 100,
+   "min": 0,
+   "q1": 15.75,
+   "median": 187.5,
+   "q3": 1071.0,
+   "mean": 703.1,
+   "max": 3000
+  },
+  "live_buckets": {
+   "eq_0": 27,
+   "le_10": 43,
+   "le_50": 62,
+   "le_200": 74,
+   "gt_200": 26,
+   "truncated": 11
+  },
+  "resolved_buckets": {
+   "eq_0": 24,
+   "le_10": 37,
+   "le_50": 49,
+   "le_200": 62,
+   "gt_200": 38,
+   "truncated": 17
+  },
+  "total_buckets": {
+   "eq_0": 7,
+   "le_10": 21,
+   "le_50": 36,
+   "le_200": 52,
+   "gt_200": 48,
+   "truncated": 24
+  },
+  "resolved_lost": 51459,
+  "resolved_won": 202,
+  "wallets_with_unredeemed_winner": 10,
+  "extra": {
+   "live_20_150": 18,
+   "total_20_150": 19,
+   "live_mean_drop_top5": 143.6,
+   "total_mean_drop_top5": 584.6,
+   "total_median": 187.5,
+   "live_le_3": 33,
+   "live_le_5": 34,
+   "top28_live": {
+    "n": 28,
+    "min": 0,
+    "q1": 2.75,
+    "median": 46.5,
+    "q3": 1000.0,
+    "mean": 340.2,
+    "max": 1000
+   }
+  }
+ },
+ "live_below_200_untruncated": {
+  "wallets": 74,
+  "live": {
+   "n": 74,
+   "min": 0,
+   "q1": 0.0,
+   "median": 7.0,
+   "q3": 28.0,
+   "mean": 27.4,
+   "max": 191
+  },
+  "resolved": {
+   "n": 74,
+   "min": 0,
+   "q1": 1.0,
+   "median": 34.5,
+   "q3": 574.5,
+   "mean": 390.0,
+   "max": 2000
+  },
+  "live_plus_resolved": {
+   "n": 74,
+   "min": 0,
+   "q1": 7.0,
+   "median": 55.5,
+   "q3": 599.0,
+   "mean": 417.4,
+   "max": 2191
+  },
+  "live_buckets": {
+   "eq_0": 27,
+   "le_10": 43,
+   "le_50": 62,
+   "le_200": 74,
+   "gt_200": 0,
+   "truncated": 0
+  },
+  "resolved_buckets": {
+   "eq_0": 18,
+   "le_10": 31,
+   "le_50": 41,
+   "le_200": 52,
+   "gt_200": 22,
+   "truncated": 8
+  },
+  "total_buckets": {
+   "eq_0": 7,
+   "le_10": 21,
+   "le_50": 36,
+   "le_200": 52,
+   "gt_200": 22,
+   "truncated": 8
+  },
+  "resolved_lost": 28740,
+  "resolved_won": 119,
+  "wallets_with_unredeemed_winner": 9,
+  "extra": {
+   "live_20_150": 18,
+   "total_20_150": 19,
+   "live_mean_drop_top5": 17.0,
+   "total_mean_drop_top5": 296.1,
+   "total_median": 55.5,
+   "live_le_3": 33,
+   "live_le_5": 34,
+   "top28_live": {
+    "n": 28,
+    "min": 0,
+    "q1": 0.0,
+    "median": 8.0,
+    "q3": 40.0,
+    "mean": 35.5,
+    "max": 191
+   }
+  }
+ },
+ "live_below_200_and_resolved_untruncated": {
+  "wallets": 66,
+  "live": {
+   "n": 66,
+   "min": 0,
+   "q1": 0.0,
+   "median": 5.5,
+   "q3": 26.5,
+   "mean": 23.4,
+   "max": 183
+  },
+  "resolved": {
+   "n": 66,
+   "min": 0,
+   "q1": 0.0,
+   "median": 17.5,
+   "q3": 159.25,
+   "mean": 194.8,
+   "max": 1392
+  },
+  "live_plus_resolved": {
+   "n": 66,
+   "min": 0,
+   "q1": 6.25,
+   "median": 46.5,
+   "q3": 181.25,
+   "mean": 218.3,
+   "max": 1421
+  },
+  "live_buckets": {
+   "eq_0": 26,
+   "le_10": 42,
+   "le_50": 57,
+   "le_200": 66,
+   "gt_200": 0,
+   "truncated": 0
+  },
+  "resolved_buckets": {
+   "eq_0": 18,
+   "le_10": 31,
+   "le_50": 41,
+   "le_200": 52,
+   "gt_200": 14,
+   "truncated": 0
+  },
+  "total_buckets": {
+   "eq_0": 7,
+   "le_10": 21,
+   "le_50": 36,
+   "le_200": 52,
+   "gt_200": 14,
+   "truncated": 0
+  },
+  "resolved_lost": 12787,
+  "resolved_won": 72,
+  "wallets_with_unredeemed_winner": 6,
+  "extra": {
+   "live_20_150": 16,
+   "total_20_150": 19,
+   "live_mean_drop_top5": 13.4,
+   "total_mean_drop_top5": 135.6,
+   "total_median": 46.5,
+   "live_le_3": 32,
+   "live_le_5": 33,
+   "top28_live": {
+    "n": 28,
+    "min": 0,
+    "q1": 0.0,
+    "median": 4.0,
+    "q3": 21.0,
+    "mean": 22.1,
+    "max": 181
+   }
+  }
+ },
+ "per_wallet_counts_sorted_by_live": [
+  [
+   0,
+   0,
+   0,
+   0,
+   0
+  ],
+  [
+   0,
+   0,
+   0,
+   0,
+   0
+  ],
+  [
+   0,
+   0,
+   0,
+   0,
+   0
+  ],
+  [
+   0,
+   0,
+   0,
+   0,
+   0
+  ],
+  [
+   0,
+   0,
+   0,
+   0,
+   0
+  ],
+  [
+   0,
+   0,
+   0,
+   0,
+   0
+  ],
+  [
+   0,
+   0,
+   0,
+   0,
+   0
+  ],
+  [
+   0,
+   1,
+   0,
+   0,
+   0
+  ],
+  [
+   0,
+   1,
+   0,
+   0,
+   0
+  ],
+  [
+   0,
+   2,
+   0,
+   0,
+   0
+  ],
+  [
+   0,
+   2,
+   0,
+   0,
+   0
+  ],
+  [
+   0,
+   3,
+   0,
+   0,
+   0
+  ],
+  [
+   0,
+   6,
+   0,
+   0,
+   0
+  ],
+  [
+   0,
+   7,
+   0,
+   0,
+   0
+  ],
+  [
+   0,
+   22,
+   0,
+   0,
+   0
+  ],
+  [
+   0,
+   27,
+   0,
+   0,
+   0
+  ],
+  [
+   0,
+   44,
+   0,
+   0,
+   0
+  ],
+  [
+   0,
+   44,
+   0,
+   0,
+   0
+  ],
+  [
+   0,
+   53,
+   0,
+   0,
+   0
+  ],
+  [
+   0,
+   58,
+   0,
+   0,
+   0
+  ],
+  [
+   0,
+   145,
+   0,
+   0,
+   0
+  ],
+  [
+   0,
+   164,
+   0,
+   0,
+   0
+  ],
+  [
+   0,
+   191,
+   0,
+   0,
+   0
+  ],
+  [
+   0,
+   610,
+   0,
+   0,
+   0
+  ],
+  [
+   0,
+   789,
+   0,
+   0,
+   0
+  ],
+  [
+   0,
+   865,
+   0,
+   0,
+   0
+  ],
+  [
+   0,
+   2000,
+   0,
+   0,
+   1
+  ],
+  [
+   1,
+   0,
+   0,
+   0,
+   0
+  ],
+  [
+   1,
+   0,
+   0,
+   0,
+   0
+  ],
+  [
+   2,
+   0,
+   0,
+   0,
+   0
+  ],
+  [
+   2,
+   0,
+   0,
+   0,
+   0
+  ],
+  [
+   2,
+   564,
+   51,
+   0,
+   0
+  ],
+  [
+   3,
+   7,
+   0,
+   0,
+   0
+  ],
+  [
+   5,
+   661,
+   0,
+   0,
+   0
+  ],
+  [
+   6,
+   14,
+   0,
+   0,
+   0
+  ],
+  [
+   7,
+   0,
+   0,
+   0,
+   0
+  ],
+  [
+   7,
+   0,
+   0,
+   0,
+   0
+  ],
+  [
+   7,
+   190,
+   0,
+   0,
+   0
+  ],
+  [
+   7,
+   1179,
+   0,
+   0,
+   0
+  ],
+  [
+   9,
+   746,
+   1,
+   0,
+   0
+  ],
+  [
+   10,
+   1,
+   0,
+   0,
+   0
+  ],
+  [
+   10,
+   39,
+   0,
+   0,
+   0
+  ],
+  [
+   10,
+   130,
+   6,
+   0,
+   0
+  ],
+  [
+   12,
+   2000,
+   8,
+   0,
+   1
+  ],
+  [
+   13,
+   0,
+   0,
+   0,
+   0
+  ],
+  [
+   13,
+   0,
+   0,
+   0,
+   0
+  ],
+  [
+   15,
+   0,
+   0,
+   0,
+   0
+  ],
+  [
+   15,
+   1,
+   1,
+   0,
+   0
+  ],
+  [
+   15,
+   2000,
+   0,
+   0,
+   1
+  ],
+  [
+   15,
+   2000,
+   0,
+   0,
+   1
+  ],
+  [
+   17,
+   102,
+   0,
+   0,
+   0
+  ],
+  [
+   19,
+   1392,
+   0,
+   0,
+   0
+  ],
+  [
+   25,
+   11,
+   0,
+   0,
+   0
+  ],
+  [
+   27,
+   54,
+   0,
+   0,
+   0
+  ],
+  [
+   28,
+   21,
+   0,
+   0,
+   0
+  ],
+  [
+   28,
+   49,
+   0,
+   0,
+   0
+  ],
+  [
+   35,
+   2000,
+   0,
+   0,
+   1
+  ],
+  [
+   38,
+   1383,
+   0,
+   0,
+   0
+  ],
+  [
+   39,
+   3,
+   1,
+   0,
+   0
+  ],
+  [
+   41,
+   125,
+   0,
+   0,
+   0
+  ],
+  [
+   43,
+   578,
+   0,
+   0,
+   0
+  ],
+  [
+   50,
+   0,
+   0,
+   0,
+   0
+  ],
+  [
+   52,
+   1010,
+   0,
+   0,
+   0
+  ],
+  [
+   60,
+   2000,
+   0,
+   0,
+   1
+  ],
+  [
+   68,
+   0,
+   0,
+   0,
+   0
+  ],
+  [
+   95,
+   3,
+   0,
+   0,
+   0
+  ],
+  [
+   103,
+   309,
+   0,
+   0,
+   0
+  ],
+  [
+   105,
+   295,
+   0,
+   0,
+   0
+  ],
+  [
+   116,
+   54,
+   12,
+   0,
+   0
+  ],
+  [
+   143,
+   30,
+   0,
+   0,
+   0
+  ],
+  [
+   155,
+   2000,
+   22,
+   0,
+   1
+  ],
+  [
+   181,
+   3,
+   0,
+   0,
+   0
+  ],
+  [
+   183,
+   871,
+   0,
+   0,
+   0
+  ],
+  [
+   191,
+   2000,
+   17,
+   0,
+   1
+  ],
+  [
+   220,
+   501,
+   0,
+   0,
+   0
+  ],
+  [
+   226,
+   603,
+   0,
+   0,
+   0
+  ],
+  [
+   235,
+   155,
+   0,
+   0,
+   0
+  ],
+  [
+   264,
+   0,
+   0,
+   0,
+   0
+  ],
+  [
+   277,
+   2000,
+   0,
+   0,
+   1
+  ],
+  [
+   289,
+   809,
+   0,
+   0,
+   0
+  ],
+  [
+   305,
+   632,
+   0,
+   0,
+   0
+  ],
+  [
+   336,
+   0,
+   0,
+   0,
+   0
+  ],
+  [
+   380,
+   2000,
+   0,
+   0,
+   1
+  ],
+  [
+   396,
+   1206,
+   0,
+   0,
+   0
+  ],
+  [
+   422,
+   45,
+   0,
+   0,
+   0
+  ],
+  [
+   443,
+   0,
+   0,
+   0,
+   0
+  ],
+  [
+   524,
+   2000,
+   0,
+   0,
+   1
+  ],
+  [
+   526,
+   2000,
+   0,
+   0,
+   1
+  ],
+  [
+   773,
+   2000,
+   0,
+   0,
+   1
+  ],
+  [
+   1000,
+   0,
+   0,
+   1,
+   0
+  ],
+  [
+   1000,
+   0,
+   0,
+   1,
+   0
+  ],
+  [
+   1000,
+   0,
+   0,
+   1,
+   0
+  ],
+  [
+   1000,
+   33,
+   0,
+   1,
+   0
+  ],
+  [
+   1000,
+   180,
+   0,
+   1,
+   0
+  ],
+  [
+   1000,
+   230,
+   0,
+   1,
+   0
+  ],
+  [
+   1000,
+   408,
+   83,
+   1,
+   0
+  ],
+  [
+   1000,
+   2000,
+   0,
+   1,
+   1
+  ],
+  [
+   1000,
+   2000,
+   0,
+   1,
+   1
+  ],
+  [
+   1000,
+   2000,
+   0,
+   1,
+   1
+  ],
+  [
+   1000,
+   2000,
+   0,
+   1,
+   1
+  ]
+ ],
+ "resample_28_wallets_200000_draws_seed_17": {
+  "live_below_200": {
+   "P_mean_total_le_55_resolved_x1.0": 1e-05,
+   "P_mean_total_le_110_resolved_x1.0": 0.000265,
+   "P_mean_total_le_55_resolved_x0.5": 9.5e-05,
+   "P_mean_total_le_110_resolved_x0.5": 0.01109,
+   "P_mean_total_le_55_resolved_x0.25": 0.00296,
+   "P_mean_total_le_110_resolved_x0.25": 0.29869,
+   "P_mean_live_ge_28": 0.46068,
+   "P_mean_live_ge_45": 0.006875,
+   "P_mean_live_28_to_110": 0.45909
+  },
+  "all_100": {
+   "P_mean_total_le_55_resolved_x1.0": 0.0,
+   "P_mean_total_le_110_resolved_x1.0": 0.0,
+   "P_mean_total_le_55_resolved_x0.5": 0.0,
+   "P_mean_total_le_110_resolved_x0.5": 5e-06,
+   "P_mean_total_le_55_resolved_x0.25": 0.0,
+   "P_mean_total_le_110_resolved_x0.25": 0.000185,
+   "P_mean_live_ge_28": 0.999925,
+   "P_mean_live_ge_45": 0.99929,
+   "P_mean_live_28_to_110": 0.06291
+  },
+  "live_below_200_total_le_200": {
+   "wallets": 52,
+   "mean_live": 18.8,
+   "mean_total": 49.8,
+   "median_total": 18.0
+  }
+ },
+ "method": {
+  "leaderboard": "/v2/leaderboard?category=OVERALL&time_period=month&sort_by=PNL&limit=100 (one request, 100 rows; wallet = user_id)",
+  "live": "/v2/positions?user=W&limit=500&filter_type=CASH&filter_amount=0.000001&sort_by=TOKENS&sort_direction=DESC, at most 2 pages; rows with redeemable false and current_size >= 1; truncated = a third page existed (count is a floor, at most 1000)",
+  "resolved": "/v2/positions?user=W&limit=1000&status=REDEEMABLE&filter_type=TOKENS&filter_amount=1, at most 2 pages; truncated = a third page existed (count is a floor, 2000)",
+  "per_wallet_row": "[live, resolved, resolved with current_value > 0, live truncated, resolved truncated], sorted by live then resolved; not in leaderboard order"
+ },
+ "runaway_requests_note": "A first attempt read the wallet from the wrong leaderboard key and paged /v2/leaderboard for about 22 minutes before it was stopped; those requests were not counted (estimated 2,000-3,500). No position data came from it."
+}
