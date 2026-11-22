@@ -370,16 +370,50 @@ Known gaps. The first is new with v2; the others are not:
   These wallets keep their place under the cap of 64 while 70 leaderboard wallets
   wait for one. Rotating a bounded run over the whole watchlist would poll them
   again; it changes what the pilot collects and is an owner decision.
-- **Market metadata keeps about half the watchlist untrusted.** A wallet is trusted
-  only when every market it traded has metadata. Between 27 and 35 of the 64 wallets
-  have met that in every run since 2026-10-22, before, through and after the outage,
-  so this is a standing condition and not a backlog. In the first tier diagnostic
-  (2026-11-18) `incomplete market metadata` applies to 30 wallets and is the only
-  reason keeping 9 of them out of T2, which held 9. A day later it applied to 32,
-  the only blocking count that changed, and the only tier moves were two wallets
-  leaving T3. The likely mechanism is that a wallet which buys into a market the
-  store does not hold yet is untrusted until that market is fetched. Which markets
-  are missing, and whether they can be fetched at all, has not been counted.
+- **Gate 6 keeps about half the watchlist out of every tier, and it is not a
+  collection gap.** The scorer calls a wallet's market metadata complete only when
+  every market the wallet has traded is covered, and a market is covered only if
+  some stored row for it is closed or has an outcome price of 0.99 or more
+  (`metadata_coverage.py`; `_market_row_has_settlement` in `runner.py`). A market
+  that is stored, open and undecided is not covered. So a wallet carries
+  `incomplete market metadata` for as long as it has a trade in a market that is
+  not yet decided, whatever the store holds, and loses the reason when those
+  markets close. [metadata-coverage.md](metadata-coverage.md) found the same on the
+  frozen snapshot in September: of 20,560 uncovered wallet-market pairs, 20,352 had
+  a market row and 208 had none.
+  - Between 27 and 35 of the 64 wallets have passed in every run since 2026-10-22,
+    before, through and after the outage, and the count moves both ways. In the
+    five tier diagnostics of 2026-11-18 to 2026-11-22 the reason applies to 30, 32,
+    32, 32 and 35 wallets. It is the only reason other than gate 13 for 9, 9, 9, 9
+    and 8 of them, against a T2 of 9. Of the 43 wallets outside every tier on
+    2026-11-22, between 21 and 31 fail no other data gate.
+  - The backfill is not behind. It may look up 600 markets a cycle, and an open
+    market is read again once its last fetch is an hour old. Of the 120 runs from
+    2026-11-17 to 2026-11-22, 74 wrote 250 to 290 rows, 25 wrote fewer and 21 none,
+    and every run that wrote none began less than an hour after the one before.
+    That is 3,800 to 4,600 rows a day against 158 to 542 new activity rows on the
+    last four days, so most of them are the same open markets read again. How many
+    uncovered markets have no row at all is not counted: nothing in the result line
+    separates the two.
+  - What it does to the tiers. T1, T2 and T3 all need trusted data, so a wallet is
+    in a tier only while nothing it has traded is undecided at the daily score
+    (about 17:10 UTC). T2 held the same nine wallets in all five builds, and the
+    pilot captured 17 signals from them. Ten of the 17 had been through a score by
+    2026-11-22 09:07 UTC and no wallet left T2, so each of the ten was in a market
+    that was closed, or had an outcome at 0.99 or more, within about a day of the
+    buy. T3, which the comparison set is drawn from, went 26, 24, 24, 24, 21: three
+    wallets left it on 2026-11-22 as the count for this reason rose by three.
+  - So the wallets a freeze would fix are those whose markets are decided within
+    about a day, or that had nothing undecided on the day of the cutoff. A wallet
+    holding a longer-dated position is left out whatever its record, and which
+    wallets are in T3 depends on the day. The blueprint has this as open decision
+    1 and leaves "present-but-unsettled market records" to "an explicit
+    coverage-contract decision" (Stage 1, step 3). The documents record no
+    decision. It is the owner's, and it decides who is in the cohort, so it comes
+    before the freeze.
+  - Until 2026-11-22 this note said the likely cause was markets the store did not
+    hold yet. That was a guess that had not been checked against the code, and it
+    does not describe the rule.
 - **The dedupe key drops fills.** The store keeps one row per (transaction,
   condition, outcome index, type). A wallet whose order is filled against two resting
   orders in one transaction gets two rows from the API that share that key, and the
