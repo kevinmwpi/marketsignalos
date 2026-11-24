@@ -381,7 +381,7 @@ Known gaps. The first is new with v2; the others are not:
   markets close. [metadata-coverage.md](metadata-coverage.md) found the same on the
   frozen snapshot in September: of 20,560 uncovered wallet-market pairs, 20,352 had
   a market row and 208 had none.
-  - Between 27 and 35 of the 64 wallets have passed in every run since 2026-10-22,
+  - Between 26 and 35 of the 64 wallets have passed in every run since 2026-10-22,
     before, through and after the outage, and the count moves both ways. In the
     five tier diagnostics of 2026-11-18 to 2026-11-22 the reason applies to 30, 32,
     32, 32 and 35 wallets. It is the only reason other than gate 13 for 9, 9, 9, 9
@@ -403,6 +403,10 @@ Known gaps. The first is new with v2; the others are not:
     that was closed, or had an outcome at 0.99 or more, within about a day of the
     buy. T3, which the comparison set is drawn from, went 26, 24, 24, 24, 21: three
     wallets left it on 2026-11-22 as the count for this reason rose by three.
+  - The next two builds showed it directly. On 2026-11-23 and again on 2026-11-24
+    one wallet left T2 carrying this reason and no other outside gate 13, and on
+    the 24th another wallet entered T2 from outside every tier. T2 was 8 on both
+    days, but not the same eight, and T3 was 21 and 19.
   - So the wallets a freeze would fix are those whose markets are decided within
     about a day, or that had nothing undecided on the day of the cutoff. A wallet
     holding a longer-dated position is left out whatever its record, and which
