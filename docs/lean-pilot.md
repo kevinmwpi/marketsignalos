@@ -241,9 +241,11 @@ provisional cohort lost its members, so capture was skipped, and the research
 snapshot stopped publishing on 2026-11-03. The post-mortem is in
 `docs/fix-lessons-learned.md`.
 
-Since 2026-11-17 the collector reads v2. What it stores is unchanged, with these
-differences in how it is read. The evidence is one live probe, two live smoke tests
-and one live check of the position filter
+Since 2026-11-17 the collector reads v2. The stored row formats are unchanged, and
+the activity rows are the same rows; the position rows may be a narrower set than
+before (see "Whether v1 stored the same holdings" below). The differences in how
+each is read follow. The evidence is one live probe, two live smoke tests and one
+live check of the position filter
 (`docs/benchmarks/2026-11-17-data-api-v2-probe.md`, `-smoke.md`, `-smoke-2.md`,
 `-positions.md`).
 
@@ -276,6 +278,41 @@ and one live check of the position filter
   one of the six wallets at the top of the month's PnL board holds 25,232 live
   holdings and is refused this way; the other five hold 39 to 6,925. A wallet that
   large is automated, and the cohort stage excludes it once it is scored.
+- **Whether v1 stored the same holdings is not known.** Until 2026-11-02 the walk
+  read v1's default listing (`/positions?user=…`, no `redeemable` parameter). The
+  migration took that listing to be live holdings only, because the pilot's whole
+  store (5,789 rows) was far smaller than one large wallet's v2 listing. That
+  compared different wallets and showed only that v2's listing was too long to
+  store. The first two runs on v2 each polled 28 of the same 64 wallets and stored
+  80 and 96 position rows (2026-11-17 09:07 and 10:07 UTC), against 1,488 to 1,660
+  for each batch of 28 on 10-31 and 11-01. Either those wallets hold far less than
+  they did before the 2026-11-03 elections, or v1 listed their resolved, unredeemed
+  holdings and the v2 walk leaves them out. Polymarket's documents do not say
+  which, and v1 can no longer be asked
+  (`docs/benchmarks/2026-11-17-data-api-v1-positions-default.md`).
+  A count of live and resolved holdings for the 100 wallets of today's month board
+  fits either reading, depending on which of them resemble the pilot's wallets; the
+  last v1 research capture shows only that an explicit `redeemable=false` filtered.
+  The v1 rows still in the store would settle it: resolved losers are priced at
+  exactly 0. That count has not been run.
+  What depends on the answer:
+  - Scores, tiers and signal capture do not read position rows. The scorer reads
+    only whether the listing was read to its end (`positions_complete`).
+  - `active_pnl_usdc` on a score row is the unrealized PnL summed over the listed
+    holdings. Since 2026-11-17 that is live holdings only. It gates nothing.
+  - Which wallets are polled does depend on the store. A bounded run takes a
+    wallet again only while its latest position snapshot holds something
+    (`_select_shallow_wallet_targets`). An empty listing writes no snapshot, so a
+    wallet that already had one keeps it and stays in the rotation. A newly seeded
+    wallet whose first listing is empty, or fails, is polled once and never again,
+    and keeps its place on the capped watchlist. A listing of live holdings is
+    empty more often than one that includes old, unredeemed ones: of the 100
+    wallets on the month board on 2026-11-17, 27 held nothing live of a share or
+    more and 7 held nothing at all.
+  - Because an empty listing writes nothing, a wallet that sold everything keeps
+    its last holdings in the store as if it still held them. The API's feed and
+    exit detection (not deployed) read that snapshot: they would show the holdings
+    as current and never see the exit that emptied the wallet.
 - **Closed positions are one page.** The 50 with the largest realized PnL
   (`status=CLOSED`). Nothing reads these rows beyond the audit store, and a wallet can
   have thousands. `closed_positions_complete` therefore means that the request
@@ -290,8 +327,97 @@ and one live check of the position filter
   USDC amount (v2 reports shares). The pilot seeds by month profit, which is in USDC
   in both versions.
 
-Known gaps, none of them new with v2:
+Known gaps. The first is new with v2; the others are not:
 
+- **A history walk that reads only empty pages does not advance.** v2 can serve an
+  empty page, or one holding only combo trades, and still have rows after it. A walk
+  reads two pages. If neither holds a row the collector keeps, it has no timestamp
+  to resume from, so the next run asks for the same two pages: the wallet's history
+  stays incomplete with no error and no new row. Reproduced against the fake API on
+  2026-11-17 and not yet covered by a test; not seen in production, where it would
+  look like the frozen wallets below. The recent and gap walks hit the same
+  condition but show it (`recent activity refresh incomplete`, a gap that never
+  closes).
+- **About a fifth of the watchlist is not polled.** A bounded run takes a wallet
+  again only while its latest position snapshot holds something, so a seed whose
+  first listing was empty or failed is polled once (see "Which wallets are polled"
+  above). The result line does not name the wallets a run polled, but four counts
+  agree on 12 to 14 of the 64:
+  - The first tier diagnostic (build of 2026-11-18 01:11 UTC, on the scores of
+    2026-11-17 17:14 UTC) counts 12 wallets with `incomplete activity history` and
+    10 with `incomplete current positions`. Every wallet polled since the move to v2
+    succeeded, and a successful poll clears both, so these wallets were not polled.
+    Ten of them failed their first position listing. The daily check had read "one
+    wallet failed and the next run cleared it" as harmless; for a new seed it is
+    this.
+  - `backfill_complete_wallets` was 52 in every run from 2026-10-22 18:10 UTC to the
+    outage (267 runs) and is 52 again since the second run on v2. Twelve histories
+    stay incomplete, which blocks trust, while the runs write far too few rows for
+    twelve wallets to be reading history: about 3,600 rows a day before the outage,
+    3 and 0 in the third and fourth runs on v2. The count fell from 53 in the run of
+    2026-10-22 18:10 UTC. That run wrote 980 activity rows, two pages of one history,
+    and is the only run that ever logged `positions pagination exceeded safety
+    bound`. A wallet still in the rotation would have repeated that error every few
+    hours.
+  - Through the outage a polled wallet's history was marked incomplete when its
+    activity request failed, and the count stayed at 2 for all 345 runs. The first
+    run on v2 brought it to 30 and the second to 52. A rotation of 50 wallets gives
+    exactly that: 28, then the other 22 with 6 repeats.
+  - The position store held 5,789 rows for two snapshots per wallet. Batches of 28
+    wrote 1,488 to 1,660, or 53 to 59 a wallet, which makes 49 to 55 wallets with
+    snapshots, not 64.
+
+  These wallets keep their place under the cap of 64 while 70 leaderboard wallets
+  wait for one. Rotating a bounded run over the whole watchlist would poll them
+  again; it changes what the pilot collects and is an owner decision.
+- **Gate 6 keeps about half the watchlist out of every tier, and it is not a
+  collection gap.** The scorer calls a wallet's market metadata complete only when
+  every market the wallet has traded is covered, and a market is covered only if
+  some stored row for it is closed or has an outcome price of 0.99 or more
+  (`metadata_coverage.py`; `_market_row_has_settlement` in `runner.py`). A market
+  that is stored, open and undecided is not covered. So a wallet carries
+  `incomplete market metadata` for as long as it has a trade in a market that is
+  not yet decided, whatever the store holds, and loses the reason when those
+  markets close. [metadata-coverage.md](metadata-coverage.md) found the same on the
+  frozen snapshot in September: of 20,560 uncovered wallet-market pairs, 20,352 had
+  a market row and 208 had none.
+  - Between 26 and 35 of the 64 wallets have passed in every run since 2026-10-22,
+    before, through and after the outage, and the count moves both ways. In the
+    five tier diagnostics of 2026-11-18 to 2026-11-22 the reason applies to 30, 32,
+    32, 32 and 35 wallets. It is the only reason other than gate 13 for 9, 9, 9, 9
+    and 8 of them, against a T2 of 9. Of the 43 wallets outside every tier on
+    2026-11-22, between 21 and 31 fail no other data gate.
+  - The backfill is not behind. It may look up 600 markets a cycle, and an open
+    market is read again once its last fetch is an hour old. Of the 120 runs from
+    2026-11-17 to 2026-11-22, 74 wrote 250 to 290 rows, 25 wrote fewer and 21 none,
+    and every run that wrote none began less than an hour after the one before.
+    That is 3,800 to 4,600 rows a day against 158 to 542 new activity rows on the
+    last four days, so most of them are the same open markets read again. How many
+    uncovered markets have no row at all is not counted: nothing in the result line
+    separates the two.
+  - What it does to the tiers. T1, T2 and T3 all need trusted data, so a wallet is
+    in a tier only while nothing it has traded is undecided at the daily score
+    (about 17:10 UTC). T2 held the same nine wallets in all five builds, and the
+    pilot captured 17 signals from them. Ten of the 17 had been through a score by
+    2026-11-22 09:07 UTC and no wallet left T2, so each of the ten was in a market
+    that was closed, or had an outcome at 0.99 or more, within about a day of the
+    buy. T3, which the comparison set is drawn from, went 26, 24, 24, 24, 21: three
+    wallets left it on 2026-11-22 as the count for this reason rose by three.
+  - The next two builds showed it directly. On 2026-11-23 and again on 2026-11-24
+    one wallet left T2 carrying this reason and no other outside gate 13, and on
+    the 24th another wallet entered T2 from outside every tier. T2 was 8 on both
+    days, but not the same eight, and T3 was 21 and 19.
+  - So the wallets a freeze would fix are those whose markets are decided within
+    about a day, or that had nothing undecided on the day of the cutoff. A wallet
+    holding a longer-dated position is left out whatever its record, and which
+    wallets are in T3 depends on the day. The blueprint has this as open decision
+    1 and leaves "present-but-unsettled market records" to "an explicit
+    coverage-contract decision" (Stage 1, step 3). The documents record no
+    decision. It is the owner's, and it decides who is in the cohort, so it comes
+    before the freeze.
+  - Until 2026-11-22 this note said the likely cause was markets the store did not
+    hold yet. That was a guess that had not been checked against the code, and it
+    does not describe the rule.
 - **The dedupe key drops fills.** The store keeps one row per (transaction,
   condition, outcome index, type). A wallet whose order is filled against two resting
   orders in one transaction gets two rows from the API that share that key, and the
